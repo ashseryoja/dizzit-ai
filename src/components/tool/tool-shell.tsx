@@ -1,0 +1,174 @@
+"use client"
+
+import type { ReactNode } from "react"
+
+import { PageLoader } from "@/components/page-loader"
+import { useBlobGc } from "@/lib/blob-gc"
+import type { AttachmentIntake } from "@/lib/use-attachments"
+import { useMounted } from "@/lib/use-mounted"
+import { usePresence, type PresenceState } from "@/lib/use-presence"
+import { cn } from "@/lib/utils"
+
+/** Результат usePresence — слои каркаса принимают его целиком. */
+export interface Presence {
+  present: boolean
+  state: PresenceState
+}
+
+/**
+ * Каркас экрана инструмента — один на все инструменты профиля. Внутри:
+ * скелет до гидрации сторов, GC хранилища блобов, скрытый <input type="file">,
+ * приём переноса файлов на всю страницу со слоем «Отпустите…», отступ снизу
+ * под плавающий композер и справа — под панель-галерею пачки.
+ *
+ * Содержимое экрана (дропзона / сцена / галерея) — children; плавающие слои
+ * (ComposerDock, ToolAside) — layers. Страница не знает про разметку
+ * каркаса: чтобы поменять слой переноса или отступы везде, правят этот файл.
+ */
+export function ToolShell({
+  intake,
+  dropLabel,
+  composerOpen,
+  trayOpen = false,
+  trayMargin = "lg:mr-[296px]",
+  layers,
+  children,
+}: {
+  intake: AttachmentIntake
+  /** Подпись слоя переноса: «Отпустите, чтобы приложить рендеры». */
+  dropLabel: string
+  /** Внизу есть композер — контент получает отступ, чтобы не уходить под него. */
+  composerOpen: boolean
+  /** Справа открыта панель-галерея пачки — контент получает отступ под неё. */
+  trayOpen?: boolean
+  /** Класс отступа под правые панели; у переноса стиля их две. */
+  trayMargin?: string
+  layers?: ReactNode
+  children: ReactNode
+}) {
+  const mounted = useMounted()
+  // GC общего хранилища блобов — после гидрации сторов ВСЕХ инструментов.
+  useBlobGc()
+  const dragLayer = usePresence(intake.dragOver)
+
+  if (!mounted) {
+    return (
+      <div className="page-shell">
+        <PageLoader />
+      </div>
+    )
+  }
+
+  return (
+    <div
+      {...intake.dropProps}
+      className={cn(
+        "page-shell transition-[margin] duration-300",
+        composerOpen && "pb-32",
+        // Справа — место под панель-галерею, зеркально отступу под сайдбар.
+        trayOpen && trayMargin
+      )}
+      style={{ transitionTimingFunction: "var(--ease-out)" }}
+    >
+      <input
+        ref={intake.inputRef}
+        type="file"
+        accept={intake.accept}
+        multiple={intake.multiple}
+        className="hidden"
+        onChange={intake.onInputChange}
+      />
+
+      {dragLayer.present ? (
+        <div
+          data-state={dragLayer.state}
+          className="presence-fade pointer-events-none fixed inset-3 z-50 flex items-center justify-center"
+          style={{
+            border: "2px dashed var(--accent)",
+            borderRadius: "var(--r-xl)",
+            background: "rgba(16,16,18,0.55)",
+          }}
+        >
+          <span className="text-[15px]" style={{ color: "var(--fg-1)" }}>
+            {dropLabel}
+          </span>
+        </div>
+      ) : null}
+
+      <div className="page-content-wide flex flex-1 flex-col">{children}</div>
+
+      {layers}
+    </div>
+  )
+}
+
+/**
+ * Плавающая полоса внизу экрана, в которой живёт ToolComposer: по центру
+ * контента, с отступом под сайдбар слева и под панель-галерею справа.
+ * С presence — появляется и уходит анимацией; без него — есть всегда.
+ */
+export function ComposerDock({
+  presence,
+  trayOpen = false,
+  trayRight = "lg:right-[312px]",
+  children,
+}: {
+  presence?: Presence
+  trayOpen?: boolean
+  /** Класс правого отступа при открытой панели; у переноса стиля панелей две. */
+  trayRight?: string
+  children: ReactNode
+}) {
+  if (presence && !presence.present) return null
+  return (
+    <div
+      data-state={presence?.state}
+      className={cn(
+        "presence-rise pointer-events-none fixed inset-x-3 bottom-3 z-30 flex justify-center lg:left-[312px] lg:bottom-5",
+        trayOpen ? trayRight : "lg:right-8"
+      )}
+    >
+      {children}
+    </div>
+  )
+}
+
+/**
+ * Закреплённая правая панель — зеркало сайдбара: та же ширина, отступы и
+ * поверхность. Панель-галерея пачки (RenderTray) и панель стилей у переноса
+ * стиля. Только на широких экранах — ниже содержимое живёт под сценой.
+ */
+export function ToolAside({
+  presence,
+  label,
+  className = "right-4 w-[264px] lg:flex",
+  children,
+}: {
+  presence: Presence
+  label: string
+  /** Позиция, ширина и брейкпоинт показа: по умолчанию — панель пачки. */
+  className?: string
+  children: ReactNode
+}) {
+  if (!presence.present) return null
+  return (
+    <aside
+      data-state={presence.state}
+      aria-label={label}
+      className={cn("presence-slide fixed bottom-4 top-4 z-40 hidden flex-col overflow-hidden", className)}
+      style={{
+        background: "var(--bg-surface)",
+        border: "1px solid var(--line)",
+        borderRadius: "var(--r-xl)",
+        boxShadow: "0 16px 40px rgba(0, 0, 0, 0.35)",
+      }}
+    >
+      {children}
+    </aside>
+  )
+}
+
+/** Галерея-масонри результатов: карточки инструмента колонками. */
+export function ToolGallery({ children }: { children: ReactNode }) {
+  return <div className="columns-1 gap-4 sm:columns-2 xl:columns-3">{children}</div>
+}

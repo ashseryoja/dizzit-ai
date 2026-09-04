@@ -1,6 +1,6 @@
 "use client"
 
-import { Check, Plus, X } from "lucide-react"
+import { Check, Plus, SlidersHorizontal, X } from "lucide-react"
 
 import type { AttachedRender } from "@/components/tool/tool-composer"
 import { cn, plural } from "@/lib/utils"
@@ -15,6 +15,8 @@ interface RenderTrayProps {
   picking: boolean
   onTogglePicking: () => void
   onPickAll: () => void
+  /** Режим выбора с отмеченными: открыть пакетное редактирование набора. */
+  onEditAll: () => void
   onSelect: (index: number) => void
   onRemove: (index: number) => void
   onPickFiles: () => void
@@ -22,6 +24,10 @@ interface RenderTrayProps {
   maxFiles: number
   /** Формы слова: [рендер, рендера, рендеров]. */
   noun: [string, string, string]
+  /** Заголовок панели во множественном числе: «рендеры», «интерьеры». */
+  title?: string
+  /** Глагол кнопки набора: «Редактировать», «Перенести». */
+  editLabel?: string
 }
 
 /**
@@ -40,15 +46,19 @@ export function RenderTray({
   picking,
   onTogglePicking,
   onPickAll,
+  onEditAll,
   onSelect,
   onRemove,
   onPickFiles,
   onClear,
   maxFiles,
   noun,
+  title = "рендеры",
+  editLabel = "Редактировать",
 }: RenderTrayProps) {
   const count = attachments.length
-  const allPicked = count > 0 && attachments.every((item) => picked.has(item.previewUrl))
+  const pickedCount = attachments.filter((item) => picked.has(item.previewUrl)).length
+  const allPicked = count > 0 && pickedCount === count
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -59,7 +69,7 @@ export function RenderTray({
           </button>
         ) : (
           <span className="flex items-baseline gap-2">
-            <span className="ds-micro">рендеры</span>
+            <span className="ds-micro">{title}</span>
             <span className="text-[12px] tabular-nums" style={{ color: "var(--fg-4)" }}>
               {count} из {maxFiles}
             </span>
@@ -106,14 +116,22 @@ export function RenderTray({
 
       <div className="shrink-0 px-4 pb-4 pt-2">
         <hr className="ds-divider mb-3" />
-        <div className="flex items-center justify-between gap-2 px-1">
-          <span className="min-w-0 truncate text-[12px]" style={{ color: "var(--fg-4)" }}>
-            {count} {plural(count, noun)} в пачке
-          </span>
-          <button type="button" onClick={onClear} className="btn-ghost h-8 shrink-0 px-2.5 text-[12px]">
-            Очистить
+        {picking && pickedCount > 0 ? (
+          /* Отмечено несколько — единственное действие с набором: общие правки. */
+          <button type="button" onClick={onEditAll} className="btn-primary h-10 w-full justify-center text-[13px]">
+            <SlidersHorizontal className="h-4 w-4" strokeWidth={1.7} />
+            {pickedCount === 1 ? editLabel : `${editLabel} все · ${pickedCount}`}
           </button>
-        </div>
+        ) : (
+          <div className="flex items-center justify-between gap-2 px-1">
+            <span className="min-w-0 truncate text-[12px]" style={{ color: "var(--fg-4)" }}>
+              {count} {plural(count, noun)} в пачке
+            </span>
+            <button type="button" onClick={onClear} className="btn-ghost h-8 shrink-0 px-2.5 text-[12px]">
+              Очистить
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -129,11 +147,14 @@ export function RenderStrip({
   picked,
   picking,
   onTogglePicking,
+  onEditAll,
   onSelect,
   onRemove,
   onPickFiles,
   maxFiles,
-}: Omit<RenderTrayProps, "onClear" | "noun" | "onPickAll">) {
+  editLabel = "Редактировать",
+}: Omit<RenderTrayProps, "onClear" | "noun" | "onPickAll" | "title">) {
+  const pickedCount = attachments.filter((item) => picked.has(item.previewUrl)).length
   return (
     <div className="flex items-center gap-2">
       <div className="no-scrollbar flex min-w-0 flex-1 gap-2 overflow-x-auto py-1" role="listbox" aria-multiselectable={picking} aria-label="Приложенные рендеры">
@@ -161,6 +182,11 @@ export function RenderStrip({
           </button>
         ) : null}
       </div>
+      {picking && pickedCount > 0 ? (
+        <button type="button" onClick={onEditAll} className="btn-primary h-8 shrink-0 px-2.5 text-[12px]">
+          {editLabel}{pickedCount > 1 ? ` все · ${pickedCount}` : ""}
+        </button>
+      ) : null}
       <button
         type="button"
         onClick={onTogglePicking}

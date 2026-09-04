@@ -55,17 +55,22 @@ export const useModelStore = create<ModelState>()(
       onRehydrateStorage: () => (state) => {
         state?.setHydrated()
         // Застрявшее «processing» после перезагрузки — ошибка с «Повторить».
-        useModelStore.setState((current) => ({
-          models: current.models.map((item) =>
-            item.status === "processing"
-              ? {
-                  ...item,
-                  status: "error" as GenerationStatus,
-                  error: "Построение прервалось — страница была закрыта.",
-                }
-              : item
-          ),
-        }))
+        // localStorage синхронный: этот колбэк срабатывает ещё внутри create(),
+        // когда константа стора не присвоена. Правку откладываем на микрозадачу —
+        // иначе ReferenceError глотается persist и правка молча не применяется.
+        queueMicrotask(() => {
+          useModelStore.setState((current) => ({
+            models: current.models.map((item) =>
+              item.status === "processing"
+                ? {
+                    ...item,
+                    status: "error" as GenerationStatus,
+                    error: "Построение прервалось — страница была закрыта.",
+                  }
+                : item
+            ),
+          }))
+        })
       },
     }
   )

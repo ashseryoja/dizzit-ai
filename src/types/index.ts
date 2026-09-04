@@ -4,6 +4,8 @@
  * (дизайн: рендеры, скетч→рендер, материалы). Новые инструменты будут
  * дописывать сюда свои сущности.
  */
+
+import type { RegionPayload } from "@/lib/render-regions"
 export interface Project {
   id: string
   title: string
@@ -45,12 +47,108 @@ export interface GalleryItemMeta {
 /** Подсказка обработке, что в кадре. На состав сцены не влияет. */
 export type EnhanceContext = "auto" | "interior" | "exterior" | "product"
 
+/** Фильтр пакетной обработки — общий тон для всех рендеров пачки. */
+export type BatchFilter = "none" | "warm" | "cool" | "contrast" | "mono"
+
+/** Время суток на рендере; «как есть» — не менять. */
+export type BatchTime = "keep" | "morning" | "day" | "sunset" | "night"
+
+/**
+ * Общие функции пакетного редактирования. Только они применимы сразу
+ * к нескольким рендерам: точечные правки («убрать вот это») требуют
+ * одного кадра на экране.
+ */
+export interface BatchTools {
+  quality: boolean
+  filter: BatchFilter
+  time: BatchTime
+}
+
 /**
  * Обработка рендера. Настроек нет намеренно: результат всегда в размере
- * исходника, единственный выбор пользователя — контекст сцены.
+ * исходника, единственный выбор пользователя — контекст сцены. Пакетная
+ * обработка добавляет общие функции (tools).
  */
 export interface Enhancement extends GalleryItemMeta {
   context: EnhanceContext
+  sourceName: string
+  sourceWidth: number
+  sourceHeight: number
+  tools?: BatchTools
+  /** Области точечной правки (см. lib/render-regions): геометрия в долях кадра. */
+  regions?: RegionPayload[]
+  /**
+   * Заселить сцену: люди и растения по контексту кадра, в его масштабе.
+   * Тумблер в настройках композера — и для одного рендера, и для пачки.
+   */
+  populate?: boolean
+}
+
+/* ── Ракурсы и детали ── */
+
+/**
+ * Тип кадра в сете. Ракурсы (сверху, снизу, слева, справа) — вся сцена с
+ * другой точки, в размере исходника. Крупные планы — вырезки из кадра в
+ * формате 4:5: деталь (предмет крупно), фактура (макро материала),
+ * фрагмент (зона помещения).
+ */
+export type ShotKind = "top" | "low" | "left" | "right" | "detail" | "texture" | "fragment"
+
+/** Выбор в композере: готовая карусель или один тип кадров. */
+export type ViewPreset = "set" | "details" | "angles" | "fragments"
+
+/** Кадр сета: ключ уникален в сете (`detail-2`), подпись — для плитки. */
+export interface ViewFrame {
+  key: string
+  kind: ShotKind
+  label: string
+}
+
+/**
+ * Сет кадров по одному рендеру: общий план на входе — раскадровка для
+ * публикации на выходе, без 3D-модели. Каждый кадр лежит в IndexedDB под
+ * своим ключом (`${id}:view-${frame.key}`, см. lib/view-engine); `ready` —
+ * ключи готовых, запись считается done, когда готовы все `frames`.
+ */
+export interface ViewSet extends GalleryItemMeta {
+  preset: ViewPreset
+  frames: ViewFrame[]
+  ready?: string[]
+  sourceName: string
+  sourceWidth: number
+  sourceHeight: number
+}
+
+/* ── Перенос стиля ── */
+
+/**
+ * Стиль интерьера, в который переводится кадр. «Авто» — свой стиль по
+ * описанию. Каталог с подписями, палитрами и словами-подсказками —
+ * `STYLES` в lib/restyle-engine.
+ */
+export type RestyleStyle =
+  | "auto"
+  | "scandi"
+  | "neoclassic"
+  | "japandi"
+  | "loft"
+  | "minimal"
+  | "midcentury"
+  | "boho"
+  | "artdeco"
+  | "mediterranean"
+  | "provence"
+  | "wabisabi"
+  | "contemporary"
+
+/**
+ * Перенос стиля: геометрия помещения остаётся, меняются отделка, цвета и
+ * дизайн мебели. Результат — в размере исходника, как у улучшения.
+ */
+export interface Restyle extends GalleryItemMeta {
+  style: RestyleStyle
+  /** Материалы стиля, которые пользователь снял галочкой: их в рендере быть не должно. */
+  excluded?: string[]
   sourceName: string
   sourceWidth: number
   sourceHeight: number

@@ -337,7 +337,8 @@ select.field option { background: var(--bg-overlay); color: var(--fg-1); }
   cursor: pointer;
   white-space: nowrap;
   transition: background-color var(--dur-fast) var(--ease-std),
-    border-color var(--dur-fast) var(--ease-std), color var(--dur-fast) var(--ease-std);
+    border-color var(--dur-fast) var(--ease-std), color var(--dur-fast) var(--ease-std),
+    transform var(--dur-fast) var(--ease-std);
 }
 .seg-item:hover { background: var(--hover-1); color: var(--fg-1); }
 .seg-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
@@ -996,14 +997,23 @@ select.field option { background: var(--bg-overlay); color: var(--fg-1); }
   border: 1px solid var(--line);
   background: var(--bg-surface);
 }
-.stage img {
+/* Бокс РОВНО с отрисованный кадр: позиция и размер считаются страницей по
+   пропорции картинки. Поверх него ложится холст точечной правки, поэтому
+   картинка не может быть object-contain на всю сцену — её края нужны точно.
+   Без анимации входа намеренно: в скрытой вкладке клок анимаций замирает,
+   и кадр с opacity 0 спрятал бы единственную картинку на экране. */
+.stage-frame {
   position: absolute;
-  inset: 0;
+  overflow: hidden;
+  border-radius: 4px;
+}
+.stage-frame img {
+  display: block;
   width: 100%;
   height: 100%;
-  object-fit: contain;
-  /* Без анимации входа намеренно: в скрытой вкладке клок анимаций замирает,
-     и кадр с opacity 0 спрятал бы единственную картинку на экране. */
+  object-fit: fill;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 .stage-badge {
   position: absolute;
@@ -1043,3 +1053,628 @@ select.field option { background: var(--bg-overlay); color: var(--fg-1); }
 @media (prefers-reduced-motion: reduce) {
   .tray-thumb:hover img { transform: none; }
 }
+
+/* Пакетное редактирование: вместо сцены — грид выбранных рендеров.
+   Плитки без интерактива, только имя и номер: править по одному здесь
+   нельзя намеренно. */
+.batch-tile {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 4 / 3;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--line-strong);
+  background: var(--bg-surface);
+}
+.batch-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* ============================================================
+   ТОЧЕЧНАЯ ПРАВКА: холст областей поверх рендера
+   Перенос редактора обложек UpSound. Всё лежит НА кадре, который бывает любым,
+   поэтому здесь не токены темы, а тёмное стекло с белым текстом — как у
+   бейджей сцены (.stage-badge). Область рисует сам холст (см. region-editor).
+   ============================================================ */
+.rg-pill {
+  border-radius: 999px;
+  background: rgba(16, 16, 18, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 10px 24px -10px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+.rg-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-std), background-color var(--dur-fast) var(--ease-std);
+}
+.rg-tool:hover:not(:disabled) { color: #fff; }
+.rg-tool.is-active { background: rgba(255, 255, 255, 0.14); color: #fff; }
+.rg-tool:disabled { opacity: 0.4; pointer-events: none; }
+.rg-tool:focus-visible { outline: 2px solid #fff; outline-offset: -2px; }
+@media (pointer: coarse) { .rg-tool { width: 44px; height: 44px; } }
+.rg-sep { display: block; width: 1px; height: 16px; margin: 0 4px; background: rgba(255, 255, 255, 0.14); }
+
+/* Номер области: белый круг у подписанной, тёмный пунктирный — у той, что ещё
+   без подписи (она держит кнопку обработки закрытой и обязана быть видна). */
+.rg-badge {
+  position: absolute;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  border: 1px dashed rgba(255, 255, 255, 0.7);
+  background: rgba(16, 16, 18, 0.6);
+  color: #fff;
+  box-shadow: 0 2px 10px -2px rgba(0, 0, 0, 0.7);
+  cursor: pointer;
+}
+.rg-badge.is-labeled { border: 0; background: #fff; color: #17171a; }
+
+.rg-popover {
+  padding: 14px;
+  border-radius: var(--r-md);
+  background: rgba(16, 16, 18, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+.rg-textarea {
+  width: 100%;
+  resize: none;
+  background: transparent;
+  border: 0;
+  outline: none;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 18px;
+  color: #fff;
+}
+.rg-textarea::placeholder { color: rgba(255, 255, 255, 0.4); }
+.rg-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-std);
+}
+.rg-link:hover { color: #fff; }
+.rg-done {
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-std), color var(--dur-fast) var(--ease-std);
+}
+.rg-done:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
+
+/* Ползунок толщины: своя дорожка под нативным треком, бегунок — белый круг. */
+.rg-track {
+  pointer-events: none;
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 4px;
+  transform: translateY(-50%);
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+}
+.rg-track-fill { height: 100%; border-radius: 999px; background: rgba(255, 255, 255, 0.45); }
+.rg-range {
+  position: relative;
+  z-index: 10;
+  display: block;
+  width: 100%;
+  height: 36px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.rg-range::-webkit-slider-runnable-track { height: 4px; background: transparent; }
+.rg-range::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  margin-top: -6px;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 1px 6px -1px rgba(0, 0, 0, 0.7);
+}
+.rg-range::-moz-range-track { height: 4px; background: transparent; }
+.rg-range::-moz-range-thumb { width: 16px; height: 16px; border: 0; border-radius: 999px; background: #fff; }
+.rg-range:focus-visible { outline: none; }
+
+/* Теги областей над строкой композера: номер совпадает с бейджем на кадре. */
+.rg-tag {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 4px 3px 4px;
+  border-radius: 999px;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  font-size: 11.5px;
+  color: var(--fg-3);
+}
+.rg-tag-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+.rg-tag.is-unlabeled .rg-tag-num { background: transparent; border: 1px dashed var(--fg-4); color: var(--fg-3); }
+.rg-tag.is-unlabeled { color: var(--fg-5); }
+
+/* Подсказка «что выбирать»: волна подсветки по контролам панели настроек
+   (см. attentionKey у композера) и замечание над строкой ввода. */
+.seg-item.is-hit, .switch.is-hit {
+  border-color: var(--accent);
+  background: var(--hover-2);
+  color: var(--fg-1);
+  transform: scale(1.05);
+}
+.switch { transition: background-color var(--dur-fast) var(--ease-std), border-color var(--dur-fast) var(--ease-std), transform var(--dur-fast) var(--ease-std); }
+.composer-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 8px 0;
+  padding: 7px 10px;
+  border-radius: var(--r-sm);
+  background: var(--bg-raised);
+  border: 1px solid var(--line-strong);
+  font-size: 12px;
+  color: var(--fg-2);
+}
+.composer-notice svg { color: var(--fg-4); }
+
+/* ============================================================
+   ЭСКИЗ КОМНАТЫ (общий для пустых экранов «Ракурсы» и «Перенос стиля»)
+   Одна геометрия, два вида: каркас (currentColor, без заливок) и цвет —
+   заливки по классам .rs-*, палитру задают ключевые кадры .ss-*.
+   ============================================================ */
+.rs-wire * { fill: none; stroke: currentColor; stroke-width: 1.1; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.rs-wire .rs-wall, .rs-wire .rs-ceiling, .rs-wire .rs-floor { fill: currentColor; fill-opacity: 0.035; }
+.rs-wire .rs-back { fill-opacity: 0.06; }
+.rs-wire .rs-grid line { stroke-opacity: 0.28; }
+.rs-wire .rs-glass { fill: currentColor; fill-opacity: 0.08; }
+
+.rs-paint .rs-ceiling { fill: #f4f1ea; }
+.rs-paint .rs-wall { fill: #e9e4da; }
+.rs-paint .rs-back { fill: #f0ece3; }
+.rs-paint .rs-floor { fill: #d7c6ab; }
+.rs-paint .rs-glass { fill: #c9dbe6; }
+.rs-paint .rs-mullion { stroke: #f7f4ee; stroke-width: 1.4; }
+.rs-paint .rs-accent { fill: #b9c7d1; }
+.rs-paint .rs-rug { fill-opacity: 0.85; }
+.rs-paint .rs-sofa { fill: #9aa7b4; }
+.rs-paint .rs-wood { fill: #b79a74; }
+.rs-paint .rs-wood-line { stroke: #b79a74; stroke-width: 1.6; }
+.rs-paint .rs-leaf { fill: #7f9a7a; }
+.rs-paint .rs-shade { fill: #efe7d6; }
+
+/* ============================================================
+   «РАКУРСЫ И ДЕТАЛИ» — приглашение пустого экрана
+   Карусель из одного рендера: слева общий план, справа четыре кадра,
+   которые из него получают, — деталь, вид сверху, фрагмент, фактура.
+   Кадры — вырезки того же эскиза (viewBox), поэтому видно, что сцена одна.
+   По общему плану ходит рамка «откуда вырезано»; подсветка плитки идёт
+   синхронно (12 с на цикл, 2.4 с на кадр; общий план — первый кадр).
+   ============================================================ */
+.vo {
+  display: grid;
+  grid-template-columns: 1.55fr 1fr;
+  gap: 14px;
+  align-items: stretch;
+  color: var(--fg-2);
+}
+.vo-overview, .vo-tile {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--r-md);
+  background: var(--bg-surface);
+  border: 1px solid var(--line-strong);
+  transition: transform 260ms var(--ease-out), box-shadow 260ms var(--ease-std), border-color 200ms var(--ease-std);
+}
+.vo-overview {
+  aspect-ratio: 200 / 130;
+  align-self: center;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.24);
+  animation: vo-hot 12s var(--ease-std) infinite;
+}
+.vo-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.vo-tile { aspect-ratio: 4 / 5; }
+.vo-tile .rs { display: block; width: 100%; height: 100%; }
+.vo-t1 { animation: vo-hot 12s var(--ease-std) infinite 2.4s; }
+.vo-t2 { animation: vo-hot 12s var(--ease-std) infinite 4.8s; }
+.vo-t3 { animation: vo-hot 12s var(--ease-std) infinite 7.2s; }
+.vo-t4 { animation: vo-hot 12s var(--ease-std) infinite 9.6s; }
+/* Вид сверху: тот же эскиз, наклонённый в 3D и приближенный. */
+.vo-topview {
+  transform: perspective(320px) rotateX(32deg) scale(1.45);
+  transform-origin: 50% 62%;
+}
+@keyframes vo-hot {
+  0%, 18% { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 14px 36px rgba(0, 0, 0, 0.3); }
+  22%, 100% { border-color: var(--line-strong); box-shadow: 0 0 0 0 transparent, 0 0 0 rgba(0, 0, 0, 0); }
+}
+.vo-overview { box-shadow: 0 14px 40px rgba(0, 0, 0, 0.24); }
+.dropzone:hover .vo-overview { transform: scale(1.02); }
+.dropzone:hover .vo-tile { border-color: var(--fg-4); }
+
+.vo-chip {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  background: rgba(16, 16, 18, 0.62);
+  color: rgba(255, 255, 255, 0.82);
+  pointer-events: none;
+}
+/* Счётчик кадра — как «2/5» в карусели. */
+.vo-count {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  background: rgba(16, 16, 18, 0.62);
+  color: rgba(255, 255, 255, 0.82);
+  pointer-events: none;
+}
+/* Рамка на общем плане: прыгает по областям, из которых вырезаны кадры. */
+.vo-scan {
+  position: absolute;
+  left: 2%;
+  top: 3%;
+  width: 96%;
+  height: 94%;
+  border: 1.5px solid var(--accent);
+  border-radius: 4px;
+  box-shadow: 0 0 0 200vmax rgba(16, 16, 18, 0.001);
+  pointer-events: none;
+  animation: vo-scan 12s var(--ease-std) infinite;
+}
+@keyframes vo-scan {
+  /* 1/5 — общий план целиком */
+  0%, 18%  { left: 2%; top: 3%; width: 96%; height: 94%; opacity: 0.55; }
+  /* 2/5 — деталь: диван и картина (viewBox 96 42 48 60) */
+  20%, 38% { left: 48%; top: 32.3%; width: 24%; height: 46.2%; opacity: 1; }
+  /* 3/5 — сверху: вся сцена */
+  40%, 58% { left: 2%; top: 3%; width: 96%; height: 94%; opacity: 0.55; }
+  /* 4/5 — фрагмент: угол с торшером (viewBox 140 36 48 60) */
+  60%, 78% { left: 70%; top: 27.7%; width: 24%; height: 46.2%; opacity: 1; }
+  /* 5/5 — фактура: растение (viewBox 18 86 32 40) */
+  80%, 98% { left: 9%; top: 66.2%; width: 16%; height: 30.8%; opacity: 1; }
+  100%     { left: 2%; top: 3%; width: 96%; height: 94%; opacity: 0.55; }
+}
+@media (max-width: 560px) {
+  .vo { grid-template-columns: 1fr; gap: 10px; }
+  .vo-grid { grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .vo-chip { font-size: 9px; padding: 1px 5px; left: 5px; bottom: 5px; }
+  .vo-count { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vo-overview, .vo-tile, .vo-scan { animation: none; }
+  .vo-scan { left: 48%; top: 32.3%; width: 24%; height: 46.2%; opacity: 1; }
+  .vo-t1 { border-color: var(--accent); }
+  .dropzone:hover .vo-overview { transform: none; }
+}
+
+/* ============================================================
+   «ПЕРЕНОС СТИЛЯ» — приглашение пустого экрана
+   Одна комната, четыре интерьера по кругу: скандинавский → неоклассика →
+   джапанди → лофт (сцены — style-scenes.tsx). Смена — проход малярного
+   валика: входящий слой открывается наклонной clip-path слева направо, по
+   его кромке едет светящаяся линия со шлейфом. Тайминги совпадают с
+   HOLD_MS/WIPE_MS в style-swap.tsx.
+   ============================================================ */
+.ss { color: var(--fg-2); }
+.ss-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 200 / 130;
+  overflow: hidden;
+  border-radius: var(--r-lg);
+  background: var(--bg-surface);
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.22);
+  transition: transform 260ms var(--ease-out), box-shadow 260ms var(--ease-std);
+}
+.dropzone:hover .ss-frame { transform: scale(1.02); box-shadow: 0 22px 56px rgba(0, 0, 0, 0.3); }
+.ss-layer { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+/* Входящий стиль: наклонный клин, растущий слева направо. Верхняя точка
+   опережает нижнюю на 18 % ширины — кромка идёт под наклоном валика. */
+.ss-layer.is-incoming {
+  clip-path: polygon(0 0, 0 0, -18% 100%, 0 100%);
+  animation: ss-wipe 1100ms cubic-bezier(0.65, 0, 0.35, 1) forwards;
+}
+@keyframes ss-wipe {
+  from { clip-path: polygon(0 0, 0 0, -18% 100%, 0 100%); }
+  to   { clip-path: polygon(0 0, 118% 0, 100% 100%, 0 100%); }
+}
+/* Кромка валика: белая линия со свечением, наклон совпадает с клином
+   (высота 120 % кадра, сдвиг верх/низ ±9 % ширины → skew ≈ 13°). */
+.ss-edge {
+  position: absolute;
+  top: -10%;
+  bottom: -10%;
+  left: -9%;
+  width: 3px;
+  background: #fff;
+  border-radius: 2px;
+  box-shadow: 0 0 10px 3px rgba(255, 255, 255, 0.6), 0 0 36px 10px rgba(255, 255, 255, 0.22);
+  transform: skewX(-13deg);
+  pointer-events: none;
+  animation: ss-edge 1100ms cubic-bezier(0.65, 0, 0.35, 1) forwards;
+}
+.ss-edge::before {
+  /* Шлейф «свежей краски» позади кромки. */
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 100%;
+  width: 56px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.3));
+}
+@keyframes ss-edge {
+  from { left: -9%; }
+  to   { left: 109%; }
+}
+.ss-label {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  padding: 3px 9px;
+  border-radius: 7px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: rgba(16, 16, 18, 0.66);
+  color: rgba(255, 255, 255, 0.9);
+  pointer-events: none;
+}
+/* Полоска стилей под кадром: активный — белой рамкой, как пункт меню. */
+.ss-strip {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 14px;
+}
+.ss-chip {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  font-size: 11.5px;
+  color: var(--fg-4);
+  transition: color 300ms var(--ease-std), border-color 300ms var(--ease-std), background-color 300ms var(--ease-std);
+}
+.ss-chip.is-active { border-color: var(--accent); color: var(--fg-1); background: var(--hover-2); }
+@media (prefers-reduced-motion: reduce) {
+  .ss-layer.is-incoming, .ss-edge { animation: none; }
+  .ss-layer.is-incoming { clip-path: none; }
+  .ss-edge { display: none; }
+  .dropzone:hover .ss-frame { transform: none; }
+}
+
+/* ============================================================
+   «ПЕРЕНОС СТИЛЯ» — панель стилей рядом со сценой
+   Высокая панель со скроллом между сценой и панелью интерьеров (на xl
+   закреплена, ниже — блок под сценой). Строка стиля: название, справа
+   четыре образца-материала (SVG-фактуры), под названием характеристика.
+   Активная — белая рамка с галкой, как активный пункт меню.
+   ============================================================ */
+.style-row {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: var(--r-md);
+  border: 1px solid transparent;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-std), background-color var(--dur-fast) var(--ease-std),
+    box-shadow var(--dur-fast) var(--ease-std);
+}
+.style-row:hover { background: var(--hover-1); border-color: var(--line-strong); }
+.style-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.style-row.is-active { border-color: var(--accent); background: var(--hover-1); }
+.style-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 8px;
+}
+/* Название не обрезается: если образцы не влезают рядом, они переносятся под него. */
+.style-row-title { flex: 1 1 auto; white-space: nowrap; font-size: 12.5px; line-height: 1.2; color: var(--fg-1); }
+.style-row-hint { font-size: 10.5px; line-height: 1.3; color: var(--fg-5); }
+.style-row-swatches { display: flex; flex-shrink: 0; align-items: center; gap: 3px; }
+/* Счётчик остальных материалов стиля: «+11». */
+.style-row-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 5px;
+  border: 1px dashed var(--line-strong);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-4);
+}
+.swatch {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.25);
+}
+.style-row-custom {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  border: 1px dashed var(--line-strong);
+  color: var(--fg-4);
+}
+.style-row-check {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin-left: 2px;
+  padding: 2.5px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+/* Крупный образец для секции над композером. */
+.swatch-lg { width: 34px; height: 34px; border-radius: 8px; }
+
+/* Превью стиля при наведении на строку списка: окошко порталом в body,
+   под строкой или над ней; картинка — фото из каталога или сцена стиля. */
+.style-preview {
+  position: fixed;
+  z-index: 60;
+  overflow: hidden;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line-strong);
+  background: var(--bg-surface);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+.style-preview-image { display: block; width: 100%; aspect-ratio: 200 / 130; object-fit: cover; }
+.style-preview-caption { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px 9px; }
+.style-preview-title { font-size: 12.5px; color: var(--fg-1); }
+.style-preview-hint { font-size: 10.5px; line-height: 1.3; color: var(--fg-5); }
+
+/* ============================================================
+   «ПЕРЕНОС СТИЛЯ» — секция выбранного стиля над композером
+   Название и характеристика, четыре материала крупно с галочками
+   (все включены; снятая — материала в рендере не будет), крестик сброса.
+   ============================================================ */
+.style-dock {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 8px 44px 8px 14px;
+}
+.style-dock-head { display: flex; min-width: 0; flex: 1 1 150px; flex-direction: column; gap: 2px; }
+.style-dock-title { font-size: 13px; color: var(--fg-1); }
+.style-dock-hint { font-size: 10.5px; line-height: 1.3; color: var(--fg-5); }
+/* Плитки материалов — сколько влезает в ряд, остальные переносятся. */
+.style-dock-tiles { display: flex; flex: 1 1 420px; flex-wrap: wrap; gap: 2px 4px; }
+.style-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  width: 66px;
+  padding: 5px 3px 5px;
+  border-radius: var(--r-md);
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-std), border-color var(--dur-fast) var(--ease-std),
+    opacity var(--dur-fast) var(--ease-std);
+}
+.style-tile:hover { background: var(--hover-1); border-color: var(--line-strong); }
+.style-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.style-tile-swatch { position: relative; display: block; }
+.style-tile-check {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  border: 1.5px solid var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  transition: background-color var(--dur-fast) var(--ease-std), border-color var(--dur-fast) var(--ease-std);
+}
+.style-tile-name {
+  max-width: 100%;
+  font-size: 10px;
+  line-height: 1.15;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-align: center;
+  color: var(--fg-3);
+  transition: color var(--dur-fast) var(--ease-std);
+}
+.style-tile.is-off .swatch { opacity: 0.35; filter: grayscale(0.6); }
+.style-tile.is-off .style-tile-check { background: var(--bg-raised); border-color: var(--fg-5); }
+.style-tile.is-off .style-tile-name { color: var(--fg-5); text-decoration: line-through; }
+.style-dock-note { flex: 1 1 100%; min-width: 0; margin: 0 0 2px; font-size: 10.5px; line-height: 1.35; color: var(--fg-5); }
+.style-dock-link { background: none; border: 0; padding: 0; font: inherit; color: var(--fg-3); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.style-dock-link:hover { color: var(--fg-1); }
+/* Крестик сброса — в правом верхнем углу секции, вне потока. */
+.style-dock > .btn-icon { position: absolute; top: 8px; right: 8px; }

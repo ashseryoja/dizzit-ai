@@ -1,5 +1,6 @@
 "use client"
 
+import { makeRng, type Rng } from "@/lib/seeded-rng"
 import type { MaterialCategory } from "@/types"
 
 /**
@@ -39,19 +40,6 @@ export function resolveCategory(category: MaterialCategory, note: string): Exclu
   return "stone"
 }
 
-/** Детерминированный генератор: одна и та же запись рисуется одинаково. */
-function makeRng(seedText: string) {
-  let seed = 2166136261
-  for (let i = 0; i < seedText.length; i += 1) {
-    seed = Math.imul(seed ^ seedText.charCodeAt(i), 16777619)
-  }
-  let state = seed >>> 0 || 1
-  return () => {
-    state = (Math.imul(state, 1664525) + 1013904223) >>> 0
-    return state / 4294967296
-  }
-}
-
 /** Средний цвет референса: рисуем его в 1×1 и читаем пиксель. */
 async function averageTone(ref: Blob): Promise<[number, number, number] | null> {
   try {
@@ -78,7 +66,6 @@ function rgba(tone: [number, number, number], delta: number, alpha: number): str
   return `rgba(${r},${g},${b},${alpha})`
 }
 
-type Rng = () => number
 type Ctx = CanvasRenderingContext2D
 
 function drawWood(ctx: Ctx, rand: Rng, tone: [number, number, number], side: number) {

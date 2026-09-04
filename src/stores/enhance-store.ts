@@ -64,17 +64,22 @@ export const useEnhanceStore = create<EnhanceState>()(
         // Обработка, застрявшая в «processing» (вкладку закрыли на полпути),
         // после перезагрузки крутилась бы вечно. Исходник цел в IndexedDB,
         // поэтому это ошибка с кнопкой «Повторить», а не тупик.
-        useEnhanceStore.setState((current) => ({
-          enhancements: current.enhancements.map((item) =>
-            item.status === "processing"
-              ? {
-                  ...item,
-                  status: "error" as GenerationStatus,
-                  error: "Обработка прервалась — страница была закрыта.",
-                }
-              : item
-          ),
-        }))
+        // localStorage синхронный: этот колбэк срабатывает ещё внутри create(),
+        // когда константа стора не присвоена. Правку откладываем на микрозадачу —
+        // иначе ReferenceError глотается persist и правка молча не применяется.
+        queueMicrotask(() => {
+          useEnhanceStore.setState((current) => ({
+            enhancements: current.enhancements.map((item) =>
+              item.status === "processing"
+                ? {
+                    ...item,
+                    status: "error" as GenerationStatus,
+                    error: "Обработка прервалась — страница была закрыта.",
+                  }
+                : item
+            ),
+          }))
+        })
       },
     }
   )

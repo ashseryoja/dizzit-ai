@@ -14,6 +14,9 @@
  * нажатие «Улучшить» не может остаться без результата и не требует решений.
  */
 
+import { populateScene } from "@/lib/scene-population"
+import type { EnhanceContext } from "@/types"
+
 export const ENHANCE_ACCEPT = "image/png,image/jpeg,image/webp"
 export const MAX_FILE_BYTES = 32 * 1024 * 1024
 /** Пачка за одну отправку: как лимит вложений в прежнем чате. */
@@ -57,7 +60,15 @@ function toBlob(canvas: HTMLCanvasElement, type: string, quality?: number): Prom
   })
 }
 
-export async function enhanceLocally(source: Blob): Promise<EnhanceResult> {
+export interface EnhanceOptions {
+  /** Заселить сцену: стаффаж людей и растений по контексту кадра (lib/scene-population). */
+  populate?: boolean
+  context?: EnhanceContext
+  /** Ключ детерминизма стаффажа — id записи: «Повторить» расставит тех же. */
+  seed?: string
+}
+
+export async function enhanceLocally(source: Blob, options: EnhanceOptions = {}): Promise<EnhanceResult> {
   const bitmap = await createImageBitmap(source)
   try {
     const { width, height } = bitmap
@@ -74,6 +85,11 @@ export async function enhanceLocally(source: Blob): Promise<EnhanceResult> {
     // Safari до 18 игнорирует ctx.filter — там результат равен исходнику.
     ctx.filter = "contrast(1.05) saturate(1.08) brightness(1.01)"
     ctx.drawImage(bitmap, 0, 0, width, height)
+
+    // Заселение — единственное, что добавляет в кадр новое; по явному тумблеру.
+    if (options.populate) {
+      populateScene(ctx, width, height, { context: options.context ?? "auto", seed: options.seed ?? "" })
+    }
 
     // PNG остаётся PNG (рендеры часто с плоскими заливками), остальное — JPEG.
     const type = source.type === "image/png" ? "image/png" : "image/jpeg"

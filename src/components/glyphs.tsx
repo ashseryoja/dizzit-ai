@@ -140,3 +140,62 @@ export function PhotoToCubeGlyph({
     </svg>
   )
 }
+
+/** «Ракурсы»: кадр с горизонтом, вокруг которого идёт стрелка-орбита камеры. */
+export function ViewsGlyph({
+  className,
+  strokeWidth = 1.7,
+}: {
+  className?: string
+  strokeWidth?: number
+}) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+    >
+      {/* Кадр, разомкнутый под орбиту. */}
+      <path d="M10.5 19H5.5A2.5 2.5 0 0 1 3 16.5v-10A2.5 2.5 0 0 1 5.5 4h11A2.5 2.5 0 0 1 19 6.5V9" />
+      <path d="M3 15.5l3.6-3.6a1.5 1.5 0 0 1 2.1 0L12 15.2" />
+      <circle cx="13.5" cy="8" r="1.2" />
+      {/* Орбита камеры со стрелкой. */}
+      <path d="M21 16.5a4.5 4.5 0 1 1-1.9-3.7" />
+      <path d="M19.5 10.5v2.6h-2.6" />
+    </svg>
+  )
+}
+
+/** «Перенос стиля»: тот же кадр, в углу — малярный валик. */
+export function RestyleGlyph({
+  className,
+  strokeWidth = 1.7,
+}: {
+  className?: string
+  strokeWidth?: number
+}) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+    >
+      {/* Кадр, разомкнутый под валик. */}
+      <path d="M10 20H5.5A2.5 2.5 0 0 1 3 17.5v-11A2.5 2.5 0 0 1 5.5 4h13A2.5 2.5 0 0 1 21 6.5V9" />
+      <path d="M3 16.5l4.4-4.4a1.5 1.5 0 0 1 2.1 0L13 15.6" />
+      {/* Валик: ролик и ручка. */}
+      <rect x="13.5" y="11" width="8" height="4" rx="1.2" />
+      <path d="M17.5 15v2.2a1 1 0 0 1-1 1h-1.2a1 1 0 0 0-1 1V22" />
+    </svg>
+  )
+}

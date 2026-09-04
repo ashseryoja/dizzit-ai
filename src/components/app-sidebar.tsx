@@ -15,7 +15,7 @@ import {
   X,
 } from "lucide-react"
 
-import { PhotoToCubeGlyph, RenderEditorGlyph } from "@/components/glyphs"
+import { PhotoToCubeGlyph, RenderEditorGlyph, RestyleGlyph, ViewsGlyph } from "@/components/glyphs"
 import { Logo } from "@/components/logo"
 import { usePresence } from "@/lib/use-presence"
 import { cn } from "@/lib/utils"
@@ -24,6 +24,8 @@ import { useEnhanceStore } from "@/stores/enhance-store"
 import { useMaterialStore } from "@/stores/material-store"
 import { useModelStore } from "@/stores/model-store"
 import { useProjectStore } from "@/stores/project-store"
+import { useRestyleStore } from "@/stores/restyle-store"
+import { useViewsStore } from "@/stores/views-store"
 
 interface ToolLink {
   href: string
@@ -37,6 +39,8 @@ interface ToolLink {
    в меню аккаунта внизу — так же, как в UpSound AI. */
 const TOOL_LINKS: ToolLink[] = [
   { href: "/enhance", label: "Редактор рендера", icon: RenderEditorGlyph },
+  { href: "/views", label: "Ракурсы и детали", icon: ViewsGlyph },
+  { href: "/restyle", label: "Перенос стиля", icon: RestyleGlyph },
   { href: "/photo-3d", label: "Фото → 3D", icon: PhotoToCubeGlyph },
   { href: "/materials", label: "Генерация материала", icon: Layers },
 ]
@@ -264,6 +268,8 @@ function ProjectSwitcher({ large, onNavigate }: { large: boolean; onNavigate?: (
                           useEnhanceStore.getState().removeByProject(project.id)
                           useMaterialStore.getState().removeByProject(project.id)
                           useModelStore.getState().removeByProject(project.id)
+                          useViewsStore.getState().removeByProject(project.id)
+                          useRestyleStore.getState().removeByProject(project.id)
                           deleteProject(project.id)
                         }}
                         className="btn-icon h-7 w-7"

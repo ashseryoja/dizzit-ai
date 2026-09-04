@@ -49,3 +49,8 @@ export function plural(count: number, forms: [string, string, string]): string {
   if (n1 === 1) return forms[0]
   return forms[2]
 }
+
+/** Имя файла без расширения — основа имени при скачивании результата. */
+export function fileBaseName(fileName: string, fallback = "file"): string {
+  return fileName.replace(/\.[^.]+$/, "") || fallback
+}

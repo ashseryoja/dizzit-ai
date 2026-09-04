@@ -59,17 +59,22 @@ export const useMaterialStore = create<MaterialState>()(
         // Генерация, застрявшая в «processing» (вкладку закрыли на полпути),
         // после перезагрузки крутилась бы вечно. Параметры целы, поэтому это
         // ошибка с кнопкой «Повторить», а не тупик.
-        useMaterialStore.setState((current) => ({
-          materials: current.materials.map((item) =>
-            item.status === "processing"
-              ? {
-                  ...item,
-                  status: "error" as GenerationStatus,
-                  error: "Генерация прервалась — страница была закрыта.",
-                }
-              : item
-          ),
-        }))
+        // localStorage синхронный: этот колбэк срабатывает ещё внутри create(),
+        // когда константа стора не присвоена. Правку откладываем на микрозадачу —
+        // иначе ReferenceError глотается persist и правка молча не применяется.
+        queueMicrotask(() => {
+          useMaterialStore.setState((current) => ({
+            materials: current.materials.map((item) =>
+              item.status === "processing"
+                ? {
+                    ...item,
+                    status: "error" as GenerationStatus,
+                    error: "Генерация прервалась — страница была закрыта.",
+                  }
+                : item
+            ),
+          }))
+        })
       },
     }
   )

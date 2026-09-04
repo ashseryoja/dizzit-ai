@@ -108,3 +108,12 @@ export function useActiveProject(): Project | null {
   const activeProjectId = useProjectStore((state) => state.activeProjectId)
   return projects.find((project) => project.id === activeProjectId) ?? null
 }
+
+/**
+ * Активный проект, а без него — новый «Проект N», как это делает селектор
+ * в сайдбаре. Для колбэков вне рендера: обработкам нужно, куда их класть.
+ */
+export function ensureActiveProject(): Project {
+  const { projects, activeProjectId, createProject } = useProjectStore.getState()
+  return projects.find((project) => project.id === activeProjectId) ?? createProject()
+}
