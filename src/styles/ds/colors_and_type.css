@@ -1,0 +1,182 @@
+/* Dizzit AI — токены дизайн-системы.
+   Схема: ТЁМНО-СЕРЫЙ фон, ЧИСТО БЕЛЫЙ акцент, ПЛОСКИЕ поверхности.
+   Градиентов в системе нет: ни фонов, ни кнопок, ни рамок, ни бликов. Глубину
+   даёт разница светлот трёх слоёв (page → surface → raised) и одна рамка.
+   @font-face объявлены в app/globals.css. */
+
+:root {
+  /* ==== ПОВЕРХНОСТИ — три ступени, каждая заметно светлее предыдущей ==== */
+  --bg-page: #1e1e21; /* фон приложения */
+  --bg-surface: #26262a; /* панели, сайдбар, сообщения ассистента */
+  --bg-raised: #2e2e33; /* карточки и поля ВНУТРИ панели */
+  --bg-overlay: #2a2a2f; /* всплывающие списки, модалки */
+
+  /* ==== ТЕКСТ — лестница прозрачностей белого, главный инструмент иерархии ==== */
+  --fg-1: rgba(255, 255, 255, 1);
+  --fg-2: rgba(255, 255, 255, 0.86);
+  --fg-3: rgba(255, 255, 255, 0.66);
+  --fg-4: rgba(255, 255, 255, 0.48);
+  --fg-5: rgba(255, 255, 255, 0.34);
+  --fg-6: rgba(255, 255, 255, 0.22);
+
+  /* ==== АКЦЕНТ — чистый белый, плотной заливкой ====
+     Заливка зарезервирована: главная кнопка, активный пункт меню, строка «Итого».
+     Больше нигде плотного белого нет, иначе акцент перестаёт читаться. */
+  --accent: #ffffff;
+  --accent-hover: #e8e8ea;
+  --accent-ink: #17171a; /* текст НА белом */
+
+  /* ==== РАМКИ — ровно две ==== */
+  --line: rgba(255, 255, 255, 0.09);
+  --line-strong: rgba(255, 255, 255, 0.18);
+
+  /* ==== ЕДИНСТВЕННЫЙ ЦВЕТ В СИСТЕМЕ ==== */
+  --danger: #e2564f;
+  --danger-soft: rgba(226, 86, 79, 0.14);
+
+  /* ==== ПОЛЯ ВВОДА ==== */
+  --field-bg: #26262a;
+  --field-bg-focus: #2c2c31;
+
+  /* ==== СОСТОЯНИЯ ====
+     Ховеры и выделение — токенами, а не литералами в рецептах:
+     иначе светлая тема (ниже) не смогла бы их перекрасить. */
+  --hover-1: rgba(255, 255, 255, 0.06); /* тихий ховер на прозрачном */
+  --hover-2: rgba(255, 255, 255, 0.08); /* ховер иконок-кнопок */
+  --raised-hover: #33333a; /* ховер карточек и активных пунктов */
+  --outline-hover: #35353c;
+  --outline-active: #2a2a2f;
+  --accent-active: #d8d8db;
+  --selection: rgba(255, 255, 255, 0.22);
+  --scroll-thumb: rgba(255, 255, 255, 0.14);
+  --scroll-thumb-hover: rgba(255, 255, 255, 0.26);
+
+  /* Нативные контролы (селекты, скроллбары) — в цвет темы. */
+  color-scheme: dark;
+
+  /* ==== РАДИУСЫ — родитель и ребёнок отличаются минимум на 6 ==== */
+  --r-xs: 6px;
+  --r-sm: 10px;
+  --r-md: 14px;
+  --r-lg: 18px;
+  --r-xl: 24px;
+
+  /* ==== ОТСТУПЫ ==== */
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 8px;
+  --space-4: 12px;
+  --space-5: 16px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+  --space-9: 56px;
+
+  /* ==== ТИПОГРАФИКА ==== */
+  --font-sans: "Garet-Book", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Unbounded", system-ui, -apple-system, sans-serif;
+
+  --fs-micro: 11.5px;
+  --fs-caption: 12px;
+  --fs-body-sm: 13px;
+  --fs-body: 14px;
+  --fs-body-lg: 15px;
+  --fs-h3: 16px;
+  --fs-h2: 20px;
+  --fs-h1: 26px;
+  --fs-display: 34px;
+
+  /* Поля ввода на мобильных ровно 16px: Safari масштабирует страницу при
+     фокусе в поле со шрифтом < 16px и обратно её не возвращает. */
+  --fs-input: var(--fs-body);
+
+  --lh-tight: 1.15;
+  --lh-snug: 1.3;
+  --lh-body: 1.6;
+
+  --ls-tight: -0.025em;
+  --ls-normal: -0.01em;
+
+  /* ==== ДВИЖЕНИЕ ==== */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-std: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast: 140ms;
+  --dur-base: 260ms;
+}
+
+/* ============================================================
+   СВЕТЛАЯ ТЕМА
+   Включается атрибутом data-theme="light" на <html> (настройки →
+   «Внешний вид»; до гидрации атрибут ставит инлайн-скрипт в layout).
+   Та же система: три ступени светлоты, один акцент, одна рамка —
+   только лестница идёт от светло-серого к белому, а акцент чёрный.
+   ============================================================ */
+:root[data-theme="light"] {
+  --bg-page: #ededf0;
+  --bg-surface: #f8f8f9;
+  --bg-raised: #ffffff;
+  --bg-overlay: #ffffff;
+
+  --fg-1: rgba(21, 21, 24, 1);
+  --fg-2: rgba(21, 21, 24, 0.87);
+  --fg-3: rgba(21, 21, 24, 0.64);
+  --fg-4: rgba(21, 21, 24, 0.47);
+  --fg-5: rgba(21, 21, 24, 0.35);
+  --fg-6: rgba(21, 21, 24, 0.22);
+
+  --accent: #17171a;
+  --accent-hover: #2c2c31;
+  --accent-ink: #ffffff;
+
+  --line: rgba(21, 21, 24, 0.1);
+  --line-strong: rgba(21, 21, 24, 0.24);
+
+  --danger: #d3453e;
+  --danger-soft: rgba(211, 69, 62, 0.12);
+
+  --field-bg: #ffffff;
+  --field-bg-focus: #ffffff;
+
+  --hover-1: rgba(21, 21, 24, 0.05);
+  --hover-2: rgba(21, 21, 24, 0.07);
+  --raised-hover: #f1f1f4;
+  --outline-hover: #f3f3f5;
+  --outline-active: #ececef;
+  --accent-active: #3d3d44;
+  --selection: rgba(21, 21, 24, 0.16);
+  --scroll-thumb: rgba(21, 21, 24, 0.2);
+  --scroll-thumb-hover: rgba(21, 21, 24, 0.34);
+
+  color-scheme: light;
+}
+
+.ds-display { font-family: var(--font-display); font-size: var(--fs-display); font-weight: 500; letter-spacing: var(--ls-tight); color: var(--fg-1); line-height: var(--lh-tight); }
+.ds-h1 { font-family: var(--font-display); font-size: var(--fs-h1); font-weight: 500; letter-spacing: var(--ls-tight); color: var(--fg-1); line-height: var(--lh-tight); }
+.ds-h2 { font-family: var(--font-display); font-size: var(--fs-h2); font-weight: 500; letter-spacing: var(--ls-normal); color: var(--fg-1); line-height: var(--lh-snug); }
+.ds-h3 { font-family: var(--font-display); font-size: var(--fs-h3); font-weight: 500; color: var(--fg-1); line-height: var(--lh-snug); }
+.ds-body { font-family: var(--font-sans); font-size: var(--fs-body); font-weight: 400; color: var(--fg-2); }
+.ds-body-lg { font-family: var(--font-sans); font-size: var(--fs-body-lg); font-weight: 400; color: var(--fg-2); line-height: var(--lh-body); }
+.ds-body-sm { font-family: var(--font-sans); font-size: var(--fs-body-sm); font-weight: 400; color: var(--fg-2); }
+.ds-caption { font-family: var(--font-sans); font-size: var(--fs-caption); font-weight: 400; color: var(--fg-4); }
+/* Микро-лейбл — строчными, тихий: подписи блоков и полей. */
+.ds-micro { font-family: var(--font-sans); font-size: var(--fs-micro); font-weight: 400; letter-spacing: 0.02em; line-height: var(--lh-snug); text-transform: lowercase; color: var(--fg-4); }
+/* Числа в таблицах смет — табличными цифрами, иначе колонка «дышит». */
+.ds-num { font-variant-numeric: tabular-nums; }
+
+.ds-divider { height: 1px; background: var(--line); border: 0; margin: 0; }
+
+@media (max-width: 767px) {
+  :root {
+    --space-7: 28px;
+    --space-8: 34px;
+    --space-9: 44px;
+
+    --fs-body-sm: 13.5px;
+    --fs-body: 15px;
+    --fs-body-lg: 15.5px;
+    --fs-h2: 21px;
+    --fs-display: 28px;
+
+    --fs-input: 16px;
+  }
+}

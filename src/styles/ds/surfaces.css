@@ -1,0 +1,661 @@
+/* Dizzit AI — рецепты поверхностей и контролов.
+   ПРАВИЛО: никаких градиентов, бликов, теней-ореолов и backdrop-filter.
+   Поверхность — это плоская заливка плюс одна рамка в 1px. Глубину даёт
+   разница светлот (--bg-page → --bg-surface → --bg-raised), а не подсветка. */
+
+/* ============================================================
+   ПОВЕРХНОСТИ
+   ============================================================ */
+.panel {
+  background: var(--bg-surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-xl);
+  /* Мягкий вход контента. Только сдвиг+прозрачность, без scale: элементы
+     остаются на своих местах и не «дышат» размером. */
+  animation: rise-in var(--dur-base) var(--ease-out) both;
+}
+
+/* Карточка ВНУТРИ панели: на ступень светлее, радиус меньше. */
+.card {
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  transition: border-color var(--dur-fast) var(--ease-std),
+    background-color var(--dur-fast) var(--ease-std);
+}
+.card-interactive:hover {
+  background: var(--raised-hover);
+  border-color: var(--line-strong);
+}
+
+/* Всплывающий слой: под ним ничего не должно просвечивать. */
+.overlay-surface {
+  background: var(--bg-overlay);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-lg);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+/* ============================================================
+   НАВИГАЦИЯ
+   ============================================================ */
+.nav-item {
+  position: relative;
+  display: flex;
+  width: 100%;
+  align-items: center;
+  border-radius: var(--r-md);
+  color: var(--fg-3);
+  background: transparent;
+  /* Рамка есть всегда (прозрачная): активное состояние добавляет цвет,
+     а не 1px размера — пункты не дёргаются. */
+  border: 1px solid transparent;
+  text-align: left;
+  cursor: pointer;
+  outline: none;
+  transition: background-color var(--dur-fast) var(--ease-std),
+    border-color var(--dur-fast) var(--ease-std),
+    color var(--dur-fast) var(--ease-std);
+}
+.nav-item:hover { background: var(--hover-1); color: var(--fg-1); }
+.nav-item:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+
+/* Активный пункт — белая РАМКА на серой заливке. Не сплошной белый:
+   залитые плашки в меню перетягивали внимание с контента (решение Бориса). */
+.nav-item.is-active {
+  background: var(--bg-raised);
+  border-color: var(--accent);
+  color: var(--fg-1);
+}
+.nav-item.is-active:hover { background: var(--raised-hover); }
+
+/* Вход меню — ТОЛЬКО сдвиг, без прозрачности.
+   Клок анимаций замирает в скрытой вкладке: кадр с opacity 0 прячет
+   единственную навигацию приложения целиком. Застывший translateX — это
+   всего лишь сдвиг на 8px, меню читается и кликается. По той же причине
+   нет ни fill-mode, ни ступенчатых задержек. */
+.nav-enter { animation: nav-enter var(--dur-base) var(--ease-out); }
+@keyframes nav-enter { from { transform: translateX(-8px); } }
+@media (prefers-reduced-motion: reduce) { .nav-enter { animation: none; } }
+
+/* ============================================================
+   КНОПКИ
+   ============================================================ */
+
+/* Главное действие — плотная белая заливка, тёмный текст. Плоская. */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 20px;
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  font-weight: 500;
+  color: var(--accent-ink);
+  background: var(--accent);
+  border: 0;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color var(--dur-fast) var(--ease-std), opacity var(--dur-fast) var(--ease-std);
+}
+.btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+.btn-primary:active:not(:disabled) { background: var(--accent-active); }
+.btn-primary:disabled { opacity: 0.35; cursor: not-allowed; }
+.btn-primary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Акцентная, но не залитая: белая рамка, серое нутро. Для заметных
+   действий, где сплошной белый был бы слишком громким. */
+.btn-outline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 18px;
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  font-weight: 500;
+  color: var(--fg-1);
+  background: var(--bg-raised);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-md);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color var(--dur-fast) var(--ease-std), opacity var(--dur-fast) var(--ease-std);
+}
+.btn-outline:hover:not(:disabled) { background: var(--outline-hover); }
+.btn-outline:active:not(:disabled) { background: var(--outline-active); }
+.btn-outline:disabled { opacity: 0.35; cursor: not-allowed; }
+.btn-outline:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 18px;
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  font-weight: 400;
+  color: var(--fg-2);
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color var(--dur-fast) var(--ease-std),
+    border-color var(--dur-fast) var(--ease-std), color var(--dur-fast) var(--ease-std);
+}
+.btn-secondary:hover:not(:disabled) {
+  background: var(--hover-1);
+  border-color: var(--fg-5);
+  color: var(--fg-1);
+}
+.btn-secondary:disabled { opacity: 0.35; cursor: not-allowed; }
+.btn-secondary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  font-family: var(--font-sans);
+  font-size: var(--fs-body-sm);
+  color: var(--fg-3);
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-xs);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-std), background-color var(--dur-fast) var(--ease-std);
+}
+.btn-ghost:hover:not(:disabled) { color: var(--fg-1); background: var(--hover-2); }
+.btn-ghost:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 34px;
+  width: 34px;
+  padding: 0;
+  color: var(--fg-4);
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-xs);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-std), background-color var(--dur-fast) var(--ease-std);
+}
+.btn-icon:hover:not(:disabled) { color: var(--fg-1); background: var(--hover-2); }
+.btn-icon:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.btn-danger { color: var(--danger); }
+.btn-danger:hover:not(:disabled) { background: var(--danger-soft); color: var(--danger); }
+
+/* ============================================================
+   ПОЛЯ ВВОДА
+   ============================================================ */
+.field {
+  width: 100%;
+  font-family: var(--font-sans);
+  font-size: var(--fs-input);
+  color: var(--fg-1);
+  background: var(--field-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 10px 14px;
+  outline: none;
+  transition: border-color var(--dur-fast) var(--ease-std),
+    background-color var(--dur-fast) var(--ease-std);
+}
+.field::placeholder { color: var(--fg-5); }
+.field:hover:not(:disabled) { border-color: var(--line-strong); }
+.field:focus { border-color: var(--accent); background: var(--field-bg-focus); }
+.field:disabled { opacity: 0.5; cursor: not-allowed; }
+
+textarea.field { resize: none; line-height: var(--lh-body); }
+
+select.field {
+  appearance: none;
+  cursor: pointer;
+  padding-right: 34px;
+  /* Стрелка — два плоских треугольника, без градиента-«обманки». */
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--fg-4) 50%),
+    linear-gradient(135deg, var(--fg-4) 50%, transparent 50%);
+  background-position: calc(100% - 17px) calc(50% + 1px), calc(100% - 12px) calc(50% + 1px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+/* Выпадающий список рисует ОС — пункты красим явно, иначе белое на белом. */
+select.field option { background: var(--bg-overlay); color: var(--fg-1); }
+
+/* Правка числа прямо в ячейке таблицы: рамка появляется только под курсором. */
+.cell-input {
+  width: 100%;
+  font-family: var(--font-sans);
+  font-size: var(--fs-body-sm);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--fg-1);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-xs);
+  padding: 5px 8px;
+  outline: none;
+  transition: border-color var(--dur-fast) var(--ease-std), background-color var(--dur-fast) var(--ease-std);
+}
+.cell-input:hover:not(:read-only) { border-color: var(--line-strong); }
+.cell-input:focus { border-color: var(--accent); background: var(--bg-raised); }
+
+/* ============================================================
+   ЧИПЫ
+   ============================================================ */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: var(--r-xs);
+  font-size: var(--fs-caption);
+  color: var(--fg-3);
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  white-space: nowrap;
+}
+.chip-accent {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 500;
+}
+
+/* ============================================================
+   КОНТРОЛЫ НАСТРОЕК
+   ============================================================ */
+
+/* Тумблер вкл/выкл. Включённый залит акцентом: это то же «активное
+   состояние», что и у пункта меню, только в масштабе контрола. */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 24px;
+  flex-shrink: 0;
+  padding: 0;
+  border-radius: 999px;
+  background: var(--bg-raised);
+  border: 1px solid var(--line-strong);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-std),
+    border-color var(--dur-fast) var(--ease-std);
+}
+.switch:hover:not(:disabled) { border-color: var(--fg-5); }
+.switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.switch-knob {
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--fg-4);
+  transform: translateY(-50%);
+  transition: transform var(--dur-fast) var(--ease-std),
+    background-color var(--dur-fast) var(--ease-std);
+}
+.switch.is-on { background: var(--accent); border-color: var(--accent); }
+.switch.is-on .switch-knob { transform: translate(16px, -50%); background: var(--accent-ink); }
+
+/* Сегментный выбор «один из немногих» (тема). Активный сегмент — рамка
+   акцентом на приподнятой заливке, как активный пункт меню. */
+.seg {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+}
+.seg-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 13px;
+  border-radius: calc(var(--r-sm) - 4px);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--fg-3);
+  font-family: var(--font-sans);
+  font-size: var(--fs-body-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color var(--dur-fast) var(--ease-std),
+    border-color var(--dur-fast) var(--ease-std), color var(--dur-fast) var(--ease-std);
+}
+.seg-item:hover { background: var(--hover-1); color: var(--fg-1); }
+.seg-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.seg-item.is-active {
+  background: var(--bg-surface);
+  border-color: var(--accent);
+  color: var(--fg-1);
+}
+
+/* Опасный вариант второстепенной кнопки: очистка данных и подобное. */
+.btn-secondary.is-danger { color: var(--danger); border-color: var(--danger-soft); }
+.btn-secondary.is-danger:hover:not(:disabled) {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+/* ============================================================
+   СКРОЛЛБАРЫ
+   ============================================================ */
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+.scroll-thin { scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; }
+.scroll-thin::-webkit-scrollbar { width: 8px; height: 8px; }
+.scroll-thin::-webkit-scrollbar-track { background: transparent; }
+.scroll-thin::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 4px; }
+.scroll-thin::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); }
+
+/* ============================================================
+   АНИМАЦИИ ПОЯВЛЕНИЯ
+   Только сдвиг и прозрачность, никакого scale: элементы остаются на местах.
+   ============================================================ */
+.rise-in { animation: rise-in var(--dur-base) var(--ease-out) both; }
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(8px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rise-in, .panel { animation: none; }
+}
+
+/* ============================================================
+   SVG-ГЛИФЫ
+   «Дорисовка» контура при открытии страницы и вращение при генерации.
+   pathLength=1 на каждом элементе нормализует длину: одна пара
+   dasharray/dashoffset рисует и линию, и прямоугольник, и окружность.
+   ============================================================ */
+.glyph-draw .gd {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: glyph-draw 700ms var(--ease-out) forwards;
+}
+@keyframes glyph-draw { to { stroke-dashoffset: 0; } }
+
+.glyph-spin {
+  animation: glyph-rotate 1.2s linear infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+@keyframes glyph-rotate { to { transform: rotate(360deg); } }
+
+.glyph-pulse { animation: glyph-pulse 1.4s ease-in-out infinite; }
+@keyframes glyph-pulse {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 0.9; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glyph-draw .gd { animation: none; stroke-dashoffset: 0; }
+  .glyph-spin, .glyph-pulse { animation: none; }
+}
+
+/* ============================================================
+   ШТОРКИ И ПОПОВЕРЫ
+   ============================================================ */
+/* Нижняя шторка (мобильные настройки чата, аккаунт). Ездит transition-ом:
+   состояние «открыто» не зависит от того, доиграла ли анимация. */
+.sheet-bottom {
+  position: fixed;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  z-index: 70;
+  border-radius: var(--r-lg);
+  background: var(--bg-overlay);
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.45);
+  padding: 8px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  transition: transform 300ms var(--ease-out);
+}
+.sheet-bottom.is-closed { transform: translateY(130%); }
+
+.sheet-grabber {
+  margin: 4px auto 12px;
+  height: 4px;
+  width: 36px;
+  border-radius: 999px;
+  background: var(--line-strong);
+}
+
+/* ============================================================
+   ИНДИКАТОР «ИИ ДУМАЕТ»
+   ============================================================ */
+.thinking-dots { display: inline-flex; gap: 4px; align-items: center; }
+.thinking-dots span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--fg-4);
+  animation: thinking 1.2s ease-in-out infinite;
+}
+.thinking-dots span:nth-child(2) { animation-delay: 0.15s; }
+.thinking-dots span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes thinking {
+  0%, 60%, 100% { opacity: 0.28; }
+  30% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thinking-dots span { animation: none; opacity: 0.6; }
+}
+
+/* ============================================================
+   НАСТРОЙКА «МЕНЬШЕ ДВИЖЕНИЯ»
+   data-motion="reduce" на <html> (настройки → «Внешний вид») схлопывает
+   анимации и переходы до мгновенных — тот же эффект, что системный
+   prefers-reduced-motion, но по явному выбору пользователя.
+   ============================================================ */
+:root[data-motion="reduce"] *,
+:root[data-motion="reduce"] *::before,
+:root[data-motion="reduce"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-delay: 0ms !important;
+  transition-duration: 0.01ms !important;
+  transition-delay: 0ms !important;
+}
+
+/* ============================================================
+   ЗОНА ПРИЁМА ФАЙЛОВ (пустой экран инструмента)
+   Большая кликабельная карточка: пунктир — отдельный SVG-прямоугольник
+   (штрихи со скруглёнными концами медленно «ползут» по контуру), в центре
+   глиф с ныряющей в кадр стрелкой и расходящимися кольцами — сервис
+   ждёт действия. Ховер поднимает фон и контур, стрелка ускоряется.
+   ============================================================ */
+.dropzone {
+  position: relative;
+  cursor: pointer;
+  background: var(--bg-raised);
+  color: var(--fg-3);
+  transition: background-color 200ms var(--ease-std), transform 200ms var(--ease-out), box-shadow 200ms var(--ease-std);
+}
+.dropzone::before {
+  /* мягкое свечение из центра — появляется на ховере */
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(60% 70% at 50% 45%, var(--hover-2), transparent 70%);
+  opacity: 0;
+  transition: opacity 260ms var(--ease-std);
+  pointer-events: none;
+}
+.dropzone:hover, .dropzone.is-armed {
+  background: color-mix(in srgb, var(--bg-raised) 88%, var(--fg-1) 12%);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+}
+.dropzone:hover::before, .dropzone.is-armed::before { opacity: 1; }
+.dropzone:hover { transform: translateY(-2px); }
+.dropzone:active { transform: translateY(0) scale(0.995); }
+.dropzone:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+
+/* Контур: SVG на всю карточку, штрихи ползут по часовой. */
+.dropzone-outline {
+  /* отступ 1px: штрих 2px центрируется по кромке и не режется */
+  position: absolute;
+  inset: 1px;
+  width: calc(100% - 2px);
+  height: calc(100% - 2px);
+  overflow: visible;
+  pointer-events: none;
+}
+.dropzone-outline rect {
+  fill: none;
+  stroke: var(--line-strong);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 12 10;
+  animation: dropzone-march 1.6s linear infinite;
+  transition: stroke 200ms var(--ease-std);
+}
+.dropzone:hover .dropzone-outline rect, .dropzone.is-armed .dropzone-outline rect { stroke: var(--fg-3); }
+@keyframes dropzone-march { to { stroke-dashoffset: -22; } }
+
+/* Глиф: кольца расходятся, стрелка ныряет в кадр. */
+.dropzone-glyph { color: var(--fg-2); transition: transform 260ms var(--ease-out); }
+.dropzone:hover .dropzone-glyph { transform: scale(1.06); }
+.dz-ring {
+  fill: none;
+  stroke: var(--fg-5);
+  stroke-width: 1.3;
+  transform-origin: 48px 48px;
+  animation: dz-ring 2.8s var(--ease-std) infinite;
+}
+.dz-ring:nth-child(2) { animation-delay: 1.4s; }
+@keyframes dz-ring {
+  0%   { transform: scale(0.72); opacity: 0; }
+  20%  { opacity: 0.9; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+.dz-arrow { animation: dz-bob 1.6s ease-in-out infinite; }
+.dropzone:hover .dz-arrow { animation-duration: 0.9s; }
+@keyframes dz-bob {
+  0%, 100% { transform: translateY(0); opacity: 0.55; }
+  50%      { transform: translateY(7px); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dropzone-outline rect, .dz-ring, .dz-arrow { animation: none; }
+  .dz-ring { opacity: 0.35; transform: scale(1.15); }
+  .dropzone:hover { transform: none; }
+}
+
+/* ============================================================
+   ПРЕВЬЮ-СЕТКА МАТЕРИАЛОВ (пустой экран «Генерация материала»)
+   Пять живых заготовок в раскладке будущей галереи. Все циклы бесшовные:
+   либо alternate (туда-обратно), либо путь замыкается в исходную точку,
+   либо элемент уезжает за кадр и вторая копия встаёт на его место.
+   Общего «скелетного» проблеска нет намеренно — живут только сами узоры.
+   ============================================================ */
+.mp-tile {
+  /* backwards: после появления transform возвращается к CSS-значению,
+     иначе анимация с fill:both перекрыла бы ховер. */
+  animation: rise-in 640ms var(--ease-out) backwards;
+  transition: transform 720ms var(--ease-out), box-shadow 720ms var(--ease-std);
+  will-change: transform;
+}
+.mp-tile:hover { transform: translateY(-4px) scale(1.012); box-shadow: 0 20px 48px rgba(0, 0, 0, 0.34); }
+.mp-svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+/* Дерево: волокна плывут туда-обратно. */
+.mp-drift { animation: mp-drift 16s ease-in-out infinite alternate; }
+@keyframes mp-drift { to { transform: translateX(-70px); } }
+
+/* Мрамор: облака дышат, прожилки дорисовываются и мягко тают. */
+.mp-breathe { transform-origin: 100px 100px; animation: mp-breathe 10s ease-in-out infinite alternate; }
+@keyframes mp-breathe { to { transform: scale(1.12) translate(-6px, 4px); } }
+.mp-vein {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: mp-vein 7s var(--ease-std) infinite;
+}
+@keyframes mp-vein {
+  0%   { stroke-dashoffset: 1; opacity: 0; }
+  12%  { opacity: 1; }
+  55%  { stroke-dashoffset: 0; opacity: 1; }
+  80%  { stroke-dashoffset: 0; opacity: 1; }
+  100% { stroke-dashoffset: 0; opacity: 0; }
+}
+
+/* Сталь: блики едут ровно на ширину кадра, вторая копия встаёт на место. */
+.mp-glide { animation: mp-glide 9s linear infinite; }
+@keyframes mp-glide { to { transform: translateX(-200px); } }
+
+/* Бархат: пятно света ходит по замкнутому кругу. */
+.mp-velvet-glow { animation: mp-velvet 14s ease-in-out infinite; }
+@keyframes mp-velvet {
+  0%   { transform: translate(60px, 60px); }
+  25%  { transform: translate(150px, 50px); }
+  50%  { transform: translate(140px, 150px); }
+  75%  { transform: translate(50px, 140px); }
+  100% { transform: translate(60px, 60px); }
+}
+
+/* Терраццо: крошка проявляется волнами. */
+.mp-chip { animation: mp-chip 4.5s ease-in-out infinite; }
+@keyframes mp-chip {
+  0%, 100% { transform: scale(0.82); opacity: 0.35; }
+  30%, 70% { transform: scale(1); opacity: 0.9; }
+}
+
+/* Слот «ваш материал»: пунктир ползёт, искра мерцает. */
+.mp-slot {
+  position: relative;
+  cursor: pointer;
+  background: var(--bg-surface);
+  transition: background-color 400ms var(--ease-std), transform 720ms var(--ease-out), box-shadow 720ms var(--ease-std);
+}
+.mp-slot:hover { background: var(--bg-raised); }
+.mp-slot:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.mp-slot-outline {
+  position: absolute;
+  inset: 1px;
+  width: calc(100% - 2px);
+  height: calc(100% - 2px);
+  overflow: visible;
+  pointer-events: none;
+}
+.mp-slot-outline rect {
+  fill: none;
+  stroke: var(--line-strong);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-dasharray: 8 8;
+  animation: mp-march 1.8s linear infinite;
+  transition: stroke 400ms var(--ease-std);
+}
+/* Смещение = период штриха (8 + 8): конец цикла совпадает с началом. */
+@keyframes mp-march { to { stroke-dashoffset: -16; } }
+.mp-slot:hover .mp-slot-outline rect { stroke: var(--fg-3); }
+.mp-slot-spark { animation: mp-spark 2.2s ease-in-out infinite; }
+@keyframes mp-spark {
+  0%, 100% { transform: scale(0.9) rotate(-8deg); opacity: 0.6; }
+  50%      { transform: scale(1.1) rotate(8deg); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mp-tile, .mp-drift, .mp-breathe, .mp-vein, .mp-glide, .mp-velvet-glow, .mp-chip,
+  .mp-slot-outline rect, .mp-slot-spark { animation: none; }
+  .mp-vein { stroke-dashoffset: 0; opacity: 1; }
+  .mp-velvet-glow { transform: translate(90px, 80px); }
+  .mp-chip { opacity: 0.85; }
+  .mp-tile:hover { transform: none; }
+}

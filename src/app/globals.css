@@ -1,0 +1,230 @@
+@import "../styles/ds/colors_and_type.css";
+@import "../styles/ds/surfaces.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Шрифты. Отдаются с Cache-Control: immutable (next.config.js) — при замене
+   содержимого файла ОБЯЗАТЕЛЬНО менять имя (-v3 и т.д.). */
+@font-face {
+  font-family: "Garet-Book";
+  src: url("/fonts/garet-book/Garet-Book-v2.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Unbounded";
+  src: url("/fonts/unbounded/Unbounded-Variable-v2.woff2") format("woff2-variations"),
+       url("/fonts/unbounded/Unbounded-Variable-v2.ttf") format("truetype-variations");
+  font-weight: 200 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@layer base {
+  :root {
+    /* shadcn-совместимые переменные — тёмно-серая тема */
+    --background: 240 5% 12%;          /* #1e1e21 */
+    --foreground: 0 0% 100%;
+
+    --card: 240 5% 15%;                /* #26262a */
+    --card-foreground: 0 0% 100%;
+
+    --primary: 0 0% 100%;              /* чистый белый акцент */
+    --primary-foreground: 240 6% 10%;
+
+    --secondary: 240 5% 19%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 240 4% 24%;
+    --muted-foreground: 0 0% 66%;
+
+    --destructive: 3 70% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 0 0% 100%;
+    --input: 0 0% 100%;
+    --ring: 0 0% 100%;
+
+    --radius: 0.625rem;
+  }
+
+  html {
+    /* Страховка от горизонтального скролла: длинные таблицы смет и поповеры
+       не должны раздвигать страницу. clip, а не hidden — не создаёт
+       скролл-контейнер, поэтому sticky продолжает работать от вьюпорта. */
+    overflow-x: clip;
+    height: 100%;
+  }
+
+  body {
+    @apply font-sans;
+    color: var(--fg-1);
+    /* Плоская заливка. Никаких радиальных пятен и attachment: fixed. */
+    background: var(--bg-page);
+    min-height: 100vh;
+    min-height: 100dvh;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+    font-weight: 500;
+    letter-spacing: var(--ls-tight);
+    color: var(--fg-1);
+  }
+
+  /* Preflight вешает на голые <pre>/<code> fontFamily.mono — моноширинного в
+     системе нет, ключ переопределён основным шрифтом в tailwind.config. */
+  pre, code, kbd, samp { font-family: var(--font-sans); }
+
+  ::selection { background: var(--selection); }
+}
+
+@layer components {
+  /* Оболочка обычной (не чатовой) страницы. Верхний отступ на мобильных
+     складывается из высоты верхней панели (3.5rem, см. AppSidebar) и воздуха;
+     на lg панели нет, остаётся только воздух. */
+  .page-shell {
+    @apply min-w-0 flex flex-col;
+    padding-top: calc(5rem + env(safe-area-inset-top, 0px));
+    padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+    padding-left: calc(1.25rem + env(safe-area-inset-left, 0px));
+    padding-right: calc(1.25rem + env(safe-area-inset-right, 0px));
+    min-height: 100dvh;
+  }
+  @media (min-width: 768px) {
+    .page-shell {
+      padding-left: calc(2.5rem + env(safe-area-inset-left, 0px));
+      padding-right: calc(2.5rem + env(safe-area-inset-right, 0px));
+    }
+  }
+  @media (min-width: 1024px) {
+    .page-shell {
+      padding-top: calc(2.5rem + env(safe-area-inset-top, 0px));
+      padding-bottom: calc(2.5rem + env(safe-area-inset-bottom, 0px));
+    }
+  }
+
+  .page-content { @apply mx-auto w-full max-w-[1080px]; }
+  .page-content-wide { @apply mx-auto w-full max-w-[1320px]; }
+  .page-content-narrow { @apply mx-auto w-full max-w-[760px]; }
+}
+
+/* ============================================================
+   ИНТРО-ЗАСТАВКА
+   Рукописный эскиз «Dizzit AI» дорисовывается штрих за штрихом
+   (немного криво), затем выравнивается и растворяется в чистый
+   логотип. Тайминги дорисовки — на --d каждого штриха; смена фаз
+   (straighten → fade → clean) — фиксированными задержками ниже.
+   Снятие оверлея делает JS-таймер, НЕ конец анимации: клок анимаций
+   в скрытой вкладке замирает, и заставка не должна зависать навсегда.
+   ============================================================ */
+.intro-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-page);
+  cursor: pointer;
+  transition: opacity 500ms var(--ease-std);
+}
+/* Заставка всегда тёмная — фирменный момент. JS-морф рисует непрозрачными
+   константами под тёмный фон (intro-splash.tsx), поэтому в светлой теме
+   переопределяем токены обратно на тёмные значения только внутри оверлея. */
+:root[data-theme="light"] .intro-overlay {
+  background: #1e1e21;
+  --fg-2: rgba(255, 255, 255, 0.86);
+  --fg-4: rgba(255, 255, 255, 0.48);
+  --fg-5: rgba(255, 255, 255, 0.34);
+  --accent: #ffffff;
+}
+.intro-overlay.is-leaving {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.intro-stage {
+  position: relative;
+  width: min(88vw, 920px);
+}
+
+.intro-sketch {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+/* Штрих «от руки»: pathLength=1 нормализует контур, одна пара
+   dasharray/dashoffset рисует и дугу, и зигзаг, и окружность. */
+.intro-sketch .st {
+  fill: none;
+  stroke-width: 5.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+}
+/* Дорисовка + подготовка к морфу: цвет доводится до финального, снимается
+   персональный наклон буквы (transform из атрибута → rotate(0)). Толщина НЕ
+   меняется — вес букв набирает сам морф заливкой (intro-splash.tsx), который
+   перетекает из этих штрихов прямо в контуры глифов Unbounded. */
+.intro-sketch .st-main { stroke: var(--fg-2); animation: intro-draw 500ms var(--ease-std) var(--d, 0ms) forwards, intro-ink-main 450ms var(--ease-out) 1900ms forwards; }
+.intro-sketch .st-ai { stroke: var(--fg-4); animation: intro-draw 500ms var(--ease-std) var(--d, 0ms) forwards, intro-ink-ai 450ms var(--ease-out) 1900ms forwards; }
+.intro-sketch .st-dot {
+  stroke: var(--accent);
+  fill: rgba(255, 255, 255, 0);
+  animation: intro-draw 500ms var(--ease-std) var(--d, 0ms) forwards, intro-dot-final 500ms var(--ease-out) 1900ms forwards;
+}
+
+/* Кривизна эскиза: группа наклонена и выравнивается перед морфом —
+   «набросок становится ровным», дальше геометрию ведёт JS-морф. */
+.intro-sketch-tilt {
+  transform: rotate(-2.2deg);
+  transform-origin: 50% 50%;
+  transform-box: fill-box;
+  animation: intro-straighten 450ms var(--ease-out) 1900ms forwards;
+}
+
+.intro-hint {
+  position: absolute;
+  top: calc(100% + 44px);
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--fg-5);
+  opacity: 0;
+  animation: intro-fade-in 600ms var(--ease-std) 1200ms forwards;
+}
+
+@keyframes intro-draw { to { stroke-dashoffset: 0; } }
+@keyframes intro-straighten { to { transform: rotate(0deg); } }
+@keyframes intro-fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+/* Финальный цвет чернил + снятие персонального наклона буквы. Серый —
+   непрозрачный эквивалент --fg-4 на фоне: фигуры морфа перекрываются,
+   и полупрозрачный цвет светлел бы в местах наложения. */
+@keyframes intro-ink-main { to { stroke: #ffffff; transform: rotate(0deg); } }
+@keyframes intro-ink-ai { to { stroke: rgb(138, 138, 140); transform: rotate(0deg); } }
+
+/* Точка: перекатывается на позицию точки логотипа (правый край «I» + зазор,
+   из расчёта build-intro-morph) и заливается белым — JS-морфу она не нужна,
+   круг и так круг. */
+@keyframes intro-dot-final { to { cx: 514.7px; cy: 94.8px; r: 12.5px; fill: #ffffff; stroke-width: 0.5; } }
+
+/* Страховка на случай, если JS не успел снять заставку у пользователя
+   с reduced-motion (обычно он её вообще не увидит — см. intro-splash.tsx). */
+@media (prefers-reduced-motion: reduce) {
+  .intro-sketch { display: none; }
+  .intro-clean, .intro-clean-dot { animation: none; opacity: 1; }
+  .intro-hint { animation: none; opacity: 1; }
+}
