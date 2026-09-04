@@ -1,9 +1,10 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Layers, Package, Sofa, Sparkles, Trees } from "lucide-react"
+import { ChevronLeft, ChevronRight, Layers, Package, Sofa, Sparkles, Trees } from "lucide-react"
 
 import { RenderReveal } from "@/components/tool/render-reveal"
+import { RenderStrip, RenderTray } from "@/components/tool/render-tray"
 import { ToolCard } from "@/components/tool/tool-card"
 import {
   ToolComposer,
@@ -74,6 +75,15 @@ function baseName(fileName: string): string {
  * пачка рендеров и контекст — в его панели настроек. Пока ни рендера не
  * приложено и галерея пуста, композера нет — по центру большая зона
  * «Добавить рендер»; композер появляется вместе с первым файлом.
+ *
+ * Пока пачка приложена, но не отправлена, экран переключается в режим
+ * просмотра: справа — панель-галерея с миниатюрами (зеркало сайдбара),
+ * в центре — выбранный рендер во весь экран. Так десяток файлов не
+ * теснится в чипе композера, а виден целиком.
+ *
+ * Обработка применяется к РАБОЧЕМУ НАБОРУ, а не ко всей пачке: в обычном
+ * режиме это один рендер (тот, что на сцене), в режиме «Выбрать» панели —
+ * несколько. Композер показывает размер набора рядом с полем комментария.
  */
 export default function EnhancePage() {
   const mounted = useMounted()
@@ -89,6 +99,12 @@ export default function EnhancePage() {
   const remove = useEnhanceStore((state) => state.remove)
 
   const [attachments, setAttachments] = useState<AttachedRender[]>([])
+  // Какой рендер пачки показан большим на сцене; по умолчанию первый.
+  const [focus, setFocus] = useState(0)
+  // Рабочий набор — по previewUrl: он уникален и переживает удаление
+  // соседей (индексы бы поехали). Устаревшие записи отсеиваются при чтении.
+  const [picked, setPicked] = useState<Set<string>>(() => new Set())
+  const [picking, setPicking] = useState(false)
   const [note, setNote] = useState("")
   const [context, setContext] = useState<EnhanceContext>("auto")
   const [dragOver, setDragOver] = useState(false)
@@ -102,6 +118,20 @@ export default function EnhancePage() {
   const hasAttachments = attachments.length > 0
   const showComposer = hasAttachments || visible.length > 0
   const composer = usePresence(showComposer)
+  const tray = usePresence(hasAttachments)
+
+  // Индекс не должен указывать за край пачки после удаления файлов.
+  const focusIndex = Math.min(focus, Math.max(0, attachments.length - 1))
+  const current = attachments[focusIndex] ?? null
+
+  /* Что уйдёт в обработку. В режиме выбора — ровно отмеченное (может быть
+     пусто); вне его отмеченное, а если ничего не отмечали — рендер со сцены. */
+  const pickedItems = attachments.filter((item) => picked.has(item.previewUrl))
+  const workingSet = picking || pickedItems.length > 0 ? pickedItems : current ? [current] : []
+  const selectionLabel =
+    workingSet.length === 0
+      ? "ничего не выбрано"
+      : `${plural(workingSet.length, ["выбран", "выбрано", "выбрано"])} ${workingSet.length} ${plural(workingSet.length, LABELS.batchNoun)}`
 
   // GC общего хранилища блобов — после гидрации сторов ВСЕХ инструментов.
   useBlobGc()
@@ -112,6 +142,8 @@ export default function EnhancePage() {
       if (target) URL.revokeObjectURL(target.previewUrl)
       return current.filter((_, i) => i !== index)
     })
+    // Убрали рендер левее сцены — рендер на сцене сдвинулся на позицию назад.
+    setFocus((value) => (index < value ? value - 1 : value))
   }, [])
 
   const clearAttachments = useCallback(() => {
@@ -119,7 +151,37 @@ export default function EnhancePage() {
       current.forEach((item) => URL.revokeObjectURL(item.previewUrl))
       return []
     })
+    setFocus(0)
+    setPicked(new Set())
+    setPicking(false)
   }, [])
+
+  /* Клик по плитке: обычный режим — один рендер на сцену и в набор;
+     режим «Выбрать» — переключить плитку в наборе, на сцену её же. */
+  const selectAttachment = useCallback(
+    (index: number) => {
+      const item = attachments[index]
+      if (!item) return
+      setFocus(index)
+      setPicked((set) => {
+        if (!picking) return new Set([item.previewUrl])
+        const next = new Set(set)
+        if (next.has(item.previewUrl)) next.delete(item.previewUrl)
+        else next.add(item.previewUrl)
+        return next
+      })
+    },
+    [attachments, picking]
+  )
+
+  const togglePicking = useCallback(() => setPicking((value) => !value), [])
+
+  const pickAll = useCallback(() => {
+    setPicked((set) => {
+      const all = attachments.every((item) => set.has(item.previewUrl))
+      return all ? new Set() : new Set(attachments.map((item) => item.previewUrl))
+    })
+  }, [attachments])
 
   /* Приём файлов — из диалога, переноса или буфера. Правила одинаковые для
      всех трёх путей, лишнее сверх пачки отбрасывается с предупреждением. */
@@ -162,6 +224,36 @@ export default function EnhancePage() {
   }, [])
 
   const pickFiles = () => fileInputRef.current?.click()
+
+  /* Стрелки листают сцену. Вне режима выбора листание и есть выбор
+     (набор — один рендер), в режиме выбора набор не трогаем. */
+  const step = useCallback(
+    (delta: number) => {
+      const next = Math.min(attachments.length - 1, Math.max(0, focusIndex + delta))
+      const item = attachments[next]
+      if (!item) return
+      setFocus(next)
+      if (!picking) setPicked(new Set([item.previewUrl]))
+    },
+    [attachments, focusIndex, picking]
+  )
+  const selectPrev = useCallback(() => step(-1), [step])
+  const selectNext = useCallback(() => step(1), [step])
+
+  // Клавиатура: стрелки — листание, Escape — выход из режима выбора.
+  // Кроме случая, когда каретка в поле ввода.
+  useEffect(() => {
+    if (!hasAttachments) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return
+      if (event.key === "ArrowLeft") selectPrev()
+      if (event.key === "ArrowRight") selectNext()
+      if (event.key === "Escape") setPicking(false)
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [hasAttachments, selectPrev, selectNext])
 
   /* Собственно обработка: исходник уже в IndexedDB, результат и миниатюра
      доезжают туда же. Метаданные ведут карточку через статусы. */
@@ -228,13 +320,23 @@ export default function EnhancePage() {
     [activeProject, createProject, add, runEnhance]
   )
 
+  /* В обработку уходит рабочий набор; остальная пачка остаётся в панели,
+     чтобы к ней можно было применить другие настройки. */
   const submit = () => {
     if (attachments.length === 0) {
       pickFiles()
       return
     }
-    const files = attachments.map((item) => item.file)
-    clearAttachments()
+    if (workingSet.length === 0) return
+    const sent = new Set(workingSet.map((item) => item.previewUrl))
+    const files = workingSet.map((item) => item.file)
+    setAttachments((current) => {
+      current.filter((item) => sent.has(item.previewUrl)).forEach((item) => URL.revokeObjectURL(item.previewUrl))
+      return current.filter((item) => !sent.has(item.previewUrl))
+    })
+    setPicked(new Set())
+    setPicking(false)
+    setFocus(0)
     const batchNote = note.trim()
     setNote("")
     void startBatch(files, batchNote, context)
@@ -294,7 +396,13 @@ export default function EnhancePage() {
       onDragOver={(event) => event.preventDefault()}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
-      className={cn("page-shell", showComposer && "pb-32")}
+      className={cn(
+        "page-shell transition-[margin] duration-300",
+        showComposer && "pb-32",
+        // Справа — место под панель-галерею, зеркально отступу под сайдбар.
+        tray.present && "lg:mr-[296px]"
+      )}
+      style={{ transitionTimingFunction: "var(--ease-out)" }}
     >
       <input
         ref={fileInputRef}
@@ -327,7 +435,65 @@ export default function EnhancePage() {
       ) : null}
 
       <div className="page-content-wide flex flex-1 flex-col">
-        {visible.length === 0 ? (
+        {current ? (
+          /* Режим просмотра пачки: выбранный рендер во весь экран, на узких
+             экранах под ним — полоска миниатюр (на lg они в правой панели). */
+          <div className="flex min-h-0 flex-1 flex-col gap-3">
+            <div className="stage min-h-[320px] flex-1">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img key={current.previewUrl} src={current.previewUrl} alt={current.file.name} draggable={false} />
+
+              <span className="stage-badge left-3 top-3">
+                <span className="truncate">{current.file.name}</span>
+                <span style={{ color: "rgba(255,255,255,0.55)" }}>
+                  {current.width}×{current.height}
+                </span>
+              </span>
+              {attachments.length > 1 ? (
+                <span className="stage-badge right-3 top-3 tabular-nums">
+                  {focusIndex + 1} / {attachments.length}
+                </span>
+              ) : null}
+
+              {attachments.length > 1 ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={selectPrev}
+                    disabled={focusIndex === 0}
+                    aria-label="Предыдущий рендер"
+                    className="stage-nav left-3"
+                  >
+                    <ChevronLeft className="h-4 w-4" strokeWidth={1.8} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={selectNext}
+                    disabled={focusIndex === attachments.length - 1}
+                    aria-label="Следующий рендер"
+                    className="stage-nav right-3"
+                  >
+                    <ChevronRight className="h-4 w-4" strokeWidth={1.8} />
+                  </button>
+                </>
+              ) : null}
+            </div>
+
+            <div className="lg:hidden">
+              <RenderStrip
+                attachments={attachments}
+                focus={focusIndex}
+                picked={picked}
+                picking={picking}
+                onTogglePicking={togglePicking}
+                onSelect={selectAttachment}
+                onRemove={removeAttachment}
+                onPickFiles={pickFiles}
+                maxFiles={MAX_BATCH}
+              />
+            </div>
+          </div>
+        ) : visible.length === 0 ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-4 py-6">
             {/* Большая зона приёма: клик открывает диалог, перенос и вставка
                 из буфера работают на всей странице. Контур — SVG-пунктир,
@@ -335,11 +501,8 @@ export default function EnhancePage() {
             <button
               type="button"
               onClick={pickFiles}
-              aria-label={hasAttachments ? "Добавить ещё рендер" : "Добавить рендер"}
-              className={cn(
-                "dropzone flex w-full max-w-[720px] flex-col items-center justify-center gap-5 px-6 py-16 sm:py-20",
-                hasAttachments && "is-armed"
-              )}
+              aria-label="Добавить рендер"
+              className="dropzone flex w-full max-w-[720px] flex-col items-center justify-center gap-5 px-6 py-16 sm:py-20"
               style={{ borderRadius: "var(--r-xl)" }}
             >
               <svg className="dropzone-outline" aria-hidden>
@@ -350,12 +513,10 @@ export default function EnhancePage() {
 
               <span className="relative flex flex-col items-center gap-1.5">
                 <span className="ds-h2" style={{ color: "var(--fg-1)" }}>
-                  {hasAttachments ? "Добавить ещё рендер" : "Добавить рендер"}
+                  Добавить рендер
                 </span>
                 <span className="ds-body max-w-md text-center" style={{ color: "var(--fg-3)" }}>
-                  {hasAttachments
-                    ? `Приложено ${attachments.length} ${plural(attachments.length, LABELS.batchNoun)} — нажмите «${LABELS.submitLabel}» внизу или добавьте ещё, до ${MAX_BATCH} за раз.`
-                    : `Нажмите, перетащите сюда или вставьте из буфера. PNG, JPG или WEBP до 32 МБ, до ${MAX_BATCH} файлов за раз.`}
+                  Нажмите, перетащите сюда или вставьте из буфера. PNG, JPG или WEBP до 32 МБ, до {MAX_BATCH} файлов за раз.
                 </span>
               </span>
             </button>
@@ -387,7 +548,10 @@ export default function EnhancePage() {
       {composer.present ? (
         <div
           data-state={composer.state}
-          className="presence-rise pointer-events-none fixed inset-x-3 bottom-3 z-30 flex justify-center lg:left-[312px] lg:right-8 lg:bottom-5"
+          className={cn(
+            "presence-rise pointer-events-none fixed inset-x-3 bottom-3 z-30 flex justify-center lg:left-[312px] lg:bottom-5",
+            tray.present ? "lg:right-[312px]" : "lg:right-8"
+          )}
         >
           <ToolComposer
             attachments={attachments}
@@ -401,8 +565,40 @@ export default function EnhancePage() {
             options={CONTEXT_OPTIONS}
             labels={LABELS}
             onSubmit={submit}
+            selectionLabel={hasAttachments ? selectionLabel : null}
           />
         </div>
+      ) : null}
+
+      {/* Правая панель-галерея пачки — зеркало сайдбара: та же ширина,
+          отступы и поверхность. Только на lg; ниже миниатюры под сценой. */}
+      {tray.present ? (
+        <aside
+          data-state={tray.state}
+          aria-label="Приложенные рендеры"
+          className="presence-slide fixed bottom-4 right-4 top-4 z-40 hidden w-[264px] flex-col overflow-hidden lg:flex"
+          style={{
+            background: "var(--bg-surface)",
+            border: "1px solid var(--line)",
+            borderRadius: "var(--r-xl)",
+            boxShadow: "0 16px 40px rgba(0, 0, 0, 0.35)",
+          }}
+        >
+          <RenderTray
+            attachments={attachments}
+            focus={focusIndex}
+            picked={picked}
+            picking={picking}
+            onTogglePicking={togglePicking}
+            onPickAll={pickAll}
+            onSelect={selectAttachment}
+            onRemove={removeAttachment}
+            onPickFiles={pickFiles}
+            onClear={clearAttachments}
+            maxFiles={MAX_BATCH}
+            noun={LABELS.batchNoun}
+          />
+        </aside>
       ) : null}
     </div>
   )

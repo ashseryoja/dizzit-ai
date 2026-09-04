@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import {
+  CheckSquare,
   Image as ImageIcon,
   Settings2,
   Sparkles,
@@ -69,6 +70,7 @@ export function ToolComposer<T extends string>({
   labels,
   onSubmit,
   maxFiles = MAX_BATCH,
+  selectionLabel,
 }: {
   attachments: AttachedRender[]
   onPickFiles: () => void
@@ -83,7 +85,16 @@ export function ToolComposer<T extends string>({
   onSubmit: () => void
   /** Лимит файлов в пачке; по умолчанию общий MAX_BATCH. */
   maxFiles?: number
+  /**
+   * Режим выбора: пачкой управляет внешняя панель-галерея, а композер
+   * лишь показывает, над чем идёт работа («выбрано 5 рендеров»). Чипа
+   * с файлами и секции файлов в настройках при этом нет — там только
+   * инструменты обработки. null — режим тот же, но показывать нечего
+   * (пачка пуста).
+   */
+  selectionLabel?: string | null
 }) {
+  const selectionMode = selectionLabel !== undefined
   const [settingsOpen, setSettingsOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const settings = usePresence(settingsOpen)
@@ -122,6 +133,7 @@ export function ToolComposer<T extends string>({
           role="dialog"
           aria-label="Настройки"
         >
+          {selectionMode ? null : (
           <section>
             <div className="mb-2.5 flex items-center justify-between gap-3">
               <SectionLabel icon={ImageIcon}>{labels.filesTitle}</SectionLabel>
@@ -216,6 +228,7 @@ export function ToolComposer<T extends string>({
             )}
             <p className="ds-caption mt-2">{labels.filesCaption}</p>
           </section>
+          )}
 
           <section>
             <SectionLabel icon={OptionsIcon} className="mb-2.5">{labels.optionsTitle}</SectionLabel>
@@ -244,7 +257,19 @@ export function ToolComposer<T extends string>({
 
       {/* Сам композер. */}
       <div className="overlay-surface flex items-center gap-1.5 p-2 sm:gap-2">
-        {attachments.length > 0 ? (
+        {selectionMode ? (
+          selectionLabel ? (
+          /* Индикатор рабочего набора — что именно уйдёт в обработку. */
+          <span
+            className="flex h-10 shrink-0 items-center gap-2 rounded-[var(--r-sm)] px-3 text-[12px] tabular-nums"
+            style={{ background: "var(--bg-raised)", border: "1px solid var(--line-strong)", color: "var(--fg-2)" }}
+            aria-live="polite"
+          >
+            <CheckSquare className="h-3.5 w-3.5 shrink-0" strokeWidth={1.7} style={{ color: "var(--fg-4)" }} />
+            <span className="max-w-[180px] truncate">{selectionLabel}</span>
+          </span>
+          ) : null
+        ) : attachments.length > 0 ? (
           <span
             className="flex h-10 shrink-0 items-center gap-2 rounded-[var(--r-sm)] pl-1.5 pr-2"
             style={{ background: "var(--bg-raised)", border: "1px solid var(--line-strong)" }}
