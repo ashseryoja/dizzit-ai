@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR:-.}/scripts/check-tool-ui.mjs\" --hook",
+            "timeout": 20,
+            "statusMessage": "check:ui — общий слой и docs/TOOL_UI.md"
+          }
+        ]
+      }
+    ]
+  }
+}

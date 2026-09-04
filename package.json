@@ -10,7 +10,8 @@
     "dev": "next dev -p 3010",
     "build": "next build",
     "start": "next start -p 3010",
-    "lint": "next lint",
+    "lint": "next lint && node scripts/check-tool-ui.mjs",
+    "check:ui": "node scripts/check-tool-ui.mjs",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
