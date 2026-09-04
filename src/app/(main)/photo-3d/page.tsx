@@ -19,6 +19,7 @@ import { MAX_FILE_BYTES, isAcceptedRender, makeThumb, readImageSize } from "@/li
 import { SHAPE_LABEL } from "@/lib/furniture-wire"
 import { buildModelLocally, resolveShape, type FurnitureOption } from "@/lib/model-engine"
 import { useMounted } from "@/lib/use-mounted"
+import { usePresence } from "@/lib/use-presence"
 import { cn, createId, plural } from "@/lib/utils"
 import { useModelStore } from "@/stores/model-store"
 import { useProjectStore } from "@/stores/project-store"
@@ -73,6 +74,7 @@ export default function PhotoTo3DPage() {
   const [option, setOption] = useState<FurnitureOption>("auto")
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
+  const dragLayer = usePresence(dragOver)
   const dragDepth = useRef(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -81,6 +83,7 @@ export default function PhotoTo3DPage() {
   const selected = visible.find((item) => item.id === selectedId) ?? visible[0] ?? null
   const hasAttachments = attachments.length > 0
   const showComposer = hasAttachments || visible.length > 0
+  const composer = usePresence(showComposer)
 
   // GC общего хранилища блобов — после гидрации сторов ВСЕХ инструментов.
   useBlobGc()
@@ -242,9 +245,10 @@ export default function PhotoTo3DPage() {
         }}
       />
 
-      {dragOver ? (
+      {dragLayer.present ? (
         <div
-          className="pointer-events-none fixed inset-3 z-50 flex items-center justify-center"
+          data-state={dragLayer.state}
+          className="presence-fade pointer-events-none fixed inset-3 z-50 flex items-center justify-center"
           style={{
             border: "2px dashed var(--accent)",
             borderRadius: "var(--r-xl)",
@@ -315,8 +319,11 @@ export default function PhotoTo3DPage() {
         )}
       </div>
 
-      {showComposer ? (
-        <div className="pointer-events-none fixed inset-x-3 bottom-3 z-30 flex justify-center lg:left-[312px] lg:right-8 lg:bottom-5">
+      {composer.present ? (
+        <div
+          data-state={composer.state}
+          className="presence-rise pointer-events-none fixed inset-x-3 bottom-3 z-30 flex justify-center lg:left-[312px] lg:right-8 lg:bottom-5"
+        >
           <ToolComposer
             attachments={attachments}
             onPickFiles={pickFiles}
@@ -361,7 +368,7 @@ function ModelStage({
 
       {sourceThumb ? (
         <div
-          className="absolute left-3 top-3 flex items-center gap-2 rounded-[10px] p-1 pr-3"
+          className="fade-in absolute left-3 top-3 flex items-center gap-2 rounded-[10px] p-1 pr-3"
           style={{ background: "rgba(16,16,18,0.62)", border: "1px solid rgba(255,255,255,0.12)" }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -389,7 +396,7 @@ function ModelStage({
       </div>
 
       {model.status === "processing" ? (
-        <div className="pointer-events-none absolute inset-x-0 bottom-4 flex flex-col items-center gap-2">
+        <div className="fade-in pointer-events-none absolute inset-x-0 bottom-4 flex flex-col items-center gap-2">
           <ThinkingGlyph size={22} className="text-white/80" />
           <span className="text-[12px]" style={{ color: "var(--fg-3)" }}>
             строим модель по фото…
@@ -398,7 +405,7 @@ function ModelStage({
       ) : null}
 
       {model.status === "error" ? (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4 text-center">
+        <div className="fade-in absolute inset-0 flex flex-col items-center justify-center gap-3 p-4 text-center">
           <p className="max-w-[280px] text-[12.5px] leading-snug" style={{ color: "var(--fg-1)" }}>
             {model.error ?? "Не получилось."}
           </p>
@@ -411,7 +418,7 @@ function ModelStage({
 
       {done ? (
         <figcaption
-          className="absolute bottom-3 left-3 flex flex-col gap-0.5 rounded-[8px] px-2.5 py-1.5"
+          className="rise-in absolute bottom-3 left-3 flex flex-col gap-0.5 rounded-[8px] px-2.5 py-1.5"
           style={{ background: "rgba(16,16,18,0.62)" }}
         >
           <span className="text-[13px]" style={{ color: "rgba(255,255,255,0.92)" }}>

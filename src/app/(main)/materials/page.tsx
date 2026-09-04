@@ -30,6 +30,7 @@ import {
 } from "@/lib/enhance-engine"
 import { generateMaterial } from "@/lib/material-engine"
 import { useMounted } from "@/lib/use-mounted"
+import { usePresence } from "@/lib/use-presence"
 import { createId } from "@/lib/utils"
 import { useMaterialStore } from "@/stores/material-store"
 import { useProjectStore } from "@/stores/project-store"
@@ -96,6 +97,7 @@ export default function MaterialsPage() {
   const [note, setNote] = useState("")
   const [category, setCategory] = useState<MaterialCategory>("auto")
   const [dragOver, setDragOver] = useState(false)
+  const dragLayer = usePresence(dragOver)
   const dragDepth = useRef(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -316,9 +318,10 @@ export default function MaterialsPage() {
         }}
       />
 
-      {dragOver ? (
+      {dragLayer.present ? (
         <div
-          className="pointer-events-none fixed inset-3 z-50 flex items-center justify-center"
+          data-state={dragLayer.state}
+          className="presence-fade pointer-events-none fixed inset-3 z-50 flex items-center justify-center"
           style={{
             border: "2px dashed var(--accent)",
             borderRadius: "var(--r-xl)",
@@ -360,7 +363,7 @@ export default function MaterialsPage() {
         )}
       </div>
 
-      <div className="pointer-events-none fixed inset-x-3 bottom-3 z-30 flex justify-center lg:left-[312px] lg:right-8 lg:bottom-5">
+      <div className="presence-rise pointer-events-none fixed inset-x-3 bottom-3 z-30 flex justify-center lg:left-[312px] lg:right-8 lg:bottom-5">
         <ToolComposer
           attachments={attachments}
           onPickFiles={pickFiles}

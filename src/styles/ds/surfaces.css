@@ -411,6 +411,122 @@ select.field option { background: var(--bg-overlay); color: var(--fg-1); }
 }
 
 /* ============================================================
+   ПОПОВЕРЫ И ДРОПДАУНЫ
+   Всплывающий слой «вырастает» из своего триггера: прозрачность, сдвиг
+   на 6px от триггера и лёгкий scale от точки крепления (--popover-origin).
+   Scale здесь допустим в отличие от контента страницы: поповер не стоит
+   на месте, а появляется ИЗ кнопки — и ему нужно показать, откуда.
+   Вход — с мягким пружинным перелётом, выход — быстрее и без пружины.
+
+   Жизненный цикл: data-state="open" | "closed" (хук usePresence держит
+   элемент в DOM, пока играет выход). Пункты каскадом: .popover-stagger
+   выдаёт прямым потомкам нарастающую задержку.
+   ============================================================ */
+.popover {
+  --popover-origin: top center;
+  --popover-shift: -6px;
+  transform-origin: var(--popover-origin);
+  animation: popover-in 320ms var(--ease-spring) both;
+}
+.popover[data-state="closed"] {
+  opacity: 0;
+  pointer-events: none;
+  animation: popover-out 160ms var(--ease-std) forwards;
+}
+/* Крепление снизу (меню аккаунта, панель над композером): растёт вверх. */
+.popover-up {
+  --popover-origin: bottom center;
+  --popover-shift: 6px;
+}
+@keyframes popover-in {
+  from { opacity: 0; transform: translateY(var(--popover-shift)) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes popover-out {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to   { opacity: 0; transform: translateY(var(--popover-shift)) scale(0.98); }
+}
+
+/* Каскад пунктов: каждый следующий прямой потомок на 30ms позже. */
+.popover-stagger > * { animation: popover-item 260ms var(--ease-out) both; }
+.popover-stagger > *:nth-child(1) { animation-delay: 30ms; }
+.popover-stagger > *:nth-child(2) { animation-delay: 60ms; }
+.popover-stagger > *:nth-child(3) { animation-delay: 90ms; }
+.popover-stagger > *:nth-child(4) { animation-delay: 120ms; }
+.popover-stagger > *:nth-child(5) { animation-delay: 150ms; }
+.popover-stagger > *:nth-child(6) { animation-delay: 180ms; }
+.popover-stagger > *:nth-child(n + 7) { animation-delay: 210ms; }
+.popover[data-state="closed"].popover-stagger > * { animation: none; }
+@keyframes popover-item {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+/* Для меню, растущего вверх, каскад идёт снизу вверх — от триггера. */
+.popover-up.popover-stagger > * { animation-name: popover-item-up; }
+@keyframes popover-item-up {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Шеврон триггера: поворот в темпе поповера. */
+.chevron { transition: transform var(--dur-base) var(--ease-out); }
+.chevron.is-open { transform: rotate(180deg); }
+
+/* Слои с тем же жизненным циклом open/closed, но без scale:
+   presence-fade — плоские оверлеи (зона перетаскивания),
+   presence-rise — всплывающие снизу блоки (композер). */
+.presence-fade { animation: fade-in var(--dur-base) var(--ease-std) both; }
+.presence-fade[data-state="closed"] {
+  opacity: 0;
+  pointer-events: none;
+  animation: fade-out var(--dur-fast) var(--ease-std) forwards;
+}
+.presence-rise { animation: rise-in-far 360ms var(--ease-spring) both; }
+.presence-rise[data-state="closed"] {
+  opacity: 0;
+  pointer-events: none;
+  animation: sink-out var(--dur-fast) var(--ease-std) forwards;
+}
+/* Внутри уходящего слоя тоже ничего не кликается (у композера свой pointer-events-auto). */
+.presence-fade[data-state="closed"] *, .presence-rise[data-state="closed"] * { pointer-events: none; }
+@keyframes fade-in  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fade-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes rise-in-far {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes sink-out {
+  from { opacity: 1; transform: translateY(0); }
+  to   { opacity: 0; transform: translateY(10px); }
+}
+
+/* presence-slide — панели, въезжающие с правого края (галерея пачки). */
+.presence-slide { animation: slide-in-right 360ms var(--ease-out) both; }
+.presence-slide[data-state="closed"] {
+  opacity: 0;
+  pointer-events: none;
+  animation: slide-out-right var(--dur-fast) var(--ease-std) forwards;
+}
+.presence-slide[data-state="closed"] * { pointer-events: none; }
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(16px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes slide-out-right {
+  from { opacity: 1; transform: translateX(0); }
+  to   { opacity: 0; transform: translateX(12px); }
+}
+
+/* Простое проявление для слоёв, которым не нужен выход (оверлеи
+   статуса на карточке, бейджи сцены). */
+.fade-in { animation: fade-in var(--dur-base) var(--ease-std) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .popover, .popover-stagger > *, .presence-fade, .presence-rise, .presence-slide, .fade-in { animation: none; }
+  .chevron { transition: none; }
+}
+
+/* ============================================================
    ШТОРКИ И ПОПОВЕРЫ
    ============================================================ */
 /* Нижняя шторка (мобильные настройки чата, аккаунт). Ездит transition-ом:

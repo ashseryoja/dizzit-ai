@@ -11,6 +11,7 @@ import {
 } from "lucide-react"
 
 import { MAX_BATCH, sourceQuality } from "@/lib/enhance-engine"
+import { usePresence } from "@/lib/use-presence"
 import { cn, plural } from "@/lib/utils"
 
 /** Приложенный файл до отправки: сам файл + размеры + превью. */
@@ -85,6 +86,7 @@ export function ToolComposer<T extends string>({
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  const settings = usePresence(settingsOpen)
 
   // Клик мимо и Escape закрывают панель — паттерн дропдаунов сайдбара.
   useEffect(() => {
@@ -113,9 +115,10 @@ export function ToolComposer<T extends string>({
   return (
     <div ref={containerRef} className="pointer-events-auto relative w-full max-w-[880px]">
       {/* Панель настроек — над композером, той же ширины. */}
-      {settingsOpen ? (
+      {settings.present ? (
         <div
-          className="overlay-surface scroll-thin absolute inset-x-0 bottom-[calc(100%+10px)] z-10 flex max-h-[70dvh] flex-col gap-5 overflow-y-auto p-5"
+          data-state={settings.state}
+          className="popover popover-up popover-stagger overlay-surface scroll-thin absolute inset-x-0 bottom-[calc(100%+10px)] z-10 flex max-h-[70dvh] flex-col gap-5 overflow-y-auto p-5"
           role="dialog"
           aria-label="Настройки"
         >

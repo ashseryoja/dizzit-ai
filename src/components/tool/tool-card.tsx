@@ -86,7 +86,7 @@ export function ToolCard({
 
   return (
     <figure
-      className="group card relative mb-4 break-inside-avoid overflow-hidden"
+      className="group card rise-in relative mb-4 break-inside-avoid overflow-hidden"
       style={{ borderRadius: "var(--r-lg)" }}
     >
       <div className="relative w-full" style={{ aspectRatio: `${width} / ${height}` }}>
@@ -109,7 +109,7 @@ export function ToolCard({
 
         {status === "processing" ? (
           <div
-            className="absolute inset-0 flex flex-col items-center justify-center gap-2.5"
+            className="fade-in absolute inset-0 flex flex-col items-center justify-center gap-2.5"
             style={{ background: "rgba(16,16,18,0.45)" }}
           >
             <ThinkingGlyph size={22} className="text-white/80" />
@@ -121,7 +121,7 @@ export function ToolCard({
 
         {status === "error" ? (
           <div
-            className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4 text-center"
+            className="fade-in absolute inset-0 flex flex-col items-center justify-center gap-3 p-4 text-center"
             style={{ background: "rgba(16,16,18,0.72)" }}
           >
             <p className="max-w-[240px] text-[12.5px] leading-snug" style={{ color: "rgba(255,255,255,0.9)" }}>

@@ -17,6 +17,7 @@ import {
 
 import { PhotoToCubeGlyph, RenderEditorGlyph } from "@/components/glyphs"
 import { Logo } from "@/components/logo"
+import { usePresence } from "@/lib/use-presence"
 import { cn } from "@/lib/utils"
 import { useCompanyStore } from "@/stores/company-store"
 import { useEnhanceStore } from "@/stores/enhance-store"
@@ -88,6 +89,8 @@ function ProjectSwitcher({ large, onNavigate }: { large: boolean; onNavigate?: (
   // создания, по завершении (как угодно) закрываем дропдаун и идём в проект.
   const [createdId, setCreatedId] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  // Дропдаун живёт в DOM, пока доигрывает анимация закрытия.
+  const menu = usePresence(open)
 
   const activeProject = projects.find((project) => project.id === activeProjectId) ?? null
 
@@ -159,14 +162,18 @@ function ProjectSwitcher({ large, onNavigate }: { large: boolean; onNavigate?: (
           {activeProject?.title ?? "Выберите проект"}
         </span>
         <ChevronDown
-          className={cn("h-3.5 w-3.5 shrink-0 transition-transform", open && "rotate-180")}
+          className={cn("chevron h-3.5 w-3.5 shrink-0", open && "is-open")}
           style={{ color: "var(--fg-5)" }}
           strokeWidth={1.7}
         />
       </button>
 
-      {open ? (
-        <div role="menu" className="overlay-surface absolute inset-x-0 top-[calc(100%+8px)] z-50 p-2">
+      {menu.present ? (
+        <div
+          role="menu"
+          data-state={menu.state}
+          className="popover popover-stagger overlay-surface absolute inset-x-0 top-[calc(100%+8px)] z-50 p-2"
+        >
           <div className="relative mb-2">
             <Search
               className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2"
@@ -339,7 +346,7 @@ function AccountTrigger({
         </span>
       </span>
       <ChevronDown
-        className={cn("h-3.5 w-3.5 shrink-0 transition-transform", open && "rotate-180")}
+        className={cn("chevron h-3.5 w-3.5 shrink-0", open && "is-open")}
         style={{ color: "var(--fg-5)" }}
         strokeWidth={1.7}
       />
@@ -350,6 +357,7 @@ function AccountTrigger({
 function DesktopAccountMenu() {
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  const menu = usePresence(open)
 
   useEffect(() => {
     if (!open) return
@@ -369,10 +377,11 @@ function DesktopAccountMenu() {
 
   return (
     <div ref={containerRef} className="relative">
-      {open ? (
+      {menu.present ? (
         <div
           role="menu"
-          className="overlay-surface absolute inset-x-0 bottom-[calc(100%+8px)] z-50 p-2"
+          data-state={menu.state}
+          className="popover popover-up popover-stagger overlay-surface absolute inset-x-0 bottom-[calc(100%+8px)] z-50 p-2"
         >
           <Link
             href="/settings"
