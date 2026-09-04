@@ -559,6 +559,112 @@ select.field option { background: var(--bg-overlay); color: var(--fg-1); }
 }
 
 /* ============================================================
+   «ДО/ПОСЛЕ» РЕНДЕРА (пустой экран «Редактор рендера»)
+   Каркасный CG-интерьер, поверх — фотореалистичный слой, обрезанный
+   clip-path. Шторка (.re-edge) едет синхронно с обрезкой: оба цикла
+   на одних ключевых кадрах. Маршрут: пауза → открыть → пауза → закрыть.
+   ============================================================ */
+.re-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 360 / 220;
+  overflow: hidden;
+  border-radius: var(--r-lg);
+  background: var(--bg-surface);
+  border: 1px solid var(--line-strong);
+  color: var(--fg-2);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.22);
+  transition: transform 260ms var(--ease-out), box-shadow 260ms var(--ease-std);
+}
+.dropzone:hover .re-frame { transform: scale(1.02); box-shadow: 0 22px 56px rgba(0, 0, 0, 0.3); }
+.re-layer { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.re-raw { color: var(--fg-3); }
+
+.re-reveal {
+  position: absolute;
+  inset: 0;
+  clip-path: inset(0 96% 0 0);
+  animation: re-sweep 9s var(--ease-std) infinite;
+  will-change: clip-path;
+}
+@keyframes re-sweep {
+  0%, 12%  { clip-path: inset(0 96% 0 0); }
+  52%, 66% { clip-path: inset(0 4% 0 0); }
+  94%, 100% { clip-path: inset(0 96% 0 0); }
+}
+
+/* Шторка: обёртка на всю ширину, линия у её правого края. */
+.re-edge {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transform: translateX(-96%);
+  animation: re-edge 9s var(--ease-std) infinite;
+  will-change: transform;
+}
+@keyframes re-edge {
+  0%, 12%  { transform: translateX(-96%); }
+  52%, 66% { transform: translateX(-4%); }
+  94%, 100% { transform: translateX(-96%); }
+}
+.re-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -1px;
+  width: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25), 0 0 14px rgba(255, 255, 255, 0.35);
+}
+.re-handle {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  width: 30px;
+  height: 30px;
+  transform: translate(50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(0, 0, 0, 0.2);
+}
+.re-handle svg { width: 16px; height: 16px; }
+
+/* Подписи слоёв: левая — под шторкой, правая — внутри неё, проявляется с результатом. */
+.re-tag {
+  position: absolute;
+  bottom: 10px;
+  height: 22px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 7px;
+  font-size: 10.5px;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.re-tag-raw { left: 10px; background: var(--bg-raised); border: 1px solid var(--line-strong); color: var(--fg-4); }
+.re-tag-real { right: 10px; background: rgba(16, 16, 18, 0.66); color: rgba(255, 255, 255, 0.9); }
+
+/* Свет в кадре живёт: луч дышит, торшер мерцает. */
+.re-shaft { animation: re-breathe 5s ease-in-out infinite alternate; }
+@keyframes re-breathe { from { opacity: 0.55; } to { opacity: 0.95; } }
+.re-glow { transform-origin: 334px 60px; animation: re-glow 3.6s ease-in-out infinite alternate; }
+@keyframes re-glow { from { opacity: 0.75; transform: scale(0.94); } to { opacity: 1; transform: scale(1.06); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .re-reveal, .re-edge, .re-shaft, .re-glow { animation: none; }
+  .re-reveal { clip-path: inset(0 45% 0 0); }
+  .re-edge { transform: translateX(-45%); }
+  .dropzone:hover .re-frame { transform: none; }
+}
+
+/* ============================================================
    ПРЕВЬЮ-СЕТКА МАТЕРИАЛОВ (пустой экран «Генерация материала»)
    Пять живых заготовок в раскладке будущей галереи. Все циклы бесшовные:
    либо alternate (туда-обратно), либо путь замыкается в исходную точку,

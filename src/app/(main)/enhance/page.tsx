@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Layers, Package, Sofa, Sparkles, Trees } from "lucide-react"
 
+import { RenderReveal } from "@/components/tool/render-reveal"
 import { ToolCard } from "@/components/tool/tool-card"
 import {
   ToolComposer,
@@ -10,7 +11,6 @@ import {
   type ToolComposerLabels,
   type ToolOption,
 } from "@/components/tool/tool-composer"
-import { DropInviteGlyph } from "@/components/glyphs"
 import { PageLoader } from "@/components/page-loader"
 import { useBlobGc } from "@/lib/blob-gc"
 import {
@@ -327,7 +327,7 @@ export default function EnhancePage() {
           <div className="flex flex-1 flex-col items-center justify-center gap-4 py-6">
             {/* Большая зона приёма: клик открывает диалог, перенос и вставка
                 из буфера работают на всей странице. Контур — SVG-пунктир,
-                глиф внутри анимирован (см. .dropzone в surfaces.css). */}
+                внутри — живое «до/после» (см. .dropzone и .re-* в surfaces.css). */}
             <button
               type="button"
               onClick={pickFiles}
@@ -342,7 +342,7 @@ export default function EnhancePage() {
                 <rect width="100%" height="100%" rx="23" />
               </svg>
 
-              <DropInviteGlyph size={116} className="dropzone-glyph relative" />
+              <RenderReveal className="relative max-w-[440px]" />
 
               <span className="relative flex flex-col items-center gap-1.5">
                 <span className="ds-h2" style={{ color: "var(--fg-1)" }}>
