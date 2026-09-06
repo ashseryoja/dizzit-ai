@@ -85,10 +85,10 @@ export interface EnhanceJob extends EnhanceOptions {
 /* ── Промпт ─────────────────────────────────────────────────────────── */
 
 const CONTEXT_HINT: Record<EnhanceContext, string> = {
-  auto: "",
-  interior: "The image is an interior architectural visualization.",
-  exterior: "The image is an exterior architectural visualization.",
-  product: "The image is a product visualization.",
+  auto: "SCENE TYPE: Infer the photographed subject from IMAGE 1 and use the corresponding real-world photographic language.",
+  interior: "SCENE TYPE: interior architecture; aim for a natural high-end interior-design editorial photograph.",
+  exterior: "SCENE TYPE: exterior architecture; aim for a natural high-end architectural editorial photograph.",
+  product: "SCENE TYPE: product; aim for a natural premium product photograph with true-to-life scale and materials.",
 }
 
 const FILTER_HINT: Record<BatchFilter, string> = {
@@ -101,30 +101,44 @@ const FILTER_HINT: Record<BatchFilter, string> = {
 
 const TIME_HINT: Record<BatchTime, string> = {
   keep: "",
-  morning: "Change the lighting to soft early-morning light with long gentle shadows.",
-  day: "Change the lighting to bright, clear daylight.",
-  sunset: "Change the lighting to warm golden-hour sunset light.",
-  night: "Change the lighting to night-time with the artificial lights of the scene switched on.",
+  morning:
+    "LIGHTING INTENT: soft early-morning sunlight from one plausible existing or off-camera opening, with warm highlights, cooler skylight fill and long gentle shadows.",
+  day: "LIGHTING INTENT: bright natural daylight from one plausible existing or off-camera opening, with clean neutral color and soft directional shadows.",
+  sunset:
+    "LIGHTING INTENT: restrained golden-hour sunlight from one plausible existing or off-camera opening, with warm grazing highlights, cooler ambient fill and long soft shadows.",
+  night:
+    "LIGHTING INTENT: believable night-time exposure with the scene's existing artificial fixtures switched on. Do not introduce sunlight, daylight or an invented light source.",
+}
+
+/**
+ * Реальный солнечный свет по умолчанию: не декоративный фильтр, а единая
+ * физически правдоподобная схема. Ночью эта строка намеренно не добавляется.
+ */
+function naturalLightHint(time: BatchTime): string {
+  if (time === "night") return ""
+  return "NATURAL SUNLIGHT: Use one coherent sun direction from an existing visible opening or a plausible off-camera window/opening. Add restrained soft-edged sun patches, correct penumbra and contact shadows, warm direct highlights with cooler bounced skylight fill, and subtle specular sun glints on glass, metal and polished wood. Use gentle photographic highlight bloom and only a barely perceptible lens flare when physically justified. Keep windows and highlights recoverable; no fake flare overlay, theatrical god rays, orange wash or random light sources."
 }
 
 export function buildEnhancePrompt(job: EnhanceJob): string {
   const tools = job.tools
   const improveQuality = tools ? tools.quality : true
+  const time = tools?.time ?? "keep"
   const note = job.note?.trim() ?? ""
   const hasRegions = Boolean(job.regions && job.regions.length > 0)
 
   const lines: string[] = [
-    "TASK: Edit IMAGE 1 into a premium photorealistic architectural photograph. IMAGE 1 is the authoritative design reference.",
+    "TASK: Transform IMAGE 1 from a computer-generated render into a convincing real professional photograph. IMAGE 1 is the authoritative design reference. The result must be immediately believable as a photograph of a real, physically built subject, not a cleaner CGI render.",
     CONTEXT_HINT[job.context ?? "auto"],
     "NON-NEGOTIABLE PRESERVATION: Keep the exact camera position, lens/focal-length feel, perspective, vertical lines, crop, aspect ratio, framing and composition. Preserve every wall, opening, ceiling, floor boundary, built-in element, piece of furniture, fixture and decor item in exactly the same shape, scale, count and position. Preserve the design, material identities, patterns and base colors. Do not redesign, restyle, invent, remove, move or replace anything unless the designer explicitly requests it below.",
     improveQuality
-      ? "REALISM PASS: Keep the design unchanged while making it look captured by a professional architectural photographer. Use physically plausible global illumination and bounced light, balanced exposure and dynamic range, a natural white balance, consistent light direction and color temperature, soft contact shadows and ambient occlusion. Refine scale-accurate PBR material cues: fine texture, grain, weave, joints, micro-roughness, restrained specular response, realistic reflection and refraction, subtle edge bevels and contact between surfaces. Add only tiny real-world surface variation that does not change the design. Preserve crisp architectural detail with natural focus and depth; the image must feel photographic, not computer-generated."
+      ? "RENDER-TO-PHOTO PASS: Do not merely upscale, sharpen or polish the existing CGI pixels. Re-light and re-render every visible surface as real material under real light while keeping the locked design unchanged. Use physically plausible global illumination, indirect bounce, ambient occlusion and consistent light direction/color temperature. Replace flat procedural shading with scale-accurate photographic material response: natural wood grain and pores, individual textile fibers and weave, subtle plaster variation, realistic glass thickness/refraction, metal roughness, joints, seams, tiny edge bevels and grounded surface contact. Add restrained micro-imperfections and non-uniform roughness so surfaces feel manufactured and touched, never sterile or synthetic."
       : "Preserve the rendering quality as is; apply only the changes requested below.",
     improveQuality
-      ? "QUALITY CONTROL: clean high-end archviz finish, smooth tonal transitions, realistic glass and metals, detailed fabrics/wood/stone, clean edges and fine detail. Avoid plastic materials, fake mirror reflections, glowing surfaces, crushed blacks, clipped highlights, HDR halos, excessive saturation, excessive contrast, oversharpening, blur, noise, banding, moire, texture repetition, warped geometry and the glossy CGI look."
+      ? "PHOTOGRAPHIC CAMERA RESPONSE: Preserve the source lens and viewpoint, with straight architectural verticals where relevant and natural edge-to-edge focus. Use balanced exposure, neutral white balance, realistic dynamic range and highlight roll-off, gentle micro-contrast, fine sensor-level texture and subtle depth cues. The image should feel like an unretouched professional design-editorial photograph appropriate to the scene. Avoid plastic surfaces, perfectly uniform textures, fake mirror reflections, glowing materials, crushed blacks, clipped whites, HDR halos, excessive saturation/contrast, oversharpening, waxy denoising, blur, coarse noise, banding, moire, repeated texture tiles, warped geometry and the glossy 3D-render look."
       : "",
+    improveQuality ? naturalLightHint(time) : "",
     tools ? FILTER_HINT[tools.filter] : "",
-    tools ? TIME_HINT[tools.time] : "",
+    tools ? TIME_HINT[time] : "",
     job.populate
       ? "Populate the scene: add a few people and, where appropriate, plants natural to this space, in correct scale and perspective, without covering the key elements of the composition."
       : "",
