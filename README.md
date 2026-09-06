@@ -363,10 +363,15 @@ enhanceRender()                                src/lib/enhance-engine.ts     ←
                                                src/server/providers.ts       ← resolveVisionProvider(): VISION_PROVIDER / VISION_MODEL
 ```
 
-- **Модель** — по умолчанию `claude-sonnet-5` через тот же ключ API Models
-  (≈ $0.005–0.008 за разбор, 10–20 с), у LaoZhang — `gpt-4.1`. Меняется
-  `VISION_MODEL` (дешевле — `claude-haiku-4-5-20251001`, ≈ $0.001);
-  `VISION_PROVIDER=off` выключает разбор. Итог улучшения ≈ $0,04 за рендер.
+- **Модель** — по умолчанию `gemini-3.8-flash` через тот же ключ API Models
+  ($0.45 / $2.25 за 1M токенов, ≈ $0.004 за разбор, 8–10 с), у LaoZhang —
+  `gemini-3.7-flash` ($0.75 / $3.75; у API Models модели 3.7 нет). Gemini 3
+  тратит ~1000 токенов ответа на скрытое рассуждение, и через шлюзы это не
+  отключается (`reasoning_effort`, `thinking_level`, `thinking_config`
+  проверены — игнорируются), поэтому рассуждающим моделям выдаётся бюджет
+  2500 токенов, остальным 800 (`outputBudgetFor`). Точнее, но вдвое дороже —
+  `VISION_MODEL=claude-sonnet-5` (≈ $0.008); `VISION_PROVIDER=off`
+  выключает разбор. Итог улучшения ≈ $0,03 за рендер.
 - **Цепочка запасных** (`resolveVisionProviders`): отказ выбранной модели —
   пустой ответ, лимит, сеть — уводит запрос к Claude Haiku 4.5 на том же ключе,
   затем к модели другого шлюза; общий дедлайн 100 с. Модель, сжёгшая весь

@@ -81,7 +81,7 @@ export function BatchToolsPanel({
 export function QualityToggle({ value, onChange }: { value: boolean; onChange: (next: boolean) => void }) {
   return (
     <div className="flex w-full items-center justify-between gap-4">
-      <ToolLabel icon={Sparkles} hint="разбор сцены + GPT Image 2 · 2K → Lanczos 2000 px · ≈ $0,04 за рендер">
+      <ToolLabel icon={Sparkles} hint="разбор сцены + GPT Image 2 · 2K → Lanczos 2000 px · ≈ $0,03 за рендер">
         Улучшить качество
       </ToolLabel>
       <Switch checked={value} onChange={onChange} />

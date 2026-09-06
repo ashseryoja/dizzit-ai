@@ -27,8 +27,6 @@ export const SCENE_INVENTORY_MAX_CHARS = 1800
 const SCENE_INVENTORY_TARGET_CHARS = 1400
 /** Строк в секции OBJECTS: главное — крупные и «опасные» предметы, а не всё подряд. */
 const SCENE_OBJECT_LINES = 12
-/** Потолок ответа модели в токенах (~2400 символов английского текста). */
-export const SCENE_ANALYSIS_MAX_TOKENS = 800
 
 const CONTEXT_FOCUS: Record<EnhanceContext, string> = {
   auto: "",
@@ -155,7 +153,7 @@ export async function analyzeScene(
       const answer = await provider.describe({
         prompt,
         image,
-        maxTokens: SCENE_ANALYSIS_MAX_TOKENS,
+        maxTokens: provider.outputBudget,
         signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(remaining)]) : AbortSignal.timeout(remaining),
       })
       return {

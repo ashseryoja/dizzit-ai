@@ -21,7 +21,7 @@ import { OpenAiCompatibleVisionProvider, type VisionProvider } from "@/server/vi
  * Разбор сцены (vision) выбирается теми же ключами: `VISION_PROVIDER`
  * (`apimodels` | `laozhang` | `off`), `VISION_MODEL`. Без переменных —
  * тот шлюз, у которого есть ключ (сначала API Models), с моделью по умолчанию
- * для этого шлюза: Claude Sonnet 5 у API Models, GPT-4.1 у LaoZhang.
+ * для этого шлюза: Gemini 3.8 Flash у API Models, Gemini 3.7 Flash у LaoZhang.
  */
 
 const env = (name: string) => (process.env[name] ?? "").trim()
@@ -93,13 +93,19 @@ export function providerKeyVariable(id: ImageProviderId): string {
 
 /* ── Разбор сцены (vision) ──────────────────────────────────────────── */
 
-/** Модель разбора сцены по умолчанию у каждого шлюза (см. пробы в README). */
+/**
+ * Модель разбора сцены по умолчанию у каждого шлюза (пробы — README, «Разбор
+ * сцены»). Gemini Flash в 2–4 раза дешевле Claude на токен; ~1000 токенов
+ * ответа у неё уходит на скрытое рассуждение, поэтому бюджет ответа выше
+ * (см. `outputBudget` в vision-provider). Gemini 3.7 Flash у API Models нет —
+ * там новее и дешевле 3.8 Flash; у LaoZhang 3.7 Flash есть.
+ */
 export const VISION_DEFAULT_MODEL: Record<ImageProviderId, string> = {
-  apimodels: "claude-sonnet-5",
-  laozhang: "gpt-4.1",
+  apimodels: "gemini-3.8-flash",
+  laozhang: "gemini-3.7-flash",
 }
 
-/** Запасная модель на том же ключе: дешевле и быстрее, без внутреннего рассуждения. */
+/** Запасная модель на том же ключе: другое семейство, без скрытого рассуждения. */
 export const VISION_FALLBACK_MODEL: Partial<Record<ImageProviderId, string>> = {
   apimodels: "claude-haiku-4-5-20251001",
 }

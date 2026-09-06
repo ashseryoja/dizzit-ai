@@ -50,6 +50,8 @@ export interface VisionAnswer {
 export interface VisionProvider {
   readonly id: ImageProviderId
   readonly model: string
+  /** Сколько токенов ответа просить у этой модели: рассуждающим — с запасом на невидимые токены. */
+  readonly outputBudget: number
   describe(input: VisionRequest): Promise<VisionAnswer>
 }
 
@@ -63,11 +65,25 @@ export interface OpenAiCompatibleVisionConfig {
 
 const REQUEST_TIMEOUT_MS = 90_000
 /**
- * Модели с внутренним рассуждением через шлюз могут потратить весь лимит на
- * невидимые токены и вернуть `content: null` с `finish_reason: "length"`.
- * Тогда один повтор с удвоенным лимитом, не выше этого потолка.
+ * Модели с внутренним рассуждением (Gemini 3, GPT-5, DeepSeek V4, «thinking»)
+ * тратят ~1000 токенов ответа на невидимое рассуждение, причём через шлюзы
+ * `reasoning_effort` и другие ручки не доходят (проверено на API Models и
+ * LaoZhang). Поэтому им — бюджет с запасом, остальным — короткий: инвентарь
+ * не длиннее ~1800 символов.
  */
-const EMPTY_ANSWER_RETRY_MAX_TOKENS = 2_000
+const REASONING_MODEL = /gemini-3|gpt-5|deepseek-v4|glm-5|thinking|reason/i
+const REASONING_OUTPUT_BUDGET = 2_500
+const PLAIN_OUTPUT_BUDGET = 800
+/**
+ * Если лимит всё же ушёл на рассуждение и модель вернула `content: null` с
+ * `finish_reason: "length"` — один повтор с удвоенным лимитом, не выше потолка.
+ */
+const EMPTY_ANSWER_RETRY_MAX_TOKENS = 5_000
+
+/** Бюджет ответа по имени модели — для `analyzeScene` и статуса. */
+export function outputBudgetFor(model: string): number {
+  return REASONING_MODEL.test(model) ? REASONING_OUTPUT_BUDGET : PLAIN_OUTPUT_BUDGET
+}
 
 type ChatContent = string | { type?: string; text?: string }[] | null | undefined
 
@@ -98,12 +114,14 @@ function contentText(content: ChatContent): string {
 export class OpenAiCompatibleVisionProvider implements VisionProvider {
   readonly id: ImageProviderId
   readonly model: string
+  readonly outputBudget: number
   private readonly apiKey: string
   private readonly endpoint: string
 
   constructor(config: OpenAiCompatibleVisionConfig) {
     this.id = config.id
     this.model = config.model
+    this.outputBudget = outputBudgetFor(config.model)
     this.apiKey = config.apiKey
     const base = config.baseUrl.replace(/\/+$/, "")
     this.endpoint = /\/v\d+$/.test(base) ? `${base}/chat/completions` : `${base}/v1/chat/completions`

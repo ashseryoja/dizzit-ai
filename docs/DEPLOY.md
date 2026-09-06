@@ -44,7 +44,7 @@ canvas-предпросмотрах, «Фото → 3D» ждёт Meshy.
 > `APIMODELS_API_KEY` (Production + Preview);
 > `IMAGE_PROVIDER=apimodels` — по желанию, без него API Models и так в
 > приоритете. Разбор сцены перед улучшением (`/api/scene`, vision-модель
-> `claude-sonnet-5` через тот же ключ API Models) отдельных переменных не
+> `gemini-3.8-flash` через тот же ключ API Models) отдельных переменных не
 > требует; `VISION_MODEL` / `VISION_PROVIDER=off` — по желанию (см.
 > `.env.example`). Роут объявляет `maxDuration = 300`: задача у провайдера идёт
 > 10–90 секунд с опросом внутри запроса, а на Hobby без этого функция
