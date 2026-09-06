@@ -251,7 +251,8 @@ export function ToolComposer<T extends string>({
                   {labels.uploadTitle}
                 </span>
                 <span className="text-[11.5px]" style={{ color: "var(--fg-5)" }}>
-                  PNG · JPG · WEBP · до 32 МБ · {maxFiles === 1 ? "один файл" : `до ${maxFiles} файлов за раз`}
+                  PNG · JPG · WEBP · до 32 МБ
+                  {maxFiles === 1 ? " · один файл" : Number.isFinite(maxFiles) ? ` · до ${maxFiles} файлов за раз` : ""}
                 </span>
               </button>
             ) : (

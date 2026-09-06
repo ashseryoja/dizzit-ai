@@ -25,7 +25,11 @@ export interface RestoredAttachment {
 }
 
 export interface UseAttachmentsOptions {
-  /** Лимит файлов в пачке; по умолчанию общий MAX_BATCH. */
+  /**
+   * Лимит файлов в пачке; по умолчанию общий MAX_BATCH. `Infinity` — пачка
+   * без лимита (редактор рендера хранит в ней все записи проекта, а лимит
+   * действует только на рабочий набор — см. `useBatchSelection.maxWorkingSet`).
+   */
   maxFiles?: number
   /** Новые файлы ЗАМЕНЯЮТ приложенные, а не докладываются: «Фото → 3D» — одно фото на модель. */
   replace?: boolean
@@ -153,7 +157,7 @@ export function useAttachments({ maxFiles = MAX_BATCH, replace = false, onDetach
         warnings.push(`Не приняты: ${rejected.join(", ")} — только PNG/JPG/WEBP до 32 МБ.`)
       }
       // Один файл на задание — лишние просто не берём, это и так видно по чипу.
-      if (overflow > 0 && maxFiles > 1) {
+      if (overflow > 0 && maxFiles > 1 && Number.isFinite(maxFiles)) {
         warnings.push(`Больше ${maxFiles} файлов за раз нельзя — лишние ${overflow} не добавлены.`)
       }
       if (warnings.length > 0) window.alert(warnings.join("\n"))

@@ -13,6 +13,7 @@ import {
 import { RegionEditor } from "@/components/tool/region-editor"
 import { RenderReveal } from "@/components/tool/render-reveal"
 import { RenderStrip, RenderTray } from "@/components/tool/render-tray"
+import { FolderRail } from "@/components/tool/folder-rail"
 import { BatchGrid, Stage, StagePlaceholder } from "@/components/tool/stage"
 import { downloadStoredResult, StoredAssetNotice } from "@/components/tool/tool-card"
 import { ToolComposer, type ToolComposerLabels, type ToolOption } from "@/components/tool/tool-composer"
@@ -43,7 +44,7 @@ import { usePresence } from "@/lib/use-presence"
 import { useStoredBlobUrl } from "@/lib/use-stored-blob"
 import { cn, fileBaseName } from "@/lib/utils"
 import { useEnhanceStore } from "@/stores/enhance-store"
-import { ensureActiveProject, useActiveProject } from "@/stores/project-store"
+import { ensureActiveProject, useActiveProject, useProjectStore } from "@/stores/project-store"
 import type { BatchTools, EnhanceContext, Enhancement } from "@/types"
 
 const CONTEXT_OPTIONS: ToolOption<EnhanceContext>[] = [
@@ -223,23 +224,63 @@ export default function EnhancePage() {
     },
     [dropRegions, remove]
   )
-  const intake = useAttachments({ maxFiles: MAX_BATCH, onDetach: detachWorkspaceItems })
+  // Панель справа — все записи проекта без лимита; MAX_BATCH ограничивает
+  // только рабочий набор, который уходит в обработку за один раз.
+  const intake = useAttachments({ maxFiles: Number.POSITIVE_INFINITY, onDetach: detachWorkspaceItems })
   const { restoreAttachments, detach: detachAttachments } = intake
   const [settingsOpen, setSettingsOpen] = useState(false)
   // «Редактировать все» открывает настройки сами — там и есть все доступные действия.
   const batch = useBatchSelection(intake, {
     noun: LABELS.batchNoun,
+    maxWorkingSet: MAX_BATCH,
     onEditAll: () => setSettingsOpen(true),
     onLeaveBatch: () => setSettingsOpen(false),
   })
   const { attachments, current, focusIndex, pickedItems, workingSet, showBatchGrid } = batch
   const attachmentsRef = useRef(attachments)
   attachmentsRef.current = attachments
+  /* Папки рендеров — вкладки у правой панели. null — «Общая»: видно всё.
+     Папка живёт в записи проекта (синхронизируется как проект), принадлежность
+     рендера — в его записи (`folderId`). */
+  const [activeFolderId, setActiveFolderId] = useState<string | null>(null)
+  const folders = useMemo(() => activeProject?.folders ?? [], [activeProject?.folders])
+  const createFolder = useProjectStore((state) => state.createFolder)
+  const renameFolder = useProjectStore((state) => state.renameFolder)
+  const deleteFolder = useProjectStore((state) => state.deleteFolder)
+  useEffect(() => {
+    // Папку удалили (в том числе в другом браузере) — возвращаемся в «Общую».
+    if (activeFolderId && !folders.some((folder) => folder.id === activeFolderId)) setActiveFolderId(null)
+  }, [activeFolderId, folders])
+  const removeFolder = useCallback(
+    (folderId: string) => {
+      if (!activeProject) return
+      deleteFolder(activeProject.id, folderId)
+      // Рендеры папки остаются в проекте — только без папки, то есть в «Общей».
+      for (const record of useEnhanceStore.getState().enhancements) {
+        if (record.folderId === folderId) update(record.id, { folderId: undefined })
+      }
+    },
+    [activeProject, deleteFolder, update]
+  )
+  const folderRail = (orientation: "vertical" | "horizontal") =>
+    activeProject ? (
+      <FolderRail
+        folders={folders}
+        activeId={activeFolderId}
+        onSelect={setActiveFolderId}
+        onCreate={() => createFolder(activeProject.id)}
+        onRename={(id, title) => renameFolder(activeProject.id, id, title)}
+        onDelete={removeFolder}
+        orientation={orientation}
+      />
+    ) : null
+
   const attachmentProjectRef = useRef<string | null>(activeProject?.id ?? null)
   useEffect(() => {
     const nextProjectId = activeProject?.id ?? null
     const previousProjectId = attachmentProjectRef.current
     attachmentProjectRef.current = nextProjectId
+    if (previousProjectId !== nextProjectId) setActiveFolderId(null)
     if (!previousProjectId || previousProjectId === nextProjectId || attachments.length === 0) return
     // При серверном/ручном переключении проекта очищаем только рабочую сцену.
     // `consume` сохраняет записи и файлы прежнего проекта на сервере.
@@ -268,6 +309,10 @@ export default function EnhancePage() {
         ? enhancements.filter((item) => item.projectId === activeProjectId)
         : [],
     [activeProjectId, enhancements]
+  )
+  const folderEnhancements = useMemo(
+    () => (activeFolderId ? projectEnhancements.filter((item) => item.folderId === activeFolderId) : projectEnhancements),
+    [activeFolderId, projectEnhancements]
   )
   const visible = useMemo(
     () => projectEnhancements.filter((item) => item.status !== "draft"),
@@ -330,6 +375,7 @@ export default function EnhancePage() {
           sourceHeight: attachment.height,
           sourceReady: false,
           createdAt: new Date().toISOString(),
+          folderId: activeFolderId ?? undefined,
         })
       }
       if ((existing && (existing.status !== "draft" || existing.sourceReady)) || savingDrafts.current.has(attachment.id)) {
@@ -349,7 +395,7 @@ export default function EnhancePage() {
         })
         .finally(() => savingDrafts.current.delete(attachment.id))
     }
-  }, [activeProject, add, attachments, enhancements, update])
+  }, [activeFolderId, activeProject, add, attachments, enhancements, update])
 
   /* После гидрации стора восстанавливаем на рабочую сцену не только черновики,
      но и уже запущенные/готовые пары. Иначе после refresh интерфейс снова
@@ -359,27 +405,31 @@ export default function EnhancePage() {
   const [restoreState, setRestoreState] = useState<RestoreState>("idle")
   const [missingSourceCount, setMissingSourceCount] = useState(0)
   const sourcesToRestore = useMemo(() => {
-    return [...projectEnhancements]
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-      .slice(0, MAX_BATCH)
-  }, [projectEnhancements])
+    return [...folderEnhancements].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  }, [folderEnhancements])
+  const restoredFolderRef = useRef<string | null | undefined>(undefined)
   const restoreSignature = sourcesToRestore.map((item) => item.id).join(",")
   const sourcesToRestoreRef = useRef(sourcesToRestore)
   sourcesToRestoreRef.current = sourcesToRestore
   useEffect(() => {
     if (!activeProjectId || !restoreSignature) {
+      // Перешли в пустую папку — сцена прежней папки уходит (записи целы).
+      if (restoredFolderRef.current !== activeFolderId) {
+        restoredFolderRef.current = activeFolderId
+        detachAttachments(attachmentsRef.current.map((item) => item.previewUrl), "consume")
+      }
       setRestoreState("idle")
       setMissingSourceCount(0)
       return
     }
-    const attemptKey = `${activeProjectId}:${restoreSignature}:${restoreAttempt}`
+    restoredFolderRef.current = activeFolderId
+    const attemptKey = `${activeProjectId}:${activeFolderId ?? "all"}:${restoreSignature}:${restoreAttempt}`
     if (restoringSources.current === attemptKey) return
     restoringSources.current = attemptKey
     setRestoreState("loading")
     setMissingSourceCount(0)
-    // Серверная десятка — авторитетный рабочий набор. Если в другом браузере
-    // добавили новый рендер, освобождаем место от выпавших старых записей,
-    // иначе локальные 10 вложений навсегда заблокируют восстановление нового.
+    // Серверный список записей проекта — авторитетный. Запись, удалённую в
+    // другом браузере, убираем и со сцены (без удаления: её уже нет).
     const targetIds = new Set(sourcesToRestoreRef.current.map((item) => item.id))
     const obsoleteUrls = attachmentsRef.current
       .filter((item) => !targetIds.has(item.id))
@@ -414,7 +464,7 @@ export default function EnhancePage() {
     return () => {
       cancelled = true
     }
-  }, [activeProjectId, detachAttachments, restoreAttachments, restoreSignature, restoreAttempt])
+  }, [activeFolderId, activeProjectId, detachAttachments, restoreAttachments, restoreSignature, restoreAttempt])
 
   useEffect(() => {
     if (restoreState !== "missing") return
@@ -440,9 +490,11 @@ export default function EnhancePage() {
   const processingSelected = workingSet.some((item) => enhancementById.get(item.id)?.status === "processing")
   const submitBlockedReason = processingSelected
     ? "Этот рендер уже улучшается"
-    : regionEditingActive
-      ? editBlockReason(built)
-      : null
+    : batch.limitNotice
+      ? batch.limitNotice
+      : regionEditingActive
+        ? editBlockReason(built)
+        : null
 
   /* Есть ли что обрабатывать: улучшение качества включено по умолчанию, либо
      есть комментарий, области, контекст, заселение, фильтр или время. */
@@ -699,13 +751,15 @@ export default function EnhancePage() {
       dropLabel="Отпустите, чтобы приложить рендеры"
       composerOpen={showComposer}
       trayOpen={tray.present}
+      trayMargin="lg:mr-[336px]"
       layers={
         <>
           {/* Композер появляется, когда есть исходник или восстанавливается
               сохранённая рабочая пара; на пустом экране его нет намеренно. */}
-          <ComposerDock presence={composer} trayOpen={tray.present}>
+          <ComposerDock presence={composer} trayOpen={tray.present} trayRight="lg:right-[352px]">
             <ToolComposer
               attachments={attachments}
+              maxFiles={intake.maxFiles}
               onPickFiles={intake.pickFiles}
               onRemoveAttachment={batch.removeAttachment}
               onClearAttachments={batch.clearAttachments}
@@ -769,7 +823,7 @@ export default function EnhancePage() {
           </ComposerDock>
 
           {/* Правая панель-галерея пачки. Только на lg; ниже миниатюры под сценой. */}
-          <ToolAside presence={tray} label="Приложенные рендеры">
+          <ToolAside presence={tray} label="Приложенные рендеры" rail={folderRail("vertical")}>
             {hasAttachments ? (
               <RenderTray {...enhanceTrayProps} />
             ) : (
@@ -777,7 +831,7 @@ export default function EnhancePage() {
                 <div className="flex h-16 shrink-0 items-center justify-between px-5">
                   <span className="ds-micro">рендеры</span>
                   <span className="text-[12px] tabular-nums" style={{ color: "var(--fg-4)" }}>
-                    {projectEnhancements.length} на сервере
+                    {folderEnhancements.length === 0 ? "пусто" : `${folderEnhancements.length} на сервере`}
                   </span>
                 </div>
                 <div className="flex flex-1 flex-col items-center justify-center gap-3 px-5 text-center">
@@ -785,9 +839,11 @@ export default function EnhancePage() {
                   <p className="text-[12px] leading-relaxed" style={{ color: "var(--fg-3)" }}>
                     {restoreState === "loading"
                       ? "Загружаем файлы проекта…"
-                      : `${missingSourceCount || projectEnhancements.length} файл(ов) ещё не синхронизированы с этим браузером.`}
+                      : folderEnhancements.length === 0
+                        ? "В этой папке пока нет рендеров — добавьте, и они останутся здесь."
+                        : `${missingSourceCount || folderEnhancements.length} файл(ов) ещё не синхронизированы с этим браузером.`}
                   </p>
-                  {restoreState !== "loading" ? (
+                  {restoreState !== "loading" && folderEnhancements.length > 0 ? (
                     <button type="button" className="btn-outline h-9 px-3 text-[12px]" onClick={() => setRestoreAttempt((value) => value + 1)}>
                       <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.8} />
                       Проверить снова
@@ -897,6 +953,7 @@ export default function EnhancePage() {
           )}
 
           <div className="lg:hidden">
+            {folderRail("horizontal")}
             <RenderStrip {...enhanceTrayProps} />
           </div>
         </div>
@@ -906,9 +963,30 @@ export default function EnhancePage() {
           label="Добавить рендер"
           visual={<RenderReveal className="relative max-w-[440px]" />}
           title="Добавить рендер"
-          description={`Нажмите, перетащите сюда или вставьте из буфера. PNG, JPG или WEBP до 32 МБ, до ${MAX_BATCH} файлов за раз.`}
+          description={`Нажмите, перетащите сюда или вставьте из буфера. PNG, JPG или WEBP до 32 МБ. В обработку за раз уходит до ${MAX_BATCH} рендеров.`}
           caption="Получите более реалистичные и детальные версии — без единого изменения в самих сценах."
         />
+      ) : folderEnhancements.length === 0 ? (
+        /* Пустая папка: не ошибка синхронизации, а приглашение. На узких
+           экранах здесь же вкладки, иначе из пустой папки некуда выйти. */
+        <div className="flex flex-1 flex-col">
+          <div className="lg:hidden">{folderRail("horizontal")}</div>
+          <StagePlaceholder className="gap-4 px-6 text-center">
+            <ImageOff className="h-6 w-6" strokeWidth={1.5} style={{ color: "var(--fg-4)" }} />
+            <div className="flex max-w-[430px] flex-col gap-1.5">
+              <span className="text-[13px]" style={{ color: "var(--fg-2)" }}>
+                В папке «{folders.find((folder) => folder.id === activeFolderId)?.title ?? "Общая"}» пока нет рендеров
+              </span>
+              <span className="text-[12px] leading-relaxed" style={{ color: "var(--fg-4)" }}>
+                Добавьте рендер — он останется в этой папке. Перетащите файл, вставьте из буфера или нажмите кнопку.
+              </span>
+            </div>
+            <button type="button" className="btn-outline h-9 px-3 text-[12px]" onClick={intake.pickFiles}>
+              <Plus className="h-3.5 w-3.5" strokeWidth={1.8} />
+              Добавить рендер
+            </button>
+          </StagePlaceholder>
+        </div>
       ) : restoreState === "loading" ? (
         <StagePlaceholder>
           <ThinkingGlyph size={24} />

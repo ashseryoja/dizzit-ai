@@ -142,12 +142,15 @@ export function ToolAside({
   presence,
   label,
   className = "right-4 w-[264px] lg:flex",
+  rail,
   children,
 }: {
   presence: Presence
   label: string
   /** Позиция, ширина и брейкпоинт показа: по умолчанию — панель пачки. */
   className?: string
+  /** Вкладки снаружи левого края панели (папки рендеров — `FolderRail`). */
+  rail?: ReactNode
   children: ReactNode
 }) {
   if (!presence.present) return null
@@ -155,15 +158,20 @@ export function ToolAside({
     <aside
       data-state={presence.state}
       aria-label={label}
-      className={cn("presence-slide fixed bottom-4 top-4 z-40 hidden flex-col overflow-hidden", className)}
-      style={{
-        background: "var(--bg-surface)",
-        border: "1px solid var(--line)",
-        borderRadius: "var(--r-xl)",
-        boxShadow: "0 16px 40px rgba(0, 0, 0, 0.35)",
-      }}
+      className={cn("presence-slide fixed bottom-4 top-4 z-40 hidden flex-col", className)}
     >
-      {children}
+      {rail}
+      <div
+        className="flex min-h-0 flex-1 flex-col overflow-hidden"
+        style={{
+          background: "var(--bg-surface)",
+          border: "1px solid var(--line)",
+          borderRadius: "var(--r-xl)",
+          boxShadow: "0 16px 40px rgba(0, 0, 0, 0.35)",
+        }}
+      >
+        {children}
+      </div>
     </aside>
   )
 }

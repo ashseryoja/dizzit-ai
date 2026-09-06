@@ -11,6 +11,15 @@ export interface Project {
   title: string
   createdAt: string
   updatedAt: string
+  /** Папки панели рендеров («Комната 1», «Кухня»); «Общая» — не папка, а вид на всё. */
+  folders?: RenderFolder[]
+}
+
+/** Папка рендеров внутри проекта — вкладка слева от правой панели. */
+export interface RenderFolder {
+  id: string
+  title: string
+  createdAt: string
 }
 
 /* ── Редактор рендера ──────────────────────────────────────────────
@@ -29,6 +38,8 @@ export type GenerationStatus = "draft" | "processing" | "done" | "error"
 export interface GalleryItemMeta {
   id: string
   projectId: string
+  /** Папка проекта, в которой запись создана; без неё запись видна только в «Общей». */
+  folderId?: string
   status: GenerationStatus
   /** Комментарий из композера. */
   note: string

@@ -11,6 +11,12 @@ export interface UseBatchSelectionOptions {
   /** «Редактировать все»: что ещё сделать при входе в пакетный режим (редактор рендера открывает настройки). */
   onEditAll?: () => void
   onLeaveBatch?: () => void
+  /**
+   * Сколько рендеров можно отправить в обработку за раз. Пачка при этом может
+   * быть любого размера (редактор рендера хранит в ней все записи проекта);
+   * набор больше лимита не урезается молча — композер получает `limitNotice`.
+   */
+  maxWorkingSet?: number
 }
 
 /** Пропсы RenderTray/RenderStrip одним объектом — панель и полоска получают их спредом. */
@@ -47,6 +53,8 @@ export interface BatchSelection {
   showBatchGrid: boolean
   /** Подпись для композера: «выбрано 5 рендеров»; null — пачка пуста, показывать нечего. */
   selectionLabel: string | null
+  /** Набор больше `maxWorkingSet`: причина, по которой отправка заблокирована; null — всё в норме. */
+  limitNotice: string | null
   selectAttachment: (index: number) => void
   togglePicking: () => void
   editAll: () => void
@@ -72,7 +80,10 @@ export interface BatchSelection {
  * сразу. Набор ведётся по previewUrl — он уникален и переживает удаление
  * соседей (индексы бы поехали); устаревшие записи отсеиваются при чтении.
  */
-export function useBatchSelection(intake: AttachmentIntake, { noun, onEditAll, onLeaveBatch }: UseBatchSelectionOptions): BatchSelection {
+export function useBatchSelection(
+  intake: AttachmentIntake,
+  { noun, onEditAll, onLeaveBatch, maxWorkingSet = Number.POSITIVE_INFINITY }: UseBatchSelectionOptions
+): BatchSelection {
   const { attachments } = intake
   const [focus, setFocus] = useState(0)
   const [picked, setPicked] = useState<Set<string>>(() => new Set())
@@ -109,6 +120,11 @@ export function useBatchSelection(intake: AttachmentIntake, { noun, onEditAll, o
       : workingSet.length === 0
         ? "ничего не выбрано"
         : `${plural(workingSet.length, ["выбран", "выбрано", "выбрано"])} ${workingSet.length} ${plural(workingSet.length, noun)}`
+  const overflow = workingSet.length - maxWorkingSet
+  const limitNotice =
+    overflow > 0
+      ? `За раз в обработку уходит не больше ${maxWorkingSet} ${plural(maxWorkingSet, noun)} — снимите ${overflow}`
+      : null
 
   /* Клик по плитке: обычный режим — один рендер на сцену и в набор;
      режим «Выбрать» — переключить плитку в наборе, на сцену её же. */
@@ -233,6 +249,7 @@ export function useBatchSelection(intake: AttachmentIntake, { noun, onEditAll, o
     workingSet,
     showBatchGrid,
     selectionLabel,
+    limitNotice,
     selectAttachment,
     togglePicking,
     editAll,

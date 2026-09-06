@@ -23,8 +23,9 @@
 | Замечание над строкой ввода («Выберите настройки…»), теги областей, «волна» подсветки по контролам | `tool-composer.tsx` | пропсы `notice`, `regionTags`, `attentionKey` |
 | Секция, пристыкованная над композером (материалы стиля с галочками) | `tool-composer.tsx` — обёртка; `style-dock.tsx` — содержимое | проп `dock` |
 | Улучшение качества GPT Image 2 + Lanczos 2000 px, тумблер «Заселить сцену», пакетные функции (качество, фильтр, время) | `src/components/tool/batch-tools.tsx` | `QualityToggle`, `PopulateToggle`, `BatchToolsPanel` |
-| Правая панель-галерея пачки: заголовок «рендеры · 3 из 10», «Выбрать», плитки, производные версии, «Добавить», «Очистить», «Редактировать все» | `src/components/tool/render-tray.tsx` | `RenderTray`, `TrayThumb`, проп `renderVersion` |
+| Правая панель-галерея пачки: заголовок «рендеры · 3 из 10» (у пачки без лимита — просто «рендеры · 14»), «Выбрать», плитки, производные версии, «Добавить», «Очистить», «Редактировать все» | `src/components/tool/render-tray.tsx` | `RenderTray`, `TrayThumb`, проп `renderVersion` |
 | Полоска миниатюр под сценой на узких экранах | `render-tray.tsx` | `RenderStrip` |
+| Папки рендеров: вкладки «Общая», «Комната 1»… и «+» у левого края правой панели, карандаш при наведении, окошко имени с удалением; на узких экранах — чипы над полоской | `src/components/tool/folder-rail.tsx` — вкладки; `src/stores/project-store.ts` — данные (`Project.folders`, `createFolder`/`renameFolder`/`deleteFolder`); `src/styles/ds/surfaces.css` — `.folder-*` | `FolderRail`; слот `rail` у `ToolAside`; принадлежность рендера — `folderId` записи |
 | Закреплённая правая панель как поверхность (ширина, тень, рамка, анимация выезда) | `src/components/tool/tool-shell.tsx` | `ToolAside` |
 | Сцена: рендер во весь экран, бейджи имени/размера и «2 / 7», стрелки; поверхность во время восстановления | `src/components/tool/stage.tsx` | `Stage`, `StagePlaceholder` |
 | Пакетный грид с заголовком «Пакетное …» и кнопкой «К просмотру» | `stage.tsx` | `BatchGrid` |
@@ -94,7 +95,7 @@ useBatchSelection ─► batch ──► Stage / BatchGrid / RenderTray / Render
 
 | Опция | Смысл |
 | --- | --- |
-| `maxFiles` | лимит пачки; по умолчанию `MAX_BATCH` (10) |
+| `maxFiles` | лимит пачки; по умолчанию `MAX_BATCH` (10). `Infinity` — пачка без лимита: так живёт «Редактор рендера», где панель хранит все записи проекта, а `MAX_BATCH` ограничивает только рабочий набор (`useBatchSelection.maxWorkingSet`) |
 | `replace` | новые файлы заменяют приложенные («Фото → 3D»: одно фото на модель) |
 | `onDetach(items, reason)` | файлы ушли из пачки; `discard` означает удалить черновик, `consume` — превратить его в задание; страница также подчищает своё по `previewUrl` |
 
@@ -109,8 +110,9 @@ useBatchSelection ─► batch ──► Stage / BatchGrid / RenderTray / Render
 сохраняются в IndexedDB и, при включённом серверном хранении, в Vercel Blob;
 метаданные синхронизируются с Postgres. После перезагрузки такие записи
 возвращаются в `useAttachments` через `restoreAttachments`. В редакторе таким
-же способом возвращаются исходники уже готовых и ошибочных обработок, чтобы
-рабочая сцена и пары версий не исчезали после refresh. Удаление пары из пачки
+же способом возвращаются исходники всех готовых и ошибочных обработок проекта,
+без лимита по количеству, чтобы рабочая сцена и пары версий не исчезали после
+refresh. Удаление пары из пачки
 удаляет её запись и объекты.
 
 ### `useBatchSelection(intake, options)` — `src/lib/use-batch-selection.ts`
@@ -124,9 +126,10 @@ useBatchSelection ─► batch ──► Stage / BatchGrid / RenderTray / Render
 | --- | --- |
 | `noun` | формы слова для подписи: `["рендер", "рендера", "рендеров"]` |
 | `onEditAll` / `onLeaveBatch` | что ещё сделать при входе/выходе из пакетного режима (редактор рендера открывает и закрывает настройки) |
+| `maxWorkingSet` | сколько рендеров уходит в обработку за раз (редактор рендера — `MAX_BATCH`); набор больше лимита не урезается, вместо этого хук отдаёт `limitNotice` — страница передаёт его в `submitBlockedReason` композера |
 
 Возвращает `BatchSelection`: `current`, `focusIndex`, `pickedItems`,
-`workingSet`, `showBatchGrid`, `selectionLabel`, обработчики
+`workingSet`, `showBatchGrid`, `selectionLabel`, `limitNotice`, обработчики
 (`selectAttachment`, `togglePicking`, `editAll`, `leaveBatch`, `pickAll`,
 `selectPrev`/`selectNext`, `removeAttachment`, `clearAttachments`),
 `takeWorkingSet()` — забирает набор в обработку и сбрасывает выбор, и
@@ -201,7 +204,10 @@ useBatchSelection ─► batch ──► Stage / BatchGrid / RenderTray / Render
   («Материалы»). `trayOpen` + `trayRight` двигают правый край при открытой панели.
 - `ToolAside` — закреплённая правая панель как поверхность: зеркало сайдбара.
   По умолчанию позиция панели пачки (`right-4 w-[264px] lg:flex`); панель
-  стилей передаёт `className="right-[292px] w-[280px] xl:flex"`.
+  стилей передаёт `className="right-[292px] w-[280px] xl:flex"`. Слот `rail`
+  рисует вкладки снаружи левого края (папки рендеров); страница тогда
+  расширяет отступы `trayMargin` у `ToolShell` и `trayRight` у `ComposerDock`
+  на ширину вкладок (40 px).
 - `ToolGallery` — колонки масонри для карточек.
 
 ### `ToolComposer` — `src/components/tool/tool-composer.tsx`
@@ -227,6 +233,21 @@ useBatchSelection ─► batch ──► Stage / BatchGrid / RenderTray / Render
 «Редакторе рендера» это пара «исходник / новый»; новая версия показывает
 состояния обработки и ошибки и выбирается на большой сцене независимо от
 исходника.
+
+### `FolderRail` — `src/components/tool/folder-rail.tsx`
+
+Папки рендеров — вкладки у правой панели, как закладки у блокнота. Первая,
+«Общая» (`activeId === null`), показывает все записи проекта; дальше папки
+пользователя, последняя — «+» (создаёт «Комната N» и сразу открывает
+переименование). При наведении над вкладкой появляется карандаш; окошко имени
+сохраняет по Enter или клику мимо, там же кнопка удаления папки — её рендеры
+остаются в проекте и видны в «Общей». Папки хранятся в записи проекта
+(`Project.folders`, действия `createFolder`/`renameFolder`/`deleteFolder` в
+`project-store`), принадлежность рендера — поле `folderId` его записи: новые
+черновики получают папку, открытую в момент добавления. В «Редакторе рендера»
+смена папки перестраивает пачку через обычное восстановление исходников
+(`restoreAttachments`), поэтому лимитов и копий у папок нет.
+`orientation="horizontal"` — чипы над `RenderStrip` на узких экранах.
 
 ### `Stage`, `BatchGrid` — `src/components/tool/stage.tsx`
 
@@ -267,6 +288,7 @@ useBatchSelection ─► batch ──► Stage / BatchGrid / RenderTray / Render
 | `tool-shell.tsx` | `ToolShell`, `ComposerDock`, `ToolAside`, `ToolGallery` | каркас экрана и плавающие слои |
 | `tool-composer.tsx` | `ToolComposer` | композер с панелью настроек |
 | `render-tray.tsx` | `RenderTray`, `RenderStrip` | панель-галерея пачки и полоска миниатюр |
+| `folder-rail.tsx` | `FolderRail` | папки рендеров: вкладки у правой панели, переименование и удаление |
 | `stage.tsx` | `Stage`, `StagePlaceholder`, `BatchGrid` | сцена, её состояние восстановления и пакетный грид |
 | `tool-dropzone.tsx` | `ToolDropzone` | пустой экран-дропзона |
 | `tool-card.tsx` | `ToolCard`, `StoredAssetNotice`, `useBlobUrl`, `downloadStoredResult` | карточка результата; стабильное состояние отсутствующего файла; совместимый хук «блоб → object URL»; скачивание полного результата |

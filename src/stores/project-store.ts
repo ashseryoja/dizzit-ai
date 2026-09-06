@@ -6,7 +6,7 @@ import { persist } from "zustand/middleware"
 import { attachServerSync } from "@/lib/server-sync"
 import { createId } from "@/lib/utils"
 import { fetchWorkspaceProject, hasPendingWorkspaceSave, saveWorkspaceProject } from "@/lib/workspace-sync"
-import type { Project } from "@/types"
+import type { Project, RenderFolder } from "@/types"
 
 // Не даём медленному GET, начатому до локального клика, вернуть старый проект.
 let workspaceSelectionRevision = 0
@@ -34,6 +34,10 @@ interface ProjectState {
   selectProject: (id: string) => void
   renameProject: (id: string, title: string) => void
   deleteProject: (id: string) => void
+  /** Папки рендеров внутри проекта — вкладки правой панели. */
+  createFolder: (projectId: string, title?: string) => RenderFolder | null
+  renameFolder: (projectId: string, folderId: string, title: string) => void
+  deleteFolder: (projectId: string, folderId: string) => void
 }
 
 function nowIso() {
@@ -50,6 +54,20 @@ function nextProjectTitle(projects: Project[]): string {
     if (match) maxN = Math.max(maxN, Number(match[1]))
   }
   return `Проект ${maxN + 1}`
+}
+
+/** Дефолтное имя папки — «Комната N», по той же логике, что и у проектов. */
+function nextFolderTitle(folders: RenderFolder[]): string {
+  let maxN = 0
+  for (const folder of folders) {
+    const match = /^Комната (\d+)$/u.exec(folder.title.trim())
+    if (match) maxN = Math.max(maxN, Number(match[1]))
+  }
+  return `Комната ${maxN + 1}`
+}
+
+function patchProject(projects: Project[], id: string, patch: (project: Project) => Partial<Project>): Project[] {
+  return projects.map((project) => (project.id === id ? { ...project, ...patch(project), updatedAt: nowIso() } : project))
 }
 
 export const useProjectStore = create<ProjectState>()(
@@ -103,6 +121,38 @@ export const useProjectStore = create<ProjectState>()(
           activeProjectId: nextActiveProjectId,
         })
         rememberWorkspaceProject(nextActiveProjectId)
+      },
+
+      createFolder: (projectId, title) => {
+        const project = get().projects.find((item) => item.id === projectId)
+        if (!project) return null
+        const folder: RenderFolder = {
+          id: createId(),
+          title: title?.trim() || nextFolderTitle(project.folders ?? []),
+          createdAt: nowIso(),
+        }
+        set((state) => ({
+          projects: patchProject(state.projects, projectId, (item) => ({ folders: [...(item.folders ?? []), folder] })),
+        }))
+        return folder
+      },
+
+      renameFolder: (projectId, folderId, title) => {
+        set((state) => ({
+          projects: patchProject(state.projects, projectId, (item) => ({
+            folders: (item.folders ?? []).map((folder) =>
+              folder.id === folderId ? { ...folder, title: title.trim() || folder.title } : folder
+            ),
+          })),
+        }))
+      },
+
+      deleteFolder: (projectId, folderId) => {
+        set((state) => ({
+          projects: patchProject(state.projects, projectId, (item) => ({
+            folders: (item.folders ?? []).filter((folder) => folder.id !== folderId),
+          })),
+        }))
       },
     }),
     {

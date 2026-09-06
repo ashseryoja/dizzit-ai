@@ -1678,3 +1678,146 @@ select.field option { background: var(--bg-overlay); color: var(--fg-1); }
 .style-dock-link:hover { color: var(--fg-1); }
 /* Крестик сброса — в правом верхнем углу секции, вне потока. */
 .style-dock > .btn-icon { position: absolute; top: 8px; right: 8px; }
+
+/* ── Папки рендеров: вкладки у правой панели, как закладки у блокнота ─────
+   Вертикальный ряд снаружи левого края панели; активная вкладка сливается
+   с её поверхностью. Горизонтальный вариант — чипы над полоской миниатюр. */
+.folder-rail {
+  position: absolute;
+  right: 100%;
+  top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 34px;
+  margin-right: -1px;
+  z-index: 1;
+}
+.folder-tab-wrap { position: relative; }
+.folder-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  min-height: 44px;
+  padding: 12px 0;
+  border: 1px solid var(--line);
+  border-right-color: transparent;
+  border-radius: var(--r-sm) 0 0 var(--r-sm);
+  background: var(--bg-page);
+  color: var(--fg-4);
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-std), background-color var(--dur-fast) var(--ease-std),
+    border-color var(--dur-fast) var(--ease-std);
+}
+.folder-tab:hover { color: var(--fg-1); background: var(--hover-1); }
+.folder-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.folder-tab.is-active {
+  background: var(--bg-surface);
+  color: var(--fg-1);
+  border-color: var(--line);
+  border-right-color: var(--bg-surface);
+  box-shadow: -8px 8px 24px rgba(0, 0, 0, 0.18);
+}
+.folder-tab-label {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  max-height: 128px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.folder-tab-add { min-height: 34px; padding: 8px 0; border-style: dashed; border-color: var(--line-strong); }
+.folder-tab-add:hover { border-color: var(--fg-4); }
+
+/* Карандаш над вкладкой — появляется при наведении, как крестик у плитки. */
+.folder-tab-edit {
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: var(--bg-overlay);
+  border: 1px solid var(--line-strong);
+  color: var(--fg-2);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity var(--dur-fast) var(--ease-std), background-color var(--dur-fast) var(--ease-std);
+}
+.folder-tab-wrap:hover .folder-tab-edit,
+.folder-tab-wrap:focus-within .folder-tab-edit,
+.folder-tab-edit:focus-visible { opacity: 1; }
+.folder-tab-edit:hover { background: var(--hover-2); color: var(--fg-1); }
+@media (hover: none) { .folder-tab-edit { opacity: 1; } }
+
+/* Окошко имени папки: раскрывается вправо, поверх панели. */
+.folder-editor {
+  --popover-origin: left center;
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 220px;
+  padding: 6px;
+  border-radius: var(--r-sm);
+  background: var(--bg-overlay);
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+.folder-editor-input {
+  min-width: 0;
+  flex: 1;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--bg-raised);
+  color: var(--fg-1);
+  font-size: 12.5px;
+  outline: none;
+}
+.folder-editor-input:focus { border-color: var(--fg-4); }
+.folder-editor-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  color: var(--fg-4);
+  background: transparent;
+  cursor: pointer;
+}
+.folder-editor-delete:hover { color: var(--fg-1); background: var(--hover-2); }
+
+/* Узкие экраны: те же папки строкой чипов над полоской миниатюр. */
+.folder-rail.is-horizontal {
+  position: static;
+  flex-direction: row;
+  flex-wrap: wrap;
+  width: auto;
+  margin: 0 0 8px;
+  gap: 6px;
+}
+.folder-rail.is-horizontal .folder-tab {
+  width: auto;
+  min-height: 30px;
+  padding: 0 12px;
+  border-right-color: var(--line);
+  border-radius: 999px;
+}
+.folder-rail.is-horizontal .folder-tab.is-active { border-right-color: var(--line); box-shadow: none; background: var(--bg-raised); }
+.folder-rail.is-horizontal .folder-tab-label { writing-mode: horizontal-tb; transform: none; max-height: none; max-width: 140px; }
+.folder-rail.is-horizontal .folder-tab-add { min-height: 30px; padding: 0 10px; }
+.folder-rail.is-horizontal .folder-tab-edit { top: -6px; left: auto; right: -6px; transform: none; }
+.folder-rail.is-horizontal .folder-editor { left: 0; top: calc(100% + 6px); --popover-origin: top left; }

@@ -78,7 +78,7 @@ export function RenderTray({
           <span className="flex items-baseline gap-2">
             <span className="ds-micro">{title}</span>
             <span className="text-[12px] tabular-nums" style={{ color: "var(--fg-4)" }}>
-              {count} из {maxFiles}
+              {Number.isFinite(maxFiles) ? `${count} из ${maxFiles}` : count}
             </span>
           </span>
         )}
