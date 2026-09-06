@@ -6,6 +6,7 @@ import { Download, Eye, RefreshCw, Trash2 } from "lucide-react"
 import { ThinkingGlyph } from "@/components/glyphs"
 import { useBlobUrl } from "@/components/tool/tool-card"
 import { getBlob, thumbSourceKey } from "@/lib/blob-store"
+import { previewCaption } from "@/lib/image-generation"
 import { cn, plural } from "@/lib/utils"
 import { PRESET_LABEL, isWideShot, viewKey, viewThumbKey } from "@/lib/view-engine"
 import type { ViewFrame, ViewSet } from "@/types"
@@ -61,7 +62,8 @@ export function ViewSetCard({
   const caption =
     `${item.sourceWidth}×${item.sourceHeight} · ${PRESET_LABEL[item.preset].toLowerCase()} · ` +
     `${frames.length} ${plural(frames.length, ["кадр", "кадра", "кадров"])}` +
-    (item.note ? ` · ${item.note}` : "")
+    (item.note ? ` · ${item.note}` : "") +
+    previewCaption(item)
 
   return (
     <figure

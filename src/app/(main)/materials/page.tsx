@@ -99,6 +99,7 @@ export default function MaterialsPage() {
           status: "done",
           resultWidth: result.width,
           resultHeight: result.height,
+          engine: result.engine,
           error: undefined,
         })
       } catch (error) {

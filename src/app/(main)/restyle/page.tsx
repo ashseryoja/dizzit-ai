@@ -30,7 +30,7 @@ import { ToolDropzone } from "@/components/tool/tool-dropzone"
 import { ComposerDock, ToolAside, ToolGallery, ToolShell } from "@/components/tool/tool-shell"
 import { getBlob, putBlob, resultKey, sourceKey, thumbResultKey } from "@/lib/blob-store"
 import { MAX_BATCH, makeThumb } from "@/lib/enhance-engine"
-import { STYLES, STYLE_LABEL, resolveStyle, restyleLocally, type RestyleFamily } from "@/lib/restyle-engine"
+import { STYLES, STYLE_LABEL, describeStyle, resolveStyle, restyleRender, type RestyleFamily } from "@/lib/restyle-engine"
 import { runGalleryQueue, saveSourceFile } from "@/lib/tool-jobs"
 import { useAttachments } from "@/lib/use-attachments"
 import { useBatchSelection } from "@/lib/use-batch-selection"
@@ -65,7 +65,7 @@ const LABELS: ToolComposerLabels = {
   filesTitle: "Интерьеры",
   filesQuality: "исходники",
   uploadTitle: "Загрузить интерьеры",
-  filesCaption: "рендер или фото помещения · результат — в размере исходника",
+  filesCaption: "рендер или фото помещения · результат до 1536 px по длинной стороне",
   optionsTitle: "Стиль",
   optionsIcon: SwatchBook,
   footer:
@@ -138,13 +138,14 @@ export default function RestylePage() {
       try {
         const source = await getBlob(sourceKey(meta.id))
         if (!source) throw new Error("Исходник не найден в хранилище браузера.")
-        const result = await restyleLocally(source, resolveStyle(meta.style, meta.note))
+        const result = await restyleRender(source, { style: meta.style, note: meta.note, excluded: meta.excluded })
         await putBlob(resultKey(meta.id), result.blob)
         await putBlob(thumbResultKey(meta.id), await makeThumb(result.blob))
         update(meta.id, {
           status: "done",
           resultWidth: result.width,
           resultHeight: result.height,
+          engine: result.engine,
           error: undefined,
         })
       } catch (error) {
@@ -344,7 +345,7 @@ export default function RestylePage() {
               item={item}
               caption={`${(item.status === "done" && item.resultWidth) || item.sourceWidth}×${
                 (item.status === "done" && item.resultHeight) || item.sourceHeight
-              } · ${STYLE_LABEL[resolveStyle(item.style, item.note)].toLowerCase()}${
+              } · ${describeStyle(item.style, item.note)}${
                 item.excluded && item.excluded.length > 0 ? ` · без: ${item.excluded.join(", ")}` : ""
               }${item.note ? ` · ${item.note}` : ""}`}
               processingLabel="переносим стиль…"

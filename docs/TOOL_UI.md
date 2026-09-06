@@ -36,6 +36,7 @@
 | Правила приёма файлов: форматы, лимит, предупреждения, перенос, вставка из буфера, замена вместо добавления | `src/lib/use-attachments.ts` | `useAttachments`; константы форматов и лимитов — `src/lib/enhance-engine.ts` |
 | Рабочий набор: режим «Выбрать», «Выбрать все», стрелки и Escape, «Редактировать все», что уходит в обработку | `src/lib/use-batch-selection.ts` | `useBatchSelection` |
 | Сохранение исходника в IndexedDB, очередь пачки (карточки сразу, обработка по одной) | `src/lib/tool-jobs.ts` | `saveSourceFile`, `runGalleryQueue` |
+| Куда уходит генерация картинок: провайдер, размеры, уменьшение референса, предпросмотр без ключа, подпись «предпросмотр без ключа» на карточке | `src/lib/image-generation.ts` — клиент; `src/app/api/images/route.ts` + `src/server/laozhang.ts` — сервер (ключ) | `requestImage`, `withImageProvider`, `prepareReference`, `previewCaption`; промпты — в движке инструмента (`build*Prompt`) |
 | В какой проект класть новые записи | `src/stores/project-store.ts` | `ensureActiveProject`, `useActiveProject` |
 | Внешний вид всего перечисленного (рецепты CSS) | `src/styles/ds/surfaces.css` | `.stage-*`, `.batch-tile`, `.tray-*`, `.dropzone`, `.popover`, `.presence-*`, `.composer-notice`, `.rg-tag`, `.style-dock` |
 
@@ -134,6 +135,13 @@ useBatchSelection ─► batch ──► Stage / BatchGrid / RenderTray / Render
   или новый «Проект N»; для колбэков вне рендера. В рендере — `useActiveProject()`.
 - `fileBaseName(name, fallback)` (`src/lib/utils.ts`) — имя без расширения для
   скачивания.
+- `requestImage(...)`, `withImageProvider(remote, preview)`,
+  `prepareReference(blob)` (`src/lib/image-generation.ts`) — один вход к
+  провайдеру картинок для всех движков; без ключа — локальный предпросмотр,
+  помеченный `engine: "preview"`. `previewCaption(item)` — хвост подписи
+  карточки для такого результата (`ToolCard`, `ViewSetCard`).
+- `mapWithConcurrency(items, limit, run)` (`src/lib/utils.ts`) — несколько
+  запросов к провайдеру разом с потолком (кадры сета в «Ракурсах»).
 
 ---
 

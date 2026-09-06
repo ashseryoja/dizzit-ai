@@ -16,16 +16,8 @@ import { runGalleryQueue, saveSourceFile } from "@/lib/tool-jobs"
 import { useAttachments } from "@/lib/use-attachments"
 import { useBatchSelection } from "@/lib/use-batch-selection"
 import { usePresence } from "@/lib/use-presence"
-import { fileBaseName, plural } from "@/lib/utils"
-import {
-  PRESET_LABEL,
-  SHOT_LABEL,
-  framesOf,
-  planShots,
-  renderFrameLocally,
-  viewKey,
-  viewThumbKey,
-} from "@/lib/view-engine"
+import { fileBaseName, mapWithConcurrency, plural } from "@/lib/utils"
+import { PRESET_LABEL, SHOT_LABEL, framesOf, prepareViewSet, viewKey, viewThumbKey } from "@/lib/view-engine"
 import { ensureActiveProject, useActiveProject } from "@/stores/project-store"
 import { useViewsStore } from "@/stores/views-store"
 import type { ShotKind, ViewFrame, ViewPreset, ViewSet } from "@/types"
@@ -41,7 +33,7 @@ const LABELS: ToolComposerLabels = {
   filesTitle: "Общие планы",
   filesQuality: "исходники",
   uploadTitle: "Загрузить рендеры",
-  filesCaption: "по одному сету на каждый рендер · крупные планы 4:5, ракурсы в размере исходника",
+  filesCaption: "по одному сету на каждый рендер · крупные планы 4:5, ракурсы до 1536 px",
   optionsTitle: "Что снять",
   optionsIcon: Camera,
   footer:
@@ -50,6 +42,9 @@ const LABELS: ToolComposerLabels = {
   submitLabel: "Построить",
   batchNoun: ["рендер", "рендера", "рендеров"],
 }
+
+/** Сколько кадров сета считается одновременно: быстрее, чем по одному, и без шторма запросов к провайдеру. */
+const FRAME_CONCURRENCY = 3
 
 /** Состав набора одной строкой: «сверху, снизу, деталь ×2, фактура, фрагмент». */
 function describeFrames(frames: ViewFrame[]): string {
@@ -69,7 +64,7 @@ function describeFrames(frames: ViewFrame[]): string {
  * Сет строится по РАБОЧЕМУ НАБОРУ: в обычном режиме это рендер на сцене,
  * в режиме «Выбрать» панели — отмеченные; «Построить все» показывает набор
  * гридом вместо сцены. Каждый рендер пачки даёт свой сет; кадры внутри сета
- * считаются по одному, и карточка догоняет их плитка за плиткой.
+ * считаются по несколько разом, и карточка догоняет их плитка за плиткой.
  */
 export default function ViewsPage() {
   const activeProject = useActiveProject()
@@ -93,27 +88,30 @@ export default function ViewsPage() {
   const composer = usePresence(showComposer)
   const tray = usePresence(hasAttachments)
 
-  /* Кадры сета считаются по одному; готовые сразу отмечаются в записи, чтобы
-     карточка показывала их, не дожидаясь всего сета. План крупных планов
-     (где вырезать) считается один раз на сет — кадры не смотрят в одну точку. */
+  /* Кадры сета считаются по несколько разом; готовые сразу отмечаются в
+     записи, чтобы карточка показывала их, не дожидаясь всего сета. Подготовка
+     (референс для модели или план вырезок предпросмотра) — один раз на сет. */
   const runSet = useCallback(
     async (meta: ViewSet) => {
       try {
         const source = await getBlob(sourceKey(meta.id))
         if (!source) throw new Error("Исходник не найден в хранилище браузера.")
-        const plan = await planShots(source, meta.frames)
+        const renderer = await prepareViewSet(source, meta.frames, meta.note)
         const ready: string[] = []
-        for (const frame of meta.frames) {
-          const result = await renderFrameLocally(source, frame, plan)
+        let engine: string | undefined
+        await mapWithConcurrency(meta.frames, FRAME_CONCURRENCY, async (frame) => {
+          const result = await renderer.render(frame)
           await putBlob(viewKey(meta.id, frame.key), result.blob)
           await putBlob(viewThumbKey(meta.id, frame.key), await makeThumb(result.blob))
           ready.push(frame.key)
+          engine = result.engine
           update(meta.id, { ready: [...ready] })
-        }
+        })
         update(meta.id, {
           status: "done",
           resultWidth: meta.sourceWidth,
           resultHeight: meta.sourceHeight,
+          engine,
           error: undefined,
         })
       } catch (error) {

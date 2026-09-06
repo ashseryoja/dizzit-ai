@@ -1,44 +1,106 @@
 "use client"
 
+import { PREVIEW_ENGINE, prepareReference, requestImage, withImageProvider, type GeneratedImage } from "@/lib/image-generation"
 import { makeRng, type Rng } from "@/lib/seeded-rng"
 import type { MaterialCategory } from "@/types"
 
 /**
- * Локальный генератор материалов — ПРЕДПРОСМОТР, а не продукт.
+ * Движок генерации материала.
  *
- * Настоящая генерация (диффузионная модель, обученная на PBR-текстурах) —
- * серверная задача, см. README «Куда добавлять новый инструмент». Пока
- * провайдера нет, этот генератор держит инструмент рабочим end-to-end:
- * процедурные текстуры на canvas по семейству материала. Референс задаёт
- * базовый тон (усредняется до одного цвета), описание — семейство в режиме
- * «авто». Результат — квадратный тайл.
+ * Основной путь — `generateMaterial`: описание и семейство собираются в
+ * промпт бесшовной текстуры, референс (если есть) уходит картинкой, чтобы
+ * модель взяла его тон и характер; результат — квадрат 1024×1024 от
+ * gpt-image-2 (`lib/image-generation` → `/api/images`).
+ *
+ * Без ключа провайдера — `generateMaterialLocally`, ПРЕДПРОСМОТР: процедурные
+ * текстуры на canvas по семейству, референс усредняется до одного тона;
+ * результат помечен `engine: "preview"`.
  */
 
 export const MATERIAL_SIDE = 1024
 
-export interface MaterialResult {
-  blob: Blob
-  width: number
-  height: number
-}
+export type MaterialResult = GeneratedImage
+
+export type MaterialFamily = Exclude<MaterialCategory, "auto">
 
 /* Базовые тона семейств — приглушённые, в духе палитры сервиса. */
-const BASE_TONE: Record<Exclude<MaterialCategory, "auto">, [number, number, number]> = {
+const BASE_TONE: Record<MaterialFamily, [number, number, number]> = {
   wood: [138, 106, 75],
   stone: [154, 151, 143],
   metal: [159, 164, 169],
   fabric: [125, 133, 119],
 }
 
-/** «Авто» выводится из описания; без узнаваемых слов — камень. */
-export function resolveCategory(category: MaterialCategory, note: string): Exclude<MaterialCategory, "auto"> {
-  if (category !== "auto") return category
+/** Семейство по словам описания; `null` — описание вне четырёх семейств. */
+export function matchCategory(note: string): MaterialFamily | null {
   const text = note.toLowerCase()
   if (/дерев|дуб|орех|ясен|сосн|wood|oak/.test(text)) return "wood"
   if (/метал|сталь|латун|медь|алюмин|metal|steel/.test(text)) return "metal"
   if (/ткан|текстиль|лён|лен |хлопок|шерст|велюр|fabric|linen/.test(text)) return "fabric"
-  return "stone"
+  return null
 }
+
+/** «Авто» выводится из описания; без узнаваемых слов предпросмотр рисует камень. */
+export function resolveCategory(category: MaterialCategory, note: string): MaterialFamily {
+  if (category !== "auto") return category
+  return matchCategory(note) ?? "stone"
+}
+
+/* ── Промпт ─────────────────────────────────────────────────────────── */
+
+const FAMILY_ENGLISH: Record<MaterialFamily, string> = {
+  wood: "natural wood",
+  stone: "stone",
+  metal: "metal",
+  fabric: "woven fabric",
+}
+
+export interface MaterialJobInput {
+  category: MaterialCategory
+  note: string
+  hasReference: boolean
+}
+
+export function buildMaterialPrompt({ category, note, hasReference }: MaterialJobInput): string {
+  const family = category === "auto" ? matchCategory(note) : category
+  const description = note.trim()
+  const subject = family
+    ? `${FAMILY_ENGLISH[family]}${description ? `: ${description}` : ""}`
+    : description || "the material shown in the reference image"
+  return [
+    `Seamless, tileable texture of ${subject}.`,
+    "Photographed flat and straight-on, evenly lit, the material fills the entire square frame edge to edge. No perspective, no objects, no borders, no text, no watermark.",
+    "Realistic surface detail suitable as an albedo texture for 3D rendering.",
+    hasReference ? "Match the color, tone and character of the attached reference image." : "",
+  ]
+    .filter(Boolean)
+    .join("\n")
+}
+
+/* ── Основной путь ──────────────────────────────────────────────────── */
+
+export interface MaterialJob {
+  category: MaterialCategory
+  note: string
+  /** Ключ детерминизма предпросмотра — id записи: «Повторить» рисует ту же текстуру. */
+  seed: string
+  ref?: Blob | null
+}
+
+/** Генерация материала: модель, а без ключа — процедурный предпросмотр. */
+export async function generateMaterial(job: MaterialJob): Promise<MaterialResult> {
+  return withImageProvider(
+    async () =>
+      requestImage({
+        prompt: buildMaterialPrompt({ category: job.category, note: job.note, hasReference: Boolean(job.ref) }),
+        size: "1024x1024",
+        references: job.ref ? [await prepareReference(job.ref)] : [],
+      }),
+    () => generateMaterialLocally(job)
+  )
+}
+
+/* ── Предпросмотр без ключа ─────────────────────────────────────────── */
 
 /** Средний цвет референса: рисуем его в 1×1 и читаем пиксель. */
 async function averageTone(ref: Blob): Promise<[number, number, number] | null> {
@@ -181,18 +243,7 @@ function toBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   })
 }
 
-export async function generateMaterial({
-  category,
-  note,
-  seed,
-  ref,
-}: {
-  category: MaterialCategory
-  note: string
-  /** Ключ детерминизма — id записи: «Повторить» рисует ту же текстуру. */
-  seed: string
-  ref?: Blob | null
-}): Promise<MaterialResult> {
+export async function generateMaterialLocally({ category, note, seed, ref }: MaterialJob): Promise<MaterialResult> {
   const family = resolveCategory(category, note)
   const rand = makeRng(seed)
   const tone = (ref ? await averageTone(ref) : null) ?? BASE_TONE[family]
@@ -222,5 +273,5 @@ export async function generateMaterial({
   }
 
   const blob = await toBlob(canvas)
-  return { blob, width: MATERIAL_SIDE, height: MATERIAL_SIDE }
+  return { blob, width: MATERIAL_SIDE, height: MATERIAL_SIDE, engine: PREVIEW_ENGINE }
 }

@@ -19,7 +19,7 @@ import { ToolComposer, type ToolComposerLabels, type ToolOption } from "@/compon
 import { ToolDropzone } from "@/components/tool/tool-dropzone"
 import { ComposerDock, ToolAside, ToolGallery, ToolShell } from "@/components/tool/tool-shell"
 import { getBlob, putBlob, resultKey, sourceKey, thumbResultKey } from "@/lib/blob-store"
-import { MAX_BATCH, enhanceLocally, makeThumb } from "@/lib/enhance-engine"
+import { MAX_BATCH, enhanceRender, makeThumb } from "@/lib/enhance-engine"
 import {
   buildEditComment,
   buildRegionsPayload,
@@ -54,11 +54,11 @@ const LABELS: ToolComposerLabels = {
   filesTitle: "Рендеры",
   filesQuality: "исходники",
   uploadTitle: "Загрузить рендеры",
-  filesCaption: "свежие рендеры без сжатия · результат — в размере исходника",
+  filesCaption: "свежие рендеры без сжатия · результат до 1536 px по длинной стороне",
   optionsTitle: "Контекст",
   optionsIcon: Layers,
   footer:
-    "Содержимое кадра не меняется: геометрия, материалы, композиция и размер остаются вашими — растут только детализация и реализм.",
+    "Содержимое кадра не меняется: геометрия, материалы и композиция остаются вашими — растут только детализация и реализм.",
   inputPlaceholder: "Комментарий к обработке…",
   submitLabel: "Улучшить",
   batchNoun: ["рендер", "рендера", "рендеров"],
@@ -190,19 +190,29 @@ export default function EnhancePage() {
   )
 
   /* Собственно обработка: исходник уже в IndexedDB, результат и миниатюра
-     доезжают туда же. Метаданные ведут карточку через статусы. */
+     доезжают туда же. Метаданные ведут карточку через статусы. Всё, что
+     выбрано в композере (контекст, заселение, пакетные функции, области и
+     комментарий), уходит в движок одним заданием. */
   const runEnhance = useCallback(
     async (meta: Enhancement) => {
       try {
         const source = await getBlob(sourceKey(meta.id))
         if (!source) throw new Error("Исходник не найден в хранилище браузера.")
-        const result = await enhanceLocally(source, { populate: meta.populate, context: meta.context, seed: meta.id })
+        const result = await enhanceRender(source, {
+          populate: meta.populate,
+          context: meta.context,
+          seed: meta.id,
+          note: meta.note,
+          tools: meta.tools,
+          regions: meta.regions,
+        })
         await putBlob(resultKey(meta.id), result.blob)
         await putBlob(thumbResultKey(meta.id), await makeThumb(result.blob))
         update(meta.id, {
           status: "done",
           resultWidth: result.width,
           resultHeight: result.height,
+          engine: result.engine,
           error: undefined,
         })
       } catch (error) {

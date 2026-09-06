@@ -1,15 +1,27 @@
 "use client"
 
+import {
+  PREVIEW_ENGINE,
+  prepareReference,
+  readBlobSize,
+  requestImage,
+  sizeForAspect,
+  withImageProvider,
+  type GeneratedImage,
+} from "@/lib/image-generation"
 import type { RestyleStyle } from "@/types"
 
 /**
- * Локальный движок переноса стиля — ПРЕДПРОСМОТР, а не продукт.
+ * Движок переноса стиля.
  *
- * Настоящий перенос (та же геометрия помещения, но другая отделка, цвета и
- * мебель) — серверная image-to-image модель с контролем по глубине и краям,
- * см. README «Куда добавлять новый инструмент». Пока провайдера нет, движок
- * держит инструмент рабочим end-to-end: тональная «палитра» стиля canvas-
- * фильтрами, тонировка и виньетка. Геометрия и размер кадра не меняются.
+ * Основной путь — `restyleRender`: каталог стиля (материалы, характер) и
+ * комментарий собираются в промпт, исходник уходит референсом в gpt-image-2
+ * (`lib/image-generation` → `/api/images`). Геометрия помещения остаётся,
+ * меняются отделка, цвета и дизайн мебели.
+ *
+ * Без ключа провайдера — `restyleLocally`, ПРЕДПРОСМОТР на canvas: тональная
+ * «палитра» стиля фильтрами, тонировка и виньетка в размере исходника;
+ * результат помечен `engine: "preview"`.
  */
 
 export type RestyleFamily = Exclude<RestyleStyle, "auto">
@@ -390,17 +402,92 @@ export const STYLE_LABEL: Record<RestyleStyle, string> = {
   ...(Object.fromEntries(STYLES.map((style) => [style.value, style.label])) as Record<RestyleFamily, string>),
 }
 
+/** Семейство из каталога по словам описания; `null` — описание своё, вне каталога. */
+export function matchStyle(note: string): RestyleFamily | null {
+  for (const info of STYLES) if (info.keywords.test(note)) return info.value
+  return null
+}
+
 /**
  * «Авто» выводится из описания. Без узнаваемых слов семейство выбирается
- * устойчиво по тексту, чтобы «Повторить» дало тот же стиль; пустое описание
- * при «авто» — не задание, страница просит выбрать стиль.
+ * устойчиво по тексту, чтобы предпросмотр «Повторить» дал тот же стиль; пустое
+ * описание при «авто» — не задание, страница просит выбрать стиль. Модели
+ * это семейство не навязывается — ей уходит само описание (см. `restyleRender`).
  */
 export function resolveStyle(style: RestyleStyle, note: string): RestyleFamily {
   if (style !== "auto") return style
-  for (const info of STYLES) if (info.keywords.test(note)) return info.value
+  const matched = matchStyle(note)
+  if (matched) return matched
   let hash = 0
   for (const char of note) hash = (hash * 31 + char.charCodeAt(0)) >>> 0
   return STYLE_FAMILIES[hash % STYLE_FAMILIES.length]
+}
+
+/** Подпись стиля для карточки: своё описание без узнаваемого семейства — «свой стиль». */
+export function describeStyle(style: RestyleStyle, note: string): string {
+  if (style === "auto" && !matchStyle(note)) return "свой стиль"
+  return STYLE_LABEL[resolveStyle(style, note)].toLowerCase()
+}
+
+/* ── Промпт ─────────────────────────────────────────────────────────── */
+
+const STYLE_ENGLISH: Record<RestyleFamily, string> = {
+  scandi: "Scandinavian",
+  neoclassic: "Neoclassical",
+  japandi: "Japandi",
+  loft: "industrial loft",
+  minimal: "minimalist",
+  midcentury: "mid-century modern",
+  boho: "bohemian (boho)",
+  artdeco: "Art Deco",
+  mediterranean: "Mediterranean",
+  provence: "Provence (French country)",
+  wabisabi: "wabi-sabi",
+  contemporary: "contemporary",
+}
+
+export interface RestyleJob {
+  style: RestyleStyle
+  note: string
+  /** Материалы стиля, снятые галочкой — их в рендере быть не должно. */
+  excluded?: string[]
+}
+
+export function buildRestylePrompt(job: RestyleJob): string {
+  const note = job.note.trim()
+  const family = job.style === "auto" ? matchStyle(note) : job.style
+  const info = family ? STYLES.find((style) => style.value === family) : undefined
+  const excluded = job.excluded ?? []
+  const materials = info ? info.swatches.map((swatch) => swatch.name).filter((name) => !excluded.includes(name)) : []
+
+  const lines: string[] = [
+    info
+      ? `Redesign this interior in the ${STYLE_ENGLISH[info.value]} style (${info.hint}).`
+      : `Redesign this interior in the style described by the designer: ${note}`,
+    "Keep the room exactly as it is: the same geometry, walls, windows, doors, ceiling, camera angle, framing, perspective and placement of furniture. Change only finishes, wall and floor materials, colors, textiles, lighting fixtures, decor and the design of the furniture, so that the space reads unmistakably as this style.",
+    materials.length > 0 ? `Characteristic materials and finishes to use: ${materials.join(", ")}.` : "",
+    excluded.length > 0 ? `Do not use: ${excluded.join(", ")}.` : "",
+    info && note ? `Designer's notes: ${note}` : "",
+    "Photorealistic, natural lighting, no text, no watermark.",
+  ]
+  return lines.filter(Boolean).join("\n")
+}
+
+/* ── Основной путь ──────────────────────────────────────────────────── */
+
+/** Перенос стиля: модель, а без ключа — локальный предпросмотр по семейству. */
+export async function restyleRender(source: Blob, job: RestyleJob): Promise<RestyleResult> {
+  return withImageProvider(
+    async () => {
+      const { width, height } = await readBlobSize(source)
+      return requestImage({
+        prompt: buildRestylePrompt(job),
+        size: sizeForAspect(width, height),
+        references: [await prepareReference(source)],
+      })
+    },
+    () => restyleLocally(source, resolveStyle(job.style, job.note))
+  )
 }
 
 interface Grade {
@@ -504,11 +591,7 @@ const GRADE: Record<RestyleFamily, Grade> = {
   },
 }
 
-export interface RestyleResult {
-  blob: Blob
-  width: number
-  height: number
-}
+export type RestyleResult = GeneratedImage
 
 function toBlob(canvas: HTMLCanvasElement, type: string, quality?: number): Promise<Blob> {
   return new Promise((resolve, reject) => {
@@ -557,7 +640,7 @@ export async function restyleLocally(source: Blob, family: RestyleFamily): Promi
 
     const type = source.type === "image/png" ? "image/png" : "image/jpeg"
     const blob = await toBlob(canvas, type, type === "image/jpeg" ? 0.95 : undefined)
-    return { blob, width, height }
+    return { blob, width, height, engine: PREVIEW_ENGINE }
   } finally {
     bitmap.close()
   }

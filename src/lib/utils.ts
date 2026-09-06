@@ -54,3 +54,25 @@ export function plural(count: number, forms: [string, string, string]): string {
 export function fileBaseName(fileName: string, fallback = "file"): string {
   return fileName.replace(/\.[^.]+$/, "") || fallback
 }
+
+/**
+ * `Promise.all` с потолком одновременных задач: кадры сета уходят к провайдеру
+ * по несколько разом, но не все шесть сразу. Порядок результатов — как у входа.
+ */
+export async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  run: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length)
+  let next = 0
+  const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
+    while (next < items.length) {
+      const index = next
+      next += 1
+      results[index] = await run(items[index], index)
+    }
+  })
+  await Promise.all(workers)
+  return results
+}

@@ -38,6 +38,12 @@ export interface GalleryItemMeta {
   sourceHeight?: number
   resultWidth?: number
   resultHeight?: number
+  /**
+   * Чем посчитан результат: id модели провайдера (`gpt-image-2`) или
+   * `preview` — локальный canvas-движок, когда ключ провайдера не задан
+   * (см. lib/image-generation). У записей до подключения провайдера поля нет.
+   */
+  engine?: string
   error?: string
   createdAt: string
 }

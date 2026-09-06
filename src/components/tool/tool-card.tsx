@@ -5,6 +5,7 @@ import { Download, Eye, RefreshCw, Trash2 } from "lucide-react"
 
 import { ThinkingGlyph } from "@/components/glyphs"
 import { getBlob, resultKey, thumbResultKey, thumbSourceKey } from "@/lib/blob-store"
+import { previewCaption } from "@/lib/image-generation"
 import { cn } from "@/lib/utils"
 import type { GalleryItemMeta } from "@/types"
 
@@ -178,7 +179,9 @@ export function ToolCard({
               className="chip absolute bottom-2 left-2 opacity-0 transition-opacity group-hover:opacity-100"
               style={{ background: "rgba(16,16,18,0.7)", color: "rgba(255,255,255,0.85)", borderColor: "rgba(255,255,255,0.16)" }}
             >
+              {/* Результат без ключа провайдера подписан честно: это canvas-предпросмотр. */}
               {caption}
+              {previewCaption(item)}
             </figcaption>
           </>
         ) : null}

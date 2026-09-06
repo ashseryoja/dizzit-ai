@@ -44,6 +44,20 @@
       ],
       "autoPort": true,
       "port": 3013
+    },
+    {
+      "name": "dizzit-ai-fake-images",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "NEXT_DIST_DIR=.next-solo",
+        "LAOZHANG_API_KEY=fake-key-for-local-testing",
+        "LAOZHANG_API_BASE_URL=http://127.0.0.1:4321",
+        "npx",
+        "next",
+        "dev"
+      ],
+      "autoPort": true,
+      "port": 3014
     }
   ]
 }

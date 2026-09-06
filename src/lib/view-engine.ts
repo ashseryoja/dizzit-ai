@@ -1,14 +1,28 @@
 "use client"
 
+import {
+  PREVIEW_ENGINE,
+  cropToAspect,
+  imageProviderStatus,
+  prepareReference,
+  readBlobSize,
+  requestImage,
+  sizeForAspect,
+  type GeneratedImage,
+} from "@/lib/image-generation"
 import type { ShotKind, ViewFrame, ViewPreset } from "@/types"
 
 /**
- * Локальный движок раскадровки — ПРЕДПРОСМОТР, а не продукт.
+ * Движок раскадровки.
  *
- * Настоящую раскадровку (новые точки съёмки и крупные планы предметов той же
- * сцены, дорисованные в полном разрешении) считает серверная модель с
- * пониманием глубины, см. README «Куда добавлять новый инструмент». Пока
- * провайдера нет, движок держит инструмент рабочим end-to-end:
+ * Основной путь — `prepareViewSet` → `render(frame)`: общий план один раз
+ * уменьшается до референса, и каждый кадр сета — свой запрос к gpt-image-2
+ * (`lib/image-generation` → `/api/images`): ракурсы — та же сцена с другой
+ * точки в пропорции исходника, крупные планы — портрет, обрезанный до 4:5.
+ * Комментарий «что показать крупно» раздаётся крупным планам по порядку.
+ *
+ * Без ключа провайдера — ПРЕДПРОСМОТР на canvas (`planShots` +
+ * `renderFrameLocally`), результат помечен `engine: "preview"`:
  *
  * - крупные планы (деталь, фактура, фрагмент) — вырезки 4:5 из кадра вокруг
  *   самых «насыщенных» мест: карта градиентов по уменьшенной копии, окно с
@@ -74,11 +88,119 @@ export function viewKeysOf(id: string, frames: ViewFrame[]): string[] {
   return frames.flatMap((frame) => [viewKey(id, frame.key), viewThumbKey(id, frame.key)])
 }
 
-export interface ViewResult {
-  blob: Blob
-  width: number
-  height: number
+export type ViewResult = GeneratedImage
+
+/* ── Основной путь: модель ──────────────────────────────────────────── */
+
+/** Пропорция крупных планов: портрет 4:5, как в каруселях. */
+const CLOSEUP_ASPECT = 4 / 5
+
+const ANGLE_PROMPT: Record<"top" | "low" | "left" | "right", string> = {
+  top: "Photograph the same scene from an elevated camera position looking down at it (high angle, roughly 35–45 degrees above the horizon), so the layout of the space reads clearly.",
+  low: "Photograph the same scene from a low camera position close to the floor, looking slightly upward (low angle), keeping the scene grounded and natural.",
+  left: "Photograph the same scene with the camera moved to the left side of the space and turned toward it, so the scene is seen from that side and its right-hand part opens up.",
+  right: "Photograph the same scene with the camera moved to the right side of the space and turned toward it, so the scene is seen from that side and its left-hand part opens up.",
 }
+
+/** Крупные планы без подсказки: чтобы кадры одного типа смотрели на разное. */
+const DETAIL_SUBJECTS = [
+  "the most prominent piece of furniture in the scene",
+  "a secondary object: a lamp, a vase, an armchair or a piece of decor",
+  "a decor item or accessory visible in the scene",
+  "a functional element: a handle, a fixture, a shelf or a joint between materials",
+]
+const TEXTURE_SUBJECTS = [
+  "the most characteristic material surface of the scene (wood grain, stone, plaster or fabric weave)",
+  "a second, different material surface of the scene",
+  "a third, different material surface of the scene",
+  "a fourth, different material surface of the scene",
+]
+const FRAGMENT_SUBJECTS = [
+  "the main functional zone of the space",
+  "a different corner or zone of the same space",
+  "another part of the space not shown in the previous fragments",
+  "a fourth distinct zone of the space",
+]
+
+/** «ваза, кресло, торшер» → отдельные сюжеты для крупных планов по порядку. */
+function noteSubjects(note: string): string[] {
+  return note
+    .split(/[,;\n]+/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+}
+
+/**
+ * Промпт кадра. Сюжеты из комментария раздаются крупным планам (деталь,
+ * фактура, фрагмент) в порядке сета; кому не хватило — типовой сюжет по номеру.
+ */
+export function buildViewPrompt(frame: ViewFrame, frames: ViewFrame[], note: string): string {
+  const shared = [
+    "The attached image is a render of a space. Produce a new photograph of exactly the same space: the same objects, materials, colors, finishes and lighting — nothing added, removed or restyled.",
+  ]
+  if (isWideShot(frame.kind)) {
+    return [
+      ...shared,
+      ANGLE_PROMPT[frame.kind as keyof typeof ANGLE_PROMPT],
+      "Keep the same aspect ratio as the reference. Photorealistic, no text, no watermark.",
+    ].join("\n")
+  }
+
+  const closeups = frames.filter((item) => !isWideShot(item.kind))
+  const position = closeups.findIndex((item) => item.key === frame.key)
+  const subjects = noteSubjects(note)
+  const requested = position >= 0 && position < subjects.length ? subjects[position] : null
+  const ordinal = closeups.filter((item, index) => item.kind === frame.kind && index < position).length
+
+  let shot: string
+  if (frame.kind === "detail") {
+    shot = `A close-up photograph of ${requested ?? DETAIL_SUBJECTS[ordinal % DETAIL_SUBJECTS.length]}, as it exists in this scene, with shallow depth of field and the object fully in frame.`
+  } else if (frame.kind === "texture") {
+    shot = `An extreme close-up (macro) of ${requested ?? TEXTURE_SUBJECTS[ordinal % TEXTURE_SUBJECTS.length]}, showing its texture and the way light falls on it.`
+  } else {
+    shot = `A photograph of ${requested ?? FRAGMENT_SUBJECTS[ordinal % FRAGMENT_SUBJECTS.length]}, framed tighter than the reference, as a fragment of this same interior.`
+  }
+  return [
+    ...shared,
+    shot,
+    "Portrait orientation, the subject centered with some margin around it. Photorealistic, same lighting as the reference, no text, no watermark.",
+  ].join("\n")
+}
+
+export interface ViewSetRenderer {
+  /** Один кадр сета. Кадры независимы — их можно считать по несколько разом. */
+  render(frame: ViewFrame): Promise<ViewResult>
+}
+
+/**
+ * Подготовка сета: провайдер настроен — референс уменьшается один раз на все
+ * кадры; нет — план вырезок для предпросмотра считается один раз на сет.
+ */
+export async function prepareViewSet(source: Blob, frames: ViewFrame[], note: string): Promise<ViewSetRenderer> {
+  const status = await imageProviderStatus()
+  if (status.configured) {
+    const { width, height } = await readBlobSize(source)
+    const reference = await prepareReference(source)
+    const wideSize = sizeForAspect(width, height)
+    return {
+      async render(frame) {
+        const wide = isWideShot(frame.kind)
+        const image = await requestImage({
+          prompt: buildViewPrompt(frame, frames, note),
+          size: wide ? wideSize : "1024x1536",
+          references: [reference],
+        })
+        return wide ? image : cropToAspect(image, CLOSEUP_ASPECT)
+      },
+    }
+  }
+  const plan = await planShots(source, frames)
+  return {
+    render: (frame) => renderFrameLocally(source, frame, plan),
+  }
+}
+
+/* ── Предпросмотр без ключа ─────────────────────────────────────────── */
 
 /** Область кадра в пикселях исходника. */
 export interface Region {
@@ -128,8 +250,8 @@ const CROP_WIDTH: Record<"detail" | "texture" | "fragment", number> = {
   texture: 0.2,
 }
 
-/** Пропорция крупных планов: портрет 4:5, как в каруселях. */
-const CROP_ASPECT = 4 / 5
+/** Пропорция вырезок предпросмотра — та же 4:5. */
+const CROP_ASPECT = CLOSEUP_ASPECT
 
 interface Saliency {
   aw: number
@@ -357,7 +479,7 @@ export async function renderFrameLocally(source: Blob, frame: ViewFrame, plan: S
     }
     const type = source.type === "image/png" ? "image/png" : "image/jpeg"
     const blob = await toBlob(canvas, type, type === "image/jpeg" ? 0.95 : undefined)
-    return { blob, width: canvas.width, height: canvas.height }
+    return { blob, width: canvas.width, height: canvas.height, engine: PREVIEW_ENGINE }
   } finally {
     bitmap.close()
   }

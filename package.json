@@ -12,7 +12,8 @@
     "start": "next start -p 3010",
     "lint": "next lint && node scripts/check-tool-ui.mjs",
     "check:ui": "node scripts/check-tool-ui.mjs",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "fake:images": "node scripts/fake-laozhang.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",
@@ -20,6 +21,7 @@
     "next": "^15.5.7",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
+    "server-only": "^0.0.1",
     "tailwind-merge": "^2.5.4",
     "zustand": "^5.0.1"
   },
