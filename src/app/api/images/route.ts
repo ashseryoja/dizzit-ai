@@ -1,6 +1,15 @@
 import { NextResponse } from "next/server"
 
-import { ImageProviderError, sniffImageMime, type AspectRatio, type ImageReference } from "@/server/image-provider"
+import {
+  ImageProviderError,
+  isImageResolution,
+  sniffImageMime,
+  type AspectRatio,
+  type ImageProviderId,
+  type ImageReference,
+  type ImageResolution,
+} from "@/server/image-provider"
+import { resizeToLongSideLanczos } from "@/server/image-postprocess"
 import { describeIntendedProvider, providerKeyVariable, providerLabel, resolveImageProvider } from "@/server/providers"
 
 /**
@@ -13,7 +22,9 @@ import { describeIntendedProvider, providerKeyVariable, providerLabel, resolveIm
  *
  * GET  → статус: настроен ли ключ, какой провайдер, модель и разрешение.
  * POST → multipart: `prompt`, `aspect` («ширина:высота» желаемой пропорции),
- *        0…4 файлов `image` (PNG/JPEG/WEBP до 12 МБ каждый) → байты картинки.
+ *        0…4 файлов `image` (PNG/JPEG/WEBP до 12 МБ каждый); опционально
+ *        `provider`, `resolution`, `final_long_side` для фиксированного по
+ *        цене пайплайна улучшения → байты картинки.
  *
  * Очереди и воркера пока нет (см. docs/PLATFORM_ARCHITECTURE.md, этап 0):
  * запрос держится открытым всё время генерации, поэтому `maxDuration` —
@@ -26,6 +37,8 @@ export const maxDuration = 300
 const MAX_PROMPT_CHARS = 8_000
 const MAX_REFERENCES = 4
 const MAX_REFERENCE_BYTES = 12 * 1024 * 1024
+const MIN_FINAL_LONG_SIDE = 512
+const MAX_FINAL_LONG_SIDE = 4_096
 
 interface ProblemBody {
   error: string
@@ -65,9 +78,34 @@ function parseAspect(value: FormDataEntryValue | null): AspectRatio | null {
   return { width, height }
 }
 
-export async function GET() {
-  const provider = resolveImageProvider()
-  const intended = describeIntendedProvider()
+function parseProvider(value: FormDataEntryValue | string | null): ImageProviderId | null | undefined {
+  if (value === null || value === "") return undefined
+  if (value === "apimodels" || value === "laozhang") return value
+  return null
+}
+
+function parseResolution(value: FormDataEntryValue | string | null): ImageResolution | null | undefined {
+  if (value === null || value === "") return undefined
+  const normalized = String(value).toUpperCase()
+  return isImageResolution(normalized) ? normalized : null
+}
+
+function parseFinalLongSide(value: FormDataEntryValue | null): number | null | undefined {
+  if (value === null || value === "") return undefined
+  if (!/^\d{3,4}$/.test(String(value))) return null
+  const pixels = Number(value)
+  return pixels >= MIN_FINAL_LONG_SIDE && pixels <= MAX_FINAL_LONG_SIDE ? pixels : null
+}
+
+export async function GET(request: Request) {
+  const url = new URL(request.url)
+  const preferred = parseProvider(url.searchParams.get("provider"))
+  const requestedResolution = parseResolution(url.searchParams.get("resolution"))
+  if (preferred === null || requestedResolution === null) {
+    return problem(400, { error: "bad_request", message: "Неизвестный провайдер или разрешение." })
+  }
+  const provider = resolveImageProvider(preferred, requestedResolution)
+  const intended = describeIntendedProvider(preferred, requestedResolution)
   return NextResponse.json(
     {
       configured: provider !== null,
@@ -82,21 +120,28 @@ export async function GET() {
 export async function POST(request: Request) {
   if (!isSameOrigin(request)) return problem(403, { error: "forbidden_origin", message: "Запрос с чужого сайта." })
 
-  const provider = resolveImageProvider()
-  if (!provider) {
-    const intended = describeIntendedProvider()
-    return problem(503, {
-      error: "provider_not_configured",
-      message: `Ключ ${providerKeyVariable(intended.provider)} не задан — добавьте его в .env.local и перезапустите сервер.`,
-      retryable: false,
-    })
-  }
-
   let form: FormData
   try {
     form = await request.formData()
   } catch {
     return problem(400, { error: "bad_request", message: "Ожидается multipart/form-data." })
+  }
+
+  const preferred = parseProvider(form.get("provider"))
+  const requestedResolution = parseResolution(form.get("resolution"))
+  const finalLongSide = parseFinalLongSide(form.get("final_long_side"))
+  if (preferred === null || requestedResolution === null || finalLongSide === null) {
+    return problem(400, { error: "bad_request", message: "Некорректные параметры обработки картинки." })
+  }
+
+  const provider = resolveImageProvider(preferred, requestedResolution)
+  if (!provider) {
+    const intended = describeIntendedProvider(preferred, requestedResolution)
+    return problem(503, {
+      error: "provider_not_configured",
+      message: `Ключ ${providerKeyVariable(intended.provider)} не задан — добавьте его в .env.local и перезапустите сервер.`,
+      retryable: false,
+    })
   }
 
   const prompt = String(form.get("prompt") ?? "").trim()
@@ -127,15 +172,25 @@ export async function POST(request: Request) {
 
   try {
     const image = await provider.generate({ prompt, aspect, references, signal: request.signal })
-    return new Response(image.bytes as BodyInit, {
+    const output = finalLongSide
+      ? await resizeToLongSideLanczos(image.bytes, finalLongSide)
+      : { bytes: image.bytes, mimeType: image.mimeType, width: undefined, height: undefined }
+    return new Response(output.bytes as BodyInit, {
       status: 200,
       headers: {
-        "Content-Type": image.mimeType,
+        "Content-Type": output.mimeType,
         "Cache-Control": "no-store",
         "X-Image-Provider": image.provider,
         "X-Image-Model": image.model,
         "X-Image-Endpoint": image.endpoint,
         "X-Image-Duration-Ms": String(image.durationMs),
+        ...(finalLongSide
+          ? {
+              "X-Image-Postprocess": "lanczos3",
+              "X-Image-Width": String(output.width),
+              "X-Image-Height": String(output.height),
+            }
+          : {}),
       },
     })
   } catch (error) {

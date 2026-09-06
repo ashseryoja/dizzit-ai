@@ -8,6 +8,7 @@ import {
   DEFAULT_BATCH_TOOLS,
   FILTER_LABEL,
   PopulateToggle,
+  QualityToggle,
   TIME_LABEL,
 } from "@/components/tool/batch-tools"
 import { RegionEditor } from "@/components/tool/region-editor"
@@ -54,13 +55,13 @@ const LABELS: ToolComposerLabels = {
   filesTitle: "Рендеры",
   filesQuality: "исходники",
   uploadTitle: "Загрузить рендеры",
-  filesCaption: "свежие рендеры без сжатия · результат в 2K",
+  filesCaption: "GPT Image 2 · результат 2000 px · $0,03 за рендер",
   optionsTitle: "Контекст",
   optionsIcon: Layers,
   footer:
     "Содержимое кадра не меняется: геометрия, материалы и композиция остаются вашими — растут только детализация и реализм.",
   inputPlaceholder: "Комментарий к обработке…",
-  submitLabel: "Улучшить",
+  submitLabel: "Улучшить · $0,03",
   batchNoun: ["рендер", "рендера", "рендеров"],
 }
 
@@ -94,7 +95,8 @@ function regionsCaption(regions: RegionPayload[] | undefined): string {
  *
  * Каркас экрана, приём файлов, панель-галерея пачки, сцена и рабочий набор —
  * общие для инструментов (см. docs/TOOL_UI.md). Своё у редактора рендера:
- * контекст сцены, тумблер заселения, пакетные функции и точечная правка.
+ * контекст сцены, улучшение качества, тумблер заселения, пакетные функции
+ * и точечная правка.
  *
  * Обработка применяется к РАБОЧЕМУ НАБОРУ, а не ко всей пачке: в обычном
  * режиме это один рендер (тот, что на сцене), в режиме «Выбрать» панели —
@@ -168,16 +170,15 @@ export default function EnhancePage() {
   const built = buildEditComment({ userComment: note, regions: regionEditingActive ? currentRegions : [] })
   const submitBlockedReason = regionEditingActive ? editBlockReason(built) : null
 
-  /* Есть ли что обрабатывать: комментарий, отмеченные области, контекст не
-     «авто», заселение сцены или (в пакете) общие функции. Ничего из этого —
-     задание пустое. */
+  /* Есть ли что обрабатывать: улучшение качества включено по умолчанию, либо
+     есть комментарий, области, контекст, заселение, фильтр или время. */
   const toolsChosen = tools.quality || tools.filter !== "none" || tools.time !== "keep"
   const hasIntent =
     note.trim().length > 0 ||
     (regionEditingActive && currentRegions.length > 0) ||
     context !== "auto" ||
     populate ||
-    (showBatchGrid && toolsChosen)
+    toolsChosen
 
   const setCurrentRegions = useCallback(
     (regions: EditRegion[]) => {
@@ -279,7 +280,7 @@ export default function EnhancePage() {
     // областей, геометрия уходит отдельным полем.
     const regionsPayload = regionEditingActive && currentRegions.length > 0 ? buildRegionsPayload(currentRegions) : undefined
     const noteToSend = regionEditingActive ? built.comment : note.trim()
-    const batchTools = showBatchGrid ? tools : undefined
+    const batchTools = tools
     const { files } = batch.takeWorkingSet()
     setSettingsOpen(false)
     setNote("")
@@ -335,13 +336,22 @@ export default function EnhancePage() {
               notice={notice}
               attentionKey={attention}
               extras={
-                <PopulateToggle
-                  value={populate}
-                  onChange={(next) => {
-                    setPopulate(next)
-                    setNotice(null)
-                  }}
-                />
+                <>
+                  <QualityToggle
+                    value={tools.quality}
+                    onChange={(quality) => {
+                      setTools((current) => ({ ...current, quality }))
+                      setNotice(null)
+                    }}
+                  />
+                  <PopulateToggle
+                    value={populate}
+                    onChange={(next) => {
+                      setPopulate(next)
+                      setNotice(null)
+                    }}
+                  />
+                </>
               }
               tools={
                 showBatchGrid ? (

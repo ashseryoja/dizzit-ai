@@ -32,6 +32,8 @@ import type { BatchFilter, BatchTime, BatchTools, EnhanceContext } from "@/types
 
 export const ENHANCE_ACCEPT = "image/png,image/jpeg,image/webp"
 export const MAX_FILE_BYTES = 32 * 1024 * 1024
+/** Итог улучшения: длинная сторона ровно 2000 px после Lanczos3. */
+export const ENHANCE_LONG_SIDE = 2000
 /** Пачка за одну отправку: как лимит вложений в прежнем чате. */
 export const MAX_BATCH = 10
 
@@ -112,12 +114,15 @@ export function buildEnhancePrompt(job: EnhanceJob): string {
   const hasRegions = Boolean(job.regions && job.regions.length > 0)
 
   const lines: string[] = [
-    "Enhance this architectural render into a photorealistic image.",
+    "TASK: Edit IMAGE 1 into a premium photorealistic architectural photograph. IMAGE 1 is the authoritative design reference.",
     CONTEXT_HINT[job.context ?? "auto"],
-    "Keep everything as in the input image: the same scene, geometry, camera angle, framing, composition, layout, objects, materials and colors. Do not add, remove, move or replace anything unless the designer's instructions below explicitly ask for it.",
+    "NON-NEGOTIABLE PRESERVATION: Keep the exact camera position, lens/focal-length feel, perspective, vertical lines, crop, aspect ratio, framing and composition. Preserve every wall, opening, ceiling, floor boundary, built-in element, piece of furniture, fixture and decor item in exactly the same shape, scale, count and position. Preserve the design, material identities, patterns and base colors. Do not redesign, restyle, invent, remove, move or replace anything unless the designer explicitly requests it below.",
     improveQuality
-      ? "Improve only realism: fine material detail and texture, natural lighting, global illumination, soft accurate shadows, reflections and depth of the render."
+      ? "REALISM PASS: Keep the design unchanged while making it look captured by a professional architectural photographer. Use physically plausible global illumination and bounced light, balanced exposure and dynamic range, a natural white balance, consistent light direction and color temperature, soft contact shadows and ambient occlusion. Refine scale-accurate PBR material cues: fine texture, grain, weave, joints, micro-roughness, restrained specular response, realistic reflection and refraction, subtle edge bevels and contact between surfaces. Add only tiny real-world surface variation that does not change the design. Preserve crisp architectural detail with natural focus and depth; the image must feel photographic, not computer-generated."
       : "Preserve the rendering quality as is; apply only the changes requested below.",
+    improveQuality
+      ? "QUALITY CONTROL: clean high-end archviz finish, smooth tonal transitions, realistic glass and metals, detailed fabrics/wood/stone, clean edges and fine detail. Avoid plastic materials, fake mirror reflections, glowing surfaces, crushed blacks, clipped highlights, HDR halos, excessive saturation, excessive contrast, oversharpening, blur, noise, banding, moire, texture repetition, warped geometry and the glossy CGI look."
+      : "",
     tools ? FILTER_HINT[tools.filter] : "",
     tools ? TIME_HINT[tools.time] : "",
     job.populate
@@ -126,8 +131,8 @@ export function buildEnhancePrompt(job: EnhanceJob): string {
     hasRegions
       ? "Two images are attached. IMAGE 1 is the render to edit. IMAGE 2 is the same render with numbered marked areas (colored outlines with number badges). Apply each numbered instruction below only to the corresponding marked area. The output must not contain any outlines, badges or numbers."
       : "",
-    note ? `Designer's instructions:\n${note}` : "",
-    "No text, no watermark, no borders.",
+    "OUTPUT: Return one clean full-frame image with no crop or border. No text, labels, logos, signatures or watermark.",
+    note ? `DESIGNER'S ALLOWED CHANGES (these override preservation only where explicit):\n${note}` : "",
   ]
   return lines.filter(Boolean).join("\n")
 }
@@ -231,14 +236,23 @@ export async function renderRegionMap(source: Blob, regions: RegionPayload[], ma
 
 /** Улучшение рендера: модель, а без ключа — локальный предпросмотр. */
 export async function enhanceRender(source: Blob, job: EnhanceJob): Promise<EnhanceResult> {
+  const improveQuality = job.tools?.quality ?? true
   return withImageProvider(
     async () => {
       const { width, height } = await readBlobSize(source)
       const references = [await prepareReference(source)]
       if (job.regions && job.regions.length > 0) references.push(await renderRegionMap(source, job.regions))
-      return requestImage({ prompt: buildEnhancePrompt(job), aspect: { width, height }, references })
+      return requestImage({
+        prompt: buildEnhancePrompt(job),
+        aspect: { width, height },
+        references,
+        provider: "apimodels",
+        resolution: "2K",
+        finalLongSide: improveQuality ? ENHANCE_LONG_SIDE : undefined,
+      })
     },
-    () => enhanceLocally(source, job)
+    () => enhanceLocally(source, job),
+    { provider: "apimodels", resolution: "2K" }
   )
 }
 

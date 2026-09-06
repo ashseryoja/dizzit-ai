@@ -31,14 +31,14 @@ function wantedProvider(): ImageProviderId | null {
   return null
 }
 
-function buildApiModels(): ImageProvider | null {
+function buildApiModels(resolutionOverride?: ImageResolution): ImageProvider | null {
   const apiKey = env("APIMODELS_API_KEY")
   if (!apiKey) return null
   return new ApiModelsProvider({
     apiKey,
     baseUrl: env("APIMODELS_API_BASE_URL") || APIMODELS_DEFAULT_BASE_URL,
     model: env("APIMODELS_IMAGE_MODEL") || APIMODELS_DEFAULT_MODEL,
-    resolution: resolution(),
+    resolution: resolutionOverride ?? resolution(),
   })
 }
 
@@ -52,20 +52,27 @@ function buildLaoZhang(): ImageProvider | null {
   })
 }
 
-export function resolveImageProvider(): ImageProvider | null {
-  const wanted = wantedProvider()
-  if (wanted === "apimodels") return buildApiModels()
+export function resolveImageProvider(preferred?: ImageProviderId, resolutionOverride?: ImageResolution): ImageProvider | null {
+  const wanted = preferred ?? wantedProvider()
+  if (wanted === "apimodels") return buildApiModels(resolutionOverride)
   if (wanted === "laozhang") return buildLaoZhang()
-  return buildApiModels() ?? buildLaoZhang()
+  return buildApiModels(resolutionOverride) ?? buildLaoZhang()
 }
 
 /** Что сообщить клиенту, когда ключа нет: какой провайдер и модель включатся с ключом. */
-export function describeIntendedProvider(): { provider: ImageProviderId; model: string; resolution: ImageResolution } {
-  const wanted = wantedProvider() ?? "apimodels"
+export function describeIntendedProvider(
+  preferred?: ImageProviderId,
+  resolutionOverride?: ImageResolution
+): { provider: ImageProviderId; model: string; resolution: ImageResolution } {
+  const wanted = preferred ?? wantedProvider() ?? "apimodels"
   if (wanted === "laozhang") {
     return { provider: "laozhang", model: env("LAOZHANG_IMAGE_MODEL") || LAOZHANG_DEFAULT_MODEL, resolution: "1K" }
   }
-  return { provider: "apimodels", model: env("APIMODELS_IMAGE_MODEL") || APIMODELS_DEFAULT_MODEL, resolution: resolution() }
+  return {
+    provider: "apimodels",
+    model: env("APIMODELS_IMAGE_MODEL") || APIMODELS_DEFAULT_MODEL,
+    resolution: resolutionOverride ?? resolution(),
+  }
 }
 
 /** Человеческое имя провайдера для текстов ошибок. */

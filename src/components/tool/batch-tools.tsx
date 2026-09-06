@@ -51,10 +51,7 @@ export function BatchToolsPanel({
   return (
     <>
       <section className="flex items-center justify-between gap-4">
-        <ToolLabel icon={Sparkles} hint="детализация и реализм без изменения сцены">
-          Улучшить качество
-        </ToolLabel>
-        <Switch checked={value.quality} onChange={(quality) => onChange({ ...value, quality })} />
+        <QualityToggle value={value.quality} onChange={(quality) => onChange({ ...value, quality })} />
       </section>
 
       <PopulateToggle value={populate} onChange={onPopulateChange} />
@@ -77,6 +74,18 @@ export function BatchToolsPanel({
         Настройки применятся ко всем {count} выбранным рендерам сразу. Точечные правки — по одному рендеру.
       </p>
     </>
+  )
+}
+
+/** Один AI-проход за фиксированную цену и бесплатный финальный Lanczos3. */
+export function QualityToggle({ value, onChange }: { value: boolean; onChange: (next: boolean) => void }) {
+  return (
+    <div className="flex w-full items-center justify-between gap-4">
+      <ToolLabel icon={Sparkles} hint="GPT Image 2 · 2K → Lanczos 2000 px · $0,03 за рендер">
+        Улучшить качество
+      </ToolLabel>
+      <Switch checked={value} onChange={onChange} />
+    </div>
   )
 }
 

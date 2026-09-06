@@ -46,6 +46,11 @@ export interface ImageRequest {
   aspect: Aspect
   /** Референсы: первый — исходник, дальше вспомогательные (карта областей и т. п.). */
   references?: Blob[]
+  /** Явный провайдер/ступень нужны инструментам с фиксированной ценой. */
+  provider?: "apimodels" | "laozhang"
+  resolution?: "1K" | "2K" | "4K"
+  /** Серверный Lanczos3 после генерации: точная длина большей стороны. */
+  finalLongSide?: number
   signal?: AbortSignal
 }
 
@@ -71,16 +76,25 @@ const REQUEST_TIMEOUT_MS = 280_000
  */
 export const REFERENCE_MAX_SIDE = 2048
 
-let statusCache: { value: ImageProviderStatus; at: number } | null = null
-let statusInFlight: Promise<ImageProviderStatus> | null = null
+const statusCache = new Map<string, { value: ImageProviderStatus; at: number }>()
+const statusInFlight = new Map<string, Promise<ImageProviderStatus>>()
 
 const UNCONFIGURED: ImageProviderStatus = { configured: false, provider: "", model: "", resolution: "" }
 
 /** Настроен ли провайдер. Кэш на минуту, чтобы не дёргать роут на каждую карточку пачки. */
-export function imageProviderStatus(force = false): Promise<ImageProviderStatus> {
-  if (!force && statusCache && Date.now() - statusCache.at < STATUS_TTL_MS) return Promise.resolve(statusCache.value)
-  if (statusInFlight) return statusInFlight
-  statusInFlight = fetch("/api/images", { cache: "no-store" })
+export function imageProviderStatus(
+  force = false,
+  requested: { provider?: ImageRequest["provider"]; resolution?: ImageRequest["resolution"] } = {}
+): Promise<ImageProviderStatus> {
+  const key = `${requested.provider ?? "auto"}:${requested.resolution ?? "default"}`
+  const cached = statusCache.get(key)
+  if (!force && cached && Date.now() - cached.at < STATUS_TTL_MS) return Promise.resolve(cached.value)
+  const pending = statusInFlight.get(key)
+  if (pending) return pending
+  const query = new URLSearchParams()
+  if (requested.provider) query.set("provider", requested.provider)
+  if (requested.resolution) query.set("resolution", requested.resolution)
+  const promise = fetch(`/api/images${query.size ? `?${query}` : ""}`, { cache: "no-store" })
     .then(async (response) => {
       if (!response.ok) throw new Error(`status ${response.status}`)
       const json = (await response.json()) as Partial<ImageProviderStatus>
@@ -93,11 +107,12 @@ export function imageProviderStatus(force = false): Promise<ImageProviderStatus>
     })
     .catch(() => UNCONFIGURED)
     .then((value) => {
-      statusCache = { value, at: Date.now() }
-      statusInFlight = null
+      statusCache.set(key, { value, at: Date.now() })
+      statusInFlight.delete(key)
       return value
     })
-  return statusInFlight
+  statusInFlight.set(key, promise)
+  return promise
 }
 
 /**
@@ -107,9 +122,10 @@ export function imageProviderStatus(force = false): Promise<ImageProviderStatus>
  */
 export async function withImageProvider<T extends GeneratedImage>(
   remote: (model: string) => Promise<T>,
-  preview: () => Promise<Omit<T, "engine"> | T>
+  preview: () => Promise<Omit<T, "engine"> | T>,
+  requested: { provider?: ImageRequest["provider"]; resolution?: ImageRequest["resolution"] } = {}
 ): Promise<T> {
-  const status = await imageProviderStatus()
+  const status = await imageProviderStatus(false, requested)
   if (status.configured) return remote(status.model)
   const result = await preview()
   return { ...result, engine: PREVIEW_ENGINE } as T
@@ -193,10 +209,21 @@ interface ProblemBody {
  * вызова обязан движок (`prepareReference`), чтобы не перекодировать дважды
  * там, где один исходник идёт в несколько кадров.
  */
-export async function requestImage({ prompt, aspect, references = [], signal }: ImageRequest): Promise<GeneratedImage> {
+export async function requestImage({
+  prompt,
+  aspect,
+  references = [],
+  provider,
+  resolution,
+  finalLongSide,
+  signal,
+}: ImageRequest): Promise<GeneratedImage> {
   const form = new FormData()
   form.set("prompt", prompt)
   form.set("aspect", `${Math.max(1, Math.round(aspect.width))}:${Math.max(1, Math.round(aspect.height))}`)
+  if (provider) form.set("provider", provider)
+  if (resolution) form.set("resolution", resolution)
+  if (finalLongSide) form.set("final_long_side", String(Math.round(finalLongSide)))
   references.forEach((blob, index) => {
     const extension = blob.type === "image/png" ? "png" : blob.type === "image/webp" ? "webp" : "jpg"
     form.append("image", blob, `${index === 0 ? "source" : `reference_${index}`}.${extension}`)
@@ -223,7 +250,7 @@ export async function requestImage({ prompt, aspect, references = [], signal }: 
     }
     if (body.error === "provider_not_configured") {
       // Ключ пропал на сервере — следующие задания пойдут в предпросмотр.
-      statusCache = { value: UNCONFIGURED, at: Date.now() }
+      statusCache.set(`${provider ?? "auto"}:${resolution ?? "default"}`, { value: UNCONFIGURED, at: Date.now() })
     }
     throw new ImageGenerationError(
       body.error ?? `http_${response.status}`,

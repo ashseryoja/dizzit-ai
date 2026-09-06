@@ -22,7 +22,7 @@
 | Панель настроек над композером («выпадающие настройки»): секция файлов, индикатор качества, выбор-сегмент, обещание продукта внизу | `tool-composer.tsx` | блок «Панель настроек», `SectionLabel` |
 | Замечание над строкой ввода («Выберите настройки…»), теги областей, «волна» подсветки по контролам | `tool-composer.tsx` | пропсы `notice`, `regionTags`, `attentionKey` |
 | Секция, пристыкованная над композером (материалы стиля с галочками) | `tool-composer.tsx` — обёртка; `style-dock.tsx` — содержимое | проп `dock` |
-| Тумблер «Заселить сцену», пакетные функции (качество, фильтр, время) | `src/components/tool/batch-tools.tsx` | `PopulateToggle`, `BatchToolsPanel` |
+| Улучшение качества GPT Image 2 + Lanczos 2000 px, тумблер «Заселить сцену», пакетные функции (качество, фильтр, время) | `src/components/tool/batch-tools.tsx` | `QualityToggle`, `PopulateToggle`, `BatchToolsPanel` |
 | Правая панель-галерея пачки: заголовок «рендеры · 3 из 10», «Выбрать», плитки, «Добавить», «Очистить», «Редактировать все» | `src/components/tool/render-tray.tsx` | `RenderTray`, `TrayThumb` |
 | Полоска миниатюр под сценой на узких экранах | `render-tray.tsx` | `RenderStrip` |
 | Закреплённая правая панель как поверхность (ширина, тень, рамка, анимация выезда) | `src/components/tool/tool-shell.tsx` | `ToolAside` |
@@ -37,7 +37,7 @@
 | Рабочий набор: режим «Выбрать», «Выбрать все», стрелки и Escape, «Редактировать все», что уходит в обработку | `src/lib/use-batch-selection.ts` | `useBatchSelection` |
 | Сохранение исходника в IndexedDB, очередь пачки (карточки сразу, обработка по одной) | `src/lib/tool-jobs.ts` | `saveSourceFile`, `runGalleryQueue` |
 | Где живут записи и картинки: кэш IndexedDB, синхронизация со своим сервером, вход по паролю, подпись «серверное хранение / локальный режим» | `src/lib/server-sync.ts` — клиент (очередь, слияние, `useServerStatus`); `src/lib/blob-store.ts` — кэш блобов; `src/server/{auth,records,storage,db}.ts` + `src/app/api/{records,assets,session,auth}` — сервер; `src/middleware.ts` — дверь | `attachServerSync` в каждом сторе; `serverStatus`, `useServerStatus` |
-| Куда уходит генерация картинок: провайдер, пропорции, уменьшение референса, предпросмотр без ключа, подпись «предпросмотр без ключа» на карточке | `src/lib/image-generation.ts` — клиент; `src/app/api/images/route.ts` + `src/server/providers.ts` (выбор), `apimodels.ts`, `laozhang.ts` — сервер (ключи) | `requestImage`, `withImageProvider`, `prepareReference`, `previewCaption`; промпты — в движке инструмента (`build*Prompt`) |
+| Куда уходит генерация картинок: провайдер, пропорции, уменьшение референса, Lanczos-постобработка, предпросмотр без ключа, подпись «предпросмотр без ключа» на карточке | `src/lib/image-generation.ts` — клиент; `src/app/api/images/route.ts` + `src/server/providers.ts` (выбор), `apimodels.ts`, `laozhang.ts`, `image-postprocess.ts` — сервер | `requestImage`, `withImageProvider`, `prepareReference`, `resizeToLongSideLanczos`, `previewCaption`; промпты — в движке инструмента (`build*Prompt`) |
 | В какой проект класть новые записи | `src/stores/project-store.ts` | `ensureActiveProject`, `useActiveProject` |
 | Внешний вид всего перечисленного (рецепты CSS) | `src/styles/ds/surfaces.css` | `.stage-*`, `.batch-tile`, `.tray-*`, `.dropzone`, `.popover`, `.presence-*`, `.composer-notice`, `.rg-tag`, `.style-dock` |
 
@@ -233,7 +233,7 @@ useBatchSelection ─► batch ──► Stage / BatchGrid / RenderTray / Render
 | `tool-dropzone.tsx` | `ToolDropzone` | пустой экран-дропзона |
 | `tool-card.tsx` | `ToolCard`, `useBlobUrl` | карточка результата; хук «блоб из IndexedDB → object URL» |
 | `view-set-card.tsx` | `ViewSetCard` | карточка сета кадров («Ракурсы») |
-| `batch-tools.tsx` | `BatchToolsPanel`, `PopulateToggle` | пакетные функции и тумблер «Заселить сцену» |
+| `batch-tools.tsx` | `BatchToolsPanel`, `QualityToggle`, `PopulateToggle` | улучшение качества, пакетные функции и тумблер «Заселить сцену» |
 | `region-editor.tsx` | `RegionEditor` | холст точечной правки поверх сцены (кисть, обводка, рамка) |
 | `style-dock.tsx` | `StyleDock` | материалы выбранного стиля с галочками — секция над композером |
 | `style-picker.tsx` | `StylePicker` | список стилей рядом со сценой с окошком-превью |
@@ -274,7 +274,7 @@ useBatchSelection ─► batch ──► Stage / BatchGrid / RenderTray / Render
 | `BatchGrid` | ✓ | ✓ | ✓ `compact` | — | — |
 | `ToolDropzone` | ✓ RenderReveal | ✓ ViewsInvite | ✓ StyleSwap | — (MaterialPreviewGrid) | ✓ FurnitureMorph, `armed` |
 | `ToolGallery` + карточка | ✓ ToolCard | ✓ ViewSetCard | ✓ ToolCard | ✓ ToolCard | — (сцена + лента) |
-| Своё на странице | контекст, заселение, пакетные функции, области правки, `notice` | выбор набора кадров, подпись под сценой | стили, док материалов, вторая панель, `notice` | референсы не обязательны | одно фото, `ModelStage`/`ModelChip` |
+| Своё на странице | контекст, качество GPT Image 2 + Lanczos 2000 px, заселение, пакетные функции, области правки, `notice` | выбор набора кадров, подпись под сценой | стили, док материалов, вторая панель, `notice` | референсы не обязательны | одно фото, `ModelStage`/`ModelChip` |
 
 Страницы после выноса общего: `enhance` ≈ 420 строк, `restyle` ≈ 375, `views` ≈ 275,
 `materials` ≈ 220, `photo-3d` ≈ 330 — в них только конфигурация и логика инструмента.
