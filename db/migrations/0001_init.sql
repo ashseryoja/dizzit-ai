@@ -13,7 +13,7 @@ create table if not exists records (
 create index if not exists records_owner_collection_idx
   on records (owner_id, collection, created_at desc);
 
--- Учёт объектов в хранилище (R2/диск): ключ тот же, что у блоба в IndexedDB
+-- Учёт объектов в хранилище (Vercel Blob/диск): ключ тот же, что у блоба в IndexedDB
 -- клиента (`${id}:${role}`), record_id — запись, которой объект принадлежит.
 create table if not exists assets (
   owner_id      text not null,
