@@ -65,7 +65,7 @@ const LABELS: ToolComposerLabels = {
   filesTitle: "Интерьеры",
   filesQuality: "исходники",
   uploadTitle: "Загрузить интерьеры",
-  filesCaption: "рендер или фото помещения · результат до 1536 px по длинной стороне",
+  filesCaption: "рендер или фото помещения · результат в 2K",
   optionsTitle: "Стиль",
   optionsIcon: SwatchBook,
   footer:

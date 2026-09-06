@@ -5,7 +5,6 @@ import {
   prepareReference,
   readBlobSize,
   requestImage,
-  sizeForAspect,
   withImageProvider,
   type GeneratedImage,
 } from "@/lib/image-generation"
@@ -482,7 +481,7 @@ export async function restyleRender(source: Blob, job: RestyleJob): Promise<Rest
       const { width, height } = await readBlobSize(source)
       return requestImage({
         prompt: buildRestylePrompt(job),
-        size: sizeForAspect(width, height),
+        aspect: { width, height },
         references: [await prepareReference(source)],
       })
     },

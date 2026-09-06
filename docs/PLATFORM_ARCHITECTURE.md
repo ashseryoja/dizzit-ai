@@ -22,15 +22,17 @@
 | Доступ | Авторизация + квоты **с первого дня** |
 | Провайдеры | OpenRouter, Laozhang, Kie.ai, API Models (картинки), Meshy.ai (3D из фото) |
 
-**Что уже есть в коде (сентябрь 2026).** Первый настоящий провайдер подключён
-раньше каркаса из §2 — тонким прокси: `src/app/api/images/route.ts` →
-`src/server/laozhang.ts` (LaoZhang Images API, модель `gpt-image-2`, ключ
-`LAOZHANG_API_KEY`), клиентский вход `src/lib/image-generation.ts`. Промпты
-собирают движки инструментов на клиенте; без ключа они же считают локальный
-canvas-предпросмотр (будущий `FakeProvider`, §4.4). Гейтов §5, квот, учёта
-расходов и очереди пока нет — запрос к провайдеру держится открытым до
-`maxDuration`. `server/laozhang.ts` — зародыш `providers/openai-compatible`:
-при переезде на каркас он становится `invoke()` профиля `LAOZHANG`.
+**Что уже есть в коде (сентябрь 2026).** Провайдеры картинок подключены
+раньше каркаса из §2 — тонким прокси `src/app/api/images/route.ts` →
+`src/server/providers.ts` (выбор по окружению, прообраз `container.ts`) →
+адаптеры за общим интерфейсом `ImageProvider` (`src/server/image-provider.ts`):
+`apimodels.ts` — API Models, `gpt-image-2`, асинхронная задача с опросом
+(прообраз `RemoteTaskProvider`, §4.3, пока без вебхука) и `laozhang.ts` —
+LaoZhang, OpenAI-совместимый синхронный вызов (прообраз
+`OpenAiCompatibleProvider`). Клиентский вход — `src/lib/image-generation.ts`;
+промпты собирают движки инструментов на клиенте, без ключа они же считают
+локальный canvas-предпросмотр (будущий `FakeProvider`, §4.4). Гейтов §5, квот,
+учёта расходов и очереди пока нет — запрос держится открытым до `maxDuration`.
 
 ---
 

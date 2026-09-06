@@ -93,7 +93,7 @@ export async function generateMaterial(job: MaterialJob): Promise<MaterialResult
     async () =>
       requestImage({
         prompt: buildMaterialPrompt({ category: job.category, note: job.note, hasReference: Boolean(job.ref) }),
-        size: "1024x1024",
+        aspect: { width: 1, height: 1 },
         references: job.ref ? [await prepareReference(job.ref)] : [],
       }),
     () => generateMaterialLocally(job)

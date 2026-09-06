@@ -54,7 +54,7 @@ const LABELS: ToolComposerLabels = {
   filesTitle: "Рендеры",
   filesQuality: "исходники",
   uploadTitle: "Загрузить рендеры",
-  filesCaption: "свежие рендеры без сжатия · результат до 1536 px по длинной стороне",
+  filesCaption: "свежие рендеры без сжатия · результат в 2K",
   optionsTitle: "Контекст",
   optionsIcon: Layers,
   footer:

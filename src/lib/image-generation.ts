@@ -5,8 +5,10 @@
  *
  * Движок инструмента (`enhance-engine`, `restyle-engine`, `view-engine`,
  * `material-engine`) собирает промпт и референсы и зовёт `requestImage`; тот
- * ходит в `/api/images` (тонкий прокси с ключом LaoZhang, модель gpt-image-2).
- * Ключа в браузере нет и быть не может.
+ * ходит в `/api/images` — тонкий прокси с ключом провайдера (основной —
+ * API Models, модель gpt-image-2; запасной — LaoZhang). Ключа в браузере нет
+ * и быть не может. Пропорция результата задаётся парой «ширина:высота» —
+ * сервер сам подбирает ближайшую из поддерживаемых провайдером.
  *
  * Когда ключ не задан (локальная разработка без провайдера), `withImageProvider`
  * прозрачно переключает движок на canvas-предпросмотр: главная кнопка не может
@@ -14,10 +16,14 @@
  * карточка это показывает — молчаливой подмены модели нет.
  */
 
-export type ImageSize = "1024x1024" | "1536x1024" | "1024x1536"
-
 /** Метка результата, посчитанного локальным canvas-движком без ключа. */
 export const PREVIEW_ENGINE = "preview"
+
+/** Желаемая пропорция результата; важно только отношение сторон. */
+export interface Aspect {
+  width: number
+  height: number
+}
 
 export interface GeneratedImage {
   blob: Blob
@@ -29,12 +35,15 @@ export interface GeneratedImage {
 
 export interface ImageProviderStatus {
   configured: boolean
+  provider: string
   model: string
+  /** Ступень разрешения провайдера: 1K / 2K / 4K. */
+  resolution: string
 }
 
 export interface ImageRequest {
   prompt: string
-  size: ImageSize
+  aspect: Aspect
   /** Референсы: первый — исходник, дальше вспомогательные (карта областей и т. п.). */
   references?: Blob[]
   signal?: AbortSignal
@@ -53,13 +62,19 @@ export class ImageGenerationError extends Error {
 }
 
 const STATUS_TTL_MS = 60_000
-/** Клиентский таймаут: дольше трёх минут держать запрос бессмысленно. */
-const REQUEST_TIMEOUT_MS = 240_000
-/** Длинная сторона референса: gpt-image-2 больше не использует, а канал экономит. */
-export const REFERENCE_MAX_SIDE = 1536
+/** Клиентский таймаут: сервер держит задачу до 4 минут, плюс запас на передачу. */
+const REQUEST_TIMEOUT_MS = 280_000
+/**
+ * Длинная сторона референса. Модель отдаёт до 2K, больше ей не нужно, а канал
+ * экономит: 30-мегабайтный рендер уезжает мегабайтом-двумя, что укладывается
+ * в лимит тела запроса на Vercel.
+ */
+export const REFERENCE_MAX_SIDE = 2048
 
 let statusCache: { value: ImageProviderStatus; at: number } | null = null
 let statusInFlight: Promise<ImageProviderStatus> | null = null
+
+const UNCONFIGURED: ImageProviderStatus = { configured: false, provider: "", model: "", resolution: "" }
 
 /** Настроен ли провайдер. Кэш на минуту, чтобы не дёргать роут на каждую карточку пачки. */
 export function imageProviderStatus(force = false): Promise<ImageProviderStatus> {
@@ -69,9 +84,14 @@ export function imageProviderStatus(force = false): Promise<ImageProviderStatus>
     .then(async (response) => {
       if (!response.ok) throw new Error(`status ${response.status}`)
       const json = (await response.json()) as Partial<ImageProviderStatus>
-      return { configured: Boolean(json.configured), model: String(json.model ?? "") }
+      return {
+        configured: Boolean(json.configured),
+        provider: String(json.provider ?? ""),
+        model: String(json.model ?? ""),
+        resolution: String(json.resolution ?? ""),
+      }
     })
-    .catch(() => ({ configured: false, model: "" }))
+    .catch(() => UNCONFIGURED)
     .then((value) => {
       statusCache = { value, at: Date.now() }
       statusInFlight = null
@@ -95,20 +115,6 @@ export async function withImageProvider<T extends GeneratedImage>(
   return { ...result, engine: PREVIEW_ENGINE } as T
 }
 
-/** Ближайший из размеров gpt-image-2 к пропорции кадра: квадрат, альбом, портрет. */
-export function sizeForAspect(width: number, height: number): ImageSize {
-  if (!width || !height) return "1024x1024"
-  const ratio = width / height
-  if (ratio > 1.15) return "1536x1024"
-  if (ratio < 1 / 1.15) return "1024x1536"
-  return "1024x1024"
-}
-
-export function sizeDimensions(size: ImageSize): { width: number; height: number } {
-  const [width, height] = size.split("x").map(Number)
-  return { width, height }
-}
-
 /** Ширина и высота блоба картинки. */
 export async function readBlobSize(blob: Blob): Promise<{ width: number; height: number }> {
   const bitmap = await createImageBitmap(blob)
@@ -127,8 +133,7 @@ function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality?: number)
 
 /**
  * Референс для модели: уменьшенная копия не длиннее `maxSide`, JPEG высокого
- * качества. Так 30-мегабайтный рендер уезжает мегабайтом, а на Vercel запрос
- * не упирается в лимит тела. Маленький PNG уходит как есть — без перекодирования.
+ * качества. Маленький PNG уходит как есть — без перекодирования.
  */
 export async function prepareReference(source: Blob, maxSide = REFERENCE_MAX_SIDE): Promise<Blob> {
   const bitmap = await createImageBitmap(source)
@@ -152,7 +157,7 @@ export async function prepareReference(source: Blob, maxSide = REFERENCE_MAX_SID
 
 /**
  * Центральная вырезка результата в нужную пропорцию (например, 4:5 для крупных
- * планов, когда модель отдала 2:3). Пропорция уже совпадает — блоб как есть.
+ * планов, когда провайдер отдал 3:4). Пропорция уже совпадает — блоб как есть.
  */
 export async function cropToAspect(image: GeneratedImage, aspect: number): Promise<GeneratedImage> {
   const current = image.width / image.height
@@ -188,10 +193,10 @@ interface ProblemBody {
  * вызова обязан движок (`prepareReference`), чтобы не перекодировать дважды
  * там, где один исходник идёт в несколько кадров.
  */
-export async function requestImage({ prompt, size, references = [], signal }: ImageRequest): Promise<GeneratedImage> {
+export async function requestImage({ prompt, aspect, references = [], signal }: ImageRequest): Promise<GeneratedImage> {
   const form = new FormData()
   form.set("prompt", prompt)
-  form.set("size", size)
+  form.set("aspect", `${Math.max(1, Math.round(aspect.width))}:${Math.max(1, Math.round(aspect.height))}`)
   references.forEach((blob, index) => {
     const extension = blob.type === "image/png" ? "png" : blob.type === "image/webp" ? "webp" : "jpg"
     form.append("image", blob, `${index === 0 ? "source" : `reference_${index}`}.${extension}`)
@@ -204,7 +209,7 @@ export async function requestImage({ prompt, size, references = [], signal }: Im
   try {
     response = await fetch("/api/images", { method: "POST", body: form, signal: combined })
   } catch (error) {
-    if (timeout.aborted) throw new ImageGenerationError("timeout", "Генерация не уложилась в четыре минуты. Повторите.")
+    if (timeout.aborted) throw new ImageGenerationError("timeout", "Генерация не уложилась в пять минут. Повторите.")
     if (signal?.aborted) throw new ImageGenerationError("aborted", "Генерация отменена.", false)
     throw new ImageGenerationError("network", `Нет связи с сервером: ${error instanceof Error ? error.message : String(error)}`)
   }
@@ -218,7 +223,7 @@ export async function requestImage({ prompt, size, references = [], signal }: Im
     }
     if (body.error === "provider_not_configured") {
       // Ключ пропал на сервере — следующие задания пойдут в предпросмотр.
-      statusCache = { value: { configured: false, model: "" }, at: Date.now() }
+      statusCache = { value: UNCONFIGURED, at: Date.now() }
     }
     throw new ImageGenerationError(
       body.error ?? `http_${response.status}`,

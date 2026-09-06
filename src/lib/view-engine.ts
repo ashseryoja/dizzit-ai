@@ -7,7 +7,6 @@ import {
   prepareReference,
   readBlobSize,
   requestImage,
-  sizeForAspect,
   type GeneratedImage,
 } from "@/lib/image-generation"
 import type { ShotKind, ViewFrame, ViewPreset } from "@/types"
@@ -181,13 +180,14 @@ export async function prepareViewSet(source: Blob, frames: ViewFrame[], note: st
   if (status.configured) {
     const { width, height } = await readBlobSize(source)
     const reference = await prepareReference(source)
-    const wideSize = sizeForAspect(width, height)
     return {
       async render(frame) {
         const wide = isWideShot(frame.kind)
+        // Ракурс — пропорция исходника; крупный план — 4:5 (провайдер подберёт
+        // ближайшую свою, при необходимости результат обрежется до 4:5).
         const image = await requestImage({
           prompt: buildViewPrompt(frame, frames, note),
-          size: wide ? wideSize : "1024x1536",
+          aspect: wide ? { width, height } : { width: 4, height: 5 },
           references: [reference],
         })
         return wide ? image : cropToAspect(image, CLOSEUP_ASPECT)

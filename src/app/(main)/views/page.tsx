@@ -33,7 +33,7 @@ const LABELS: ToolComposerLabels = {
   filesTitle: "Общие планы",
   filesQuality: "исходники",
   uploadTitle: "Загрузить рендеры",
-  filesCaption: "по одному сету на каждый рендер · крупные планы 4:5, ракурсы до 1536 px",
+  filesCaption: "по одному сету на каждый рендер · крупные планы 4:5, ракурсы в 2K",
   optionsTitle: "Что снять",
   optionsIcon: Camera,
   footer:

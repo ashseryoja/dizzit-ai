@@ -1,24 +1,18 @@
 import { NextResponse } from "next/server"
 
-import {
-  LaoZhangError,
-  configuredImageModel,
-  generateImage,
-  isImageSize,
-  readLaoZhangConfig,
-  sniffImageMime,
-  type ImageReference,
-} from "@/server/laozhang"
+import { ImageProviderError, sniffImageMime, type AspectRatio, type ImageReference } from "@/server/image-provider"
+import { describeIntendedProvider, providerKeyVariable, providerLabel, resolveImageProvider } from "@/server/providers"
 
 /**
  * Единственный серверный вход генерации картинок — тонкий прокси, прячущий
- * ключ LaoZhang. Все инструменты (улучшение, перенос стиля, ракурсы,
+ * ключ провайдера. Все инструменты (улучшение, перенос стиля, ракурсы,
  * материалы) ходят сюда через `src/lib/image-generation.ts`; промпт собирает
- * движок инструмента на клиенте, сюда приходят только текст, размер и
- * референсы.
+ * движок инструмента на клиенте, сюда приходят только текст, пропорция и
+ * референсы. Провайдер выбирается по окружению (`src/server/providers.ts`):
+ * основной — API Models (gpt-image-2), запасной — LaoZhang.
  *
- * GET  → статус провайдера: настроен ли ключ и какая модель (без секретов).
- * POST → multipart: `prompt`, `size` (1024x1024 | 1536x1024 | 1024x1536),
+ * GET  → статус: настроен ли ключ, какой провайдер, модель и разрешение.
+ * POST → multipart: `prompt`, `aspect` («ширина:высота» желаемой пропорции),
  *        0…4 файлов `image` (PNG/JPEG/WEBP до 12 МБ каждый) → байты картинки.
  *
  * Очереди и воркера пока нет (см. docs/PLATFORM_ARCHITECTURE.md, этап 0):
@@ -60,10 +54,27 @@ function isSameOrigin(request: Request): boolean {
   }
 }
 
+/** «1600:900» → пропорция; пусто — квадрат. */
+function parseAspect(value: FormDataEntryValue | null): AspectRatio | null {
+  if (value === null || value === "") return { width: 1, height: 1 }
+  const match = /^(\d{1,5}):(\d{1,5})$/.exec(String(value).trim())
+  if (!match) return null
+  const width = Number(match[1])
+  const height = Number(match[2])
+  if (width <= 0 || height <= 0) return null
+  return { width, height }
+}
+
 export async function GET() {
-  const config = readLaoZhangConfig()
+  const provider = resolveImageProvider()
+  const intended = describeIntendedProvider()
   return NextResponse.json(
-    { provider: "laozhang", configured: config !== null, model: config?.model ?? configuredImageModel() },
+    {
+      configured: provider !== null,
+      provider: provider?.id ?? intended.provider,
+      model: provider?.model ?? intended.model,
+      resolution: provider?.resolution ?? intended.resolution,
+    },
     { headers: { "Cache-Control": "no-store" } }
   )
 }
@@ -71,11 +82,12 @@ export async function GET() {
 export async function POST(request: Request) {
   if (!isSameOrigin(request)) return problem(403, { error: "forbidden_origin", message: "Запрос с чужого сайта." })
 
-  const config = readLaoZhangConfig()
-  if (!config) {
+  const provider = resolveImageProvider()
+  if (!provider) {
+    const intended = describeIntendedProvider()
     return problem(503, {
       error: "provider_not_configured",
-      message: "Ключ LAOZHANG_API_KEY не задан — добавьте его в .env.local и перезапустите сервер.",
+      message: `Ключ ${providerKeyVariable(intended.provider)} не задан — добавьте его в .env.local и перезапустите сервер.`,
       retryable: false,
     })
   }
@@ -91,8 +103,8 @@ export async function POST(request: Request) {
   if (!prompt) return problem(400, { error: "bad_request", message: "Пустой промпт." })
   if (prompt.length > MAX_PROMPT_CHARS) return problem(400, { error: "bad_request", message: "Слишком длинный промпт." })
 
-  const size = form.get("size")
-  if (!isImageSize(size)) return problem(400, { error: "bad_request", message: "Недопустимый размер картинки." })
+  const aspect = parseAspect(form.get("aspect"))
+  if (!aspect) return problem(400, { error: "bad_request", message: "Пропорция задаётся как «ширина:высота»." })
 
   const files = form.getAll("image").filter((entry): entry is File => entry instanceof File)
   if (files.length > MAX_REFERENCES) {
@@ -114,22 +126,23 @@ export async function POST(request: Request) {
   }
 
   try {
-    const image = await generateImage(config, { prompt, size, references, signal: request.signal })
+    const image = await provider.generate({ prompt, aspect, references, signal: request.signal })
     return new Response(image.bytes as BodyInit, {
       status: 200,
       headers: {
         "Content-Type": image.mimeType,
         "Cache-Control": "no-store",
+        "X-Image-Provider": image.provider,
         "X-Image-Model": image.model,
         "X-Image-Endpoint": image.endpoint,
         "X-Image-Duration-Ms": String(image.durationMs),
       },
     })
   } catch (error) {
-    if (error instanceof LaoZhangError) {
-      console.error(`[api/images] ${error.kind}${error.status ? ` http=${error.status}` : ""}: ${error.message}`)
+    if (error instanceof ImageProviderError) {
+      console.error(`[api/images] ${error.provider} ${error.kind}${error.status ? ` http=${error.status}` : ""}: ${error.message}`)
       const status =
-        error.kind === "quota" ? 402 : error.kind === "auth" ? 502 : error.kind === "safety" ? 422 : error.kind === "timeout" ? 504 : 502
+        error.kind === "quota" ? 402 : error.kind === "safety" ? 422 : error.kind === "timeout" ? 504 : 502
       return problem(status, { error: `provider_${error.kind}`, message: publicMessage(error), retryable: error.retryable })
     }
     console.error("[api/images] unexpected:", error)
@@ -138,25 +151,27 @@ export async function POST(request: Request) {
 }
 
 /** Текст для карточки: без сырого тела ответа провайдера, но с понятной причиной. */
-function publicMessage(error: LaoZhangError): string {
+function publicMessage(error: ImageProviderError): string {
+  const name = providerLabel(error.provider)
+  const keyVariable = providerKeyVariable(error.provider)
   switch (error.kind) {
     case "auth":
       return error.status === 403
-        ? "Провайдер отклонил доступ (HTTP 403): токен отключён, IP сервера не в белом списке или нет доступа к модели. Подробности — в логах сервера."
-        : "Провайдер не принял ключ LAOZHANG_API_KEY (HTTP 401) — проверьте его в переменных окружения."
+        ? `${name} отклонил доступ (HTTP 403): ключ ${keyVariable} отключён или не имеет доступа к модели. Подробности — в логах сервера.`
+        : `${name} не принял ключ ${keyVariable} (HTTP 401) — проверьте его в переменных окружения.`
     case "quota":
-      return "На счёте LaoZhang закончились средства — пополните баланс в кабинете (Account → Balance recharge) и повторите."
+      return `На счёте ${name} закончились средства — пополните баланс в кабинете и повторите.`
     case "safety":
-      return "Провайдер отклонил задание по политике контента. Переформулируйте комментарий."
+      return `${name} отклонил задание по политике контента. Переформулируйте комментарий.`
     case "rate_limit":
-      return "Провайдер ограничил частоту запросов. Подождите минуту и повторите."
+      return `${name} ограничил частоту запросов. Подождите минуту и повторите.`
     case "timeout":
-      return "Провайдер не ответил вовремя. Повторите — обычно помогает."
+      return `${name} не ответил вовремя. Повторите — обычно помогает.`
     case "network":
-      return "Нет связи с провайдером. Проверьте сеть и повторите."
+      return `Нет связи с ${name}. Проверьте сеть и повторите.`
     case "bad_response":
-      return "Провайдер вернул неожиданный ответ. Повторите ещё раз."
+      return `${name} вернул неожиданный ответ. Повторите ещё раз.`
     default:
-      return "Провайдер временно недоступен. Повторите через минуту."
+      return `${name} временно недоступен. Повторите через минуту.`
   }
 }

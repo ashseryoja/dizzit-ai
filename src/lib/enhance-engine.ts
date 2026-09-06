@@ -6,8 +6,8 @@
  * Основной путь — `enhanceRender`: промпт + исходник (и карта областей точечной
  * правки) уходят в gpt-image-2 через `lib/image-generation` → `/api/images`.
  * Модель дорисовывает микродетали, материалы и свет, не трогая геометрию и
- * состав кадра; результат — до 1536 px по длинной стороне в ближайшей из трёх
- * пропорций модели.
+ * состав кадра; результат — в ближайшей из пропорций провайдера, разрешение
+ * по его ступени (2K у API Models).
  *
  * Без ключа провайдера работает `enhanceLocally` — ПРЕДПРОСМОТР на canvas:
  * деликатная цветокоррекция в размере исходника. Так главная кнопка не
@@ -23,7 +23,6 @@ import {
   prepareReference,
   readBlobSize,
   requestImage,
-  sizeForAspect,
   withImageProvider,
   type GeneratedImage,
 } from "@/lib/image-generation"
@@ -237,7 +236,7 @@ export async function enhanceRender(source: Blob, job: EnhanceJob): Promise<Enha
       const { width, height } = await readBlobSize(source)
       const references = [await prepareReference(source)]
       if (job.regions && job.regions.length > 0) references.push(await renderRegionMap(source, job.regions))
-      return requestImage({ prompt: buildEnhancePrompt(job), size: sizeForAspect(width, height), references })
+      return requestImage({ prompt: buildEnhancePrompt(job), aspect: { width, height }, references })
     },
     () => enhanceLocally(source, job)
   )

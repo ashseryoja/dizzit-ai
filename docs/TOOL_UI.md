@@ -36,7 +36,7 @@
 | Правила приёма файлов: форматы, лимит, предупреждения, перенос, вставка из буфера, замена вместо добавления | `src/lib/use-attachments.ts` | `useAttachments`; константы форматов и лимитов — `src/lib/enhance-engine.ts` |
 | Рабочий набор: режим «Выбрать», «Выбрать все», стрелки и Escape, «Редактировать все», что уходит в обработку | `src/lib/use-batch-selection.ts` | `useBatchSelection` |
 | Сохранение исходника в IndexedDB, очередь пачки (карточки сразу, обработка по одной) | `src/lib/tool-jobs.ts` | `saveSourceFile`, `runGalleryQueue` |
-| Куда уходит генерация картинок: провайдер, размеры, уменьшение референса, предпросмотр без ключа, подпись «предпросмотр без ключа» на карточке | `src/lib/image-generation.ts` — клиент; `src/app/api/images/route.ts` + `src/server/laozhang.ts` — сервер (ключ) | `requestImage`, `withImageProvider`, `prepareReference`, `previewCaption`; промпты — в движке инструмента (`build*Prompt`) |
+| Куда уходит генерация картинок: провайдер, пропорции, уменьшение референса, предпросмотр без ключа, подпись «предпросмотр без ключа» на карточке | `src/lib/image-generation.ts` — клиент; `src/app/api/images/route.ts` + `src/server/providers.ts` (выбор), `apimodels.ts`, `laozhang.ts` — сервер (ключи) | `requestImage`, `withImageProvider`, `prepareReference`, `previewCaption`; промпты — в движке инструмента (`build*Prompt`) |
 | В какой проект класть новые записи | `src/stores/project-store.ts` | `ensureActiveProject`, `useActiveProject` |
 | Внешний вид всего перечисленного (рецепты CSS) | `src/styles/ds/surfaces.css` | `.stage-*`, `.batch-tile`, `.tray-*`, `.dropzone`, `.popover`, `.presence-*`, `.composer-notice`, `.rg-tag`, `.style-dock` |
 

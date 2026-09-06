@@ -13,7 +13,7 @@
     "lint": "next lint && node scripts/check-tool-ui.mjs",
     "check:ui": "node scripts/check-tool-ui.mjs",
     "type-check": "tsc --noEmit",
-    "fake:images": "node scripts/fake-laozhang.mjs"
+    "fake:images": "node scripts/fake-image-provider.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

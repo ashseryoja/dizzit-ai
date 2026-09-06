@@ -50,8 +50,9 @@
       "runtimeExecutable": "env",
       "runtimeArgs": [
         "NEXT_DIST_DIR=.next-solo",
-        "LAOZHANG_API_KEY=fake-key-for-local-testing",
-        "LAOZHANG_API_BASE_URL=http://127.0.0.1:4321",
+        "IMAGE_PROVIDER=apimodels",
+        "APIMODELS_API_KEY=fake-key-for-local-testing",
+        "APIMODELS_API_BASE_URL=http://127.0.0.1:4321/v1",
         "npx",
         "next",
         "dev"
