@@ -10,8 +10,9 @@
     "dev": "next dev -p 3010",
     "build": "next build",
     "start": "next start -p 3010",
-    "lint": "next lint && node scripts/check-tool-ui.mjs",
+    "lint": "next lint && node scripts/check-tool-ui.mjs && node scripts/check-enhance-prompts.mjs",
     "check:ui": "node scripts/check-tool-ui.mjs",
+    "check:prompts": "node scripts/check-enhance-prompts.mjs",
     "type-check": "tsc --noEmit",
     "fake:images": "node scripts/fake-image-provider.mjs",
     "db:migrate": "node scripts/db-migrate.mjs"

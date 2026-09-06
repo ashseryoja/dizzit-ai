@@ -114,9 +114,45 @@ const TIME_HINT: Record<BatchTime, string> = {
  * Реальный солнечный свет по умолчанию: не декоративный фильтр, а единая
  * физически правдоподобная схема. Ночью эта строка намеренно не добавляется.
  */
+const LIGHTING_KEYWORDS =
+  "volumetric lighting, god rays, cinematic lighting, soft natural light, global illumination, ambient occlusion, ray tracing"
+const MORNING_SUNLIGHT_KEYWORD = "morning sunlight coming through window"
+
 function naturalLightHint(time: BatchTime): string {
   if (time === "night") return ""
-  return "NATURAL SUNLIGHT: Use one coherent sun direction from an existing visible opening or a plausible off-camera window/opening. Add restrained soft-edged sun patches, correct penumbra and contact shadows, warm direct highlights with cooler bounced skylight fill, and subtle specular sun glints on glass, metal and polished wood. Use gentle photographic highlight bloom and only a barely perceptible lens flare when physically justified. Keep windows and highlights recoverable; no fake flare overlay, theatrical god rays, orange wash or random light sources."
+  const lightingKeywords =
+    time === "keep" || time === "morning"
+      ? `${LIGHTING_KEYWORDS}, ${MORNING_SUNLIGHT_KEYWORD}`
+      : LIGHTING_KEYWORDS
+  return [
+    `LIGHTING KEYWORDS: ${lightingKeywords}.`,
+    "NATURAL SUNLIGHT: Use one coherent sun direction from an existing visible opening or a plausible off-camera window/opening. Add restrained volumetric sunbeams only where light can physically enter, soft shadows from windows, correct penumbra and contact shadows, warm direct highlights with cooler bounced skylight fill, and subtle specular sun glints on glass, metal and polished wood. Use gentle photographic highlight bloom and a barely perceptible lens flare when physically justified. Keep windows and highlights recoverable; no fake flare overlay, exaggerated god rays, orange wash or random light sources.",
+  ].join("\n")
+}
+
+/** Термины обязательного журнального фотореализма для дневных интерьеров. */
+const PHOTOREALISM_HINT =
+  "EDITORIAL PHOTOREALISM: architectural photography, interior design magazine, photorealistic, 8k resolution, highly detailed, shot on Sony A7R IV, 35mm lens, depth of field (DoF). Treat camera and resolution phrases as a visual-quality brief: keep the actual requested output size, exact source viewpoint, perspective and focal-length feel."
+
+/**
+ * GPT Image 2 не имеет отдельного weighted negative prompt, но наш API держит
+ * запреты отдельным полем и бэкенд добавляет их последним строгим блоком.
+ */
+export function buildEnhanceNegativePrompt(job: EnhanceJob): string {
+  const time = job.tools?.time ?? "keep"
+  return [
+    "cheap 3D render, low-quality CGI, obvious CGI, videogame graphics, flat technical visualization, plastic materials, waxy surfaces, rubbery fabric, perfectly uniform procedural textures, texture tiling, fake reflections, mirror-like wood, glowing materials",
+    "flat lighting, sterile lighting, shadowless scene, inconsistent light direction, random light sources, fake HDR, HDR halos, clipped highlights, blown-out windows, crushed blacks, harsh artificial shadows, fake volumetric fog, exaggerated god rays, painted-on sunbeams, fake lens-flare overlay",
+    "unnatural colors, neon color cast, orange wash, excessive saturation, excessive contrast, oversharpening, crunchy edges, waxy denoising, blur, low resolution, pixelation, JPEG artifacts, banding, moire, coarse noise",
+    "cartoon, illustration, concept art, painterly image, surrealism, fantasy styling, miniature or dollhouse look",
+    "fisheye distortion, warped perspective, leaning verticals, changed camera angle, changed crop, changed room geometry, moved walls, moved doors or windows, redesigned ceiling or floor, altered furniture, added furniture, removed objects, duplicated objects, floating objects, malformed decor, text, logo, watermark",
+    time === "night" ? "sunlight, daylight, sunbeams, morning light, visible god rays" : "night-time exposure, black windows",
+  ].join(", ")
+}
+
+export interface EnhancePrompts {
+  prompt: string
+  negativePrompt: string
 }
 
 export function buildEnhancePrompt(job: EnhanceJob): string {
@@ -131,10 +167,14 @@ export function buildEnhancePrompt(job: EnhanceJob): string {
     CONTEXT_HINT[job.context ?? "auto"],
     "NON-NEGOTIABLE PRESERVATION: Keep the exact camera position, lens/focal-length feel, perspective, vertical lines, crop, aspect ratio, framing and composition. Preserve every wall, opening, ceiling, floor boundary, built-in element, piece of furniture, fixture and decor item in exactly the same shape, scale, count and position. Preserve the design, material identities, patterns and base colors. Do not redesign, restyle, invent, remove, move or replace anything unless the designer explicitly requests it below.",
     improveQuality
-      ? "RENDER-TO-PHOTO PASS: Do not merely upscale, sharpen or polish the existing CGI pixels. Re-light and re-render every visible surface as real material under real light while keeping the locked design unchanged. Use physically plausible global illumination, indirect bounce, ambient occlusion and consistent light direction/color temperature. Replace flat procedural shading with scale-accurate photographic material response: natural wood grain and pores, individual textile fibers and weave, subtle plaster variation, realistic glass thickness/refraction, metal roughness, joints, seams, tiny edge bevels and grounded surface contact. Add restrained micro-imperfections and non-uniform roughness so surfaces feel manufactured and touched, never sterile or synthetic."
+      ? "RENDER-TO-PHOTO PASS: Do not merely upscale, sharpen or polish the existing CGI pixels. Re-light and re-render every visible surface as real material under real light while keeping the locked design unchanged. Use physically plausible global illumination, indirect bounce, ambient occlusion, ray tracing and consistent light direction/color temperature. Replace flat procedural shading with scale-accurate photographic material response: natural wood grain and pores, individual textile fibers and weave, subtle plaster variation, realistic glass thickness/refraction, metal roughness, joints, seams, tiny edge bevels and grounded surface contact. Add restrained micro-imperfections and non-uniform roughness so surfaces feel manufactured and touched, never sterile or synthetic."
       : "Preserve the rendering quality as is; apply only the changes requested below.",
     improveQuality
       ? "PHOTOGRAPHIC CAMERA RESPONSE: Preserve the source lens and viewpoint, with straight architectural verticals where relevant and natural edge-to-edge focus. Use balanced exposure, neutral white balance, realistic dynamic range and highlight roll-off, gentle micro-contrast, fine sensor-level texture and subtle depth cues. The image should feel like an unretouched professional design-editorial photograph appropriate to the scene. Avoid plastic surfaces, perfectly uniform textures, fake mirror reflections, glowing materials, crushed blacks, clipped whites, HDR halos, excessive saturation/contrast, oversharpening, waxy denoising, blur, coarse noise, banding, moire, repeated texture tiles, warped geometry and the glossy 3D-render look."
+      : "",
+    improveQuality ? PHOTOREALISM_HINT : "",
+    improveQuality
+      ? "CONTROLLED EDIT FREEDOM: Make a substantial change to illumination, shadows, reflections, microtexture and surface shading so the result no longer inherits the flat CGI look. This freedom applies only to light and photographic material response; the preservation rules for geometry, layout, objects and camera always win."
       : "",
     improveQuality ? naturalLightHint(time) : "",
     tools ? FILTER_HINT[tools.filter] : "",
@@ -149,6 +189,14 @@ export function buildEnhancePrompt(job: EnhanceJob): string {
     note ? `DESIGNER'S ALLOWED CHANGES (these override preservation only where explicit):\n${note}` : "",
   ]
   return lines.filter(Boolean).join("\n")
+}
+
+/** Пара positive/negative для внутреннего API улучшения. */
+export function buildEnhancePrompts(job: EnhanceJob): EnhancePrompts {
+  return {
+    prompt: buildEnhancePrompt(job),
+    negativePrompt: buildEnhanceNegativePrompt(job),
+  }
 }
 
 /* ── Карта областей ─────────────────────────────────────────────────── */
@@ -256,8 +304,10 @@ export async function enhanceRender(source: Blob, job: EnhanceJob): Promise<Enha
       const { width, height } = await readBlobSize(source)
       const references = [await prepareReference(source)]
       if (job.regions && job.regions.length > 0) references.push(await renderRegionMap(source, job.regions))
+      const prompts = buildEnhancePrompts(job)
       return requestImage({
-        prompt: buildEnhancePrompt(job),
+        prompt: prompts.prompt,
+        negativePrompt: prompts.negativePrompt,
         aspect: { width, height },
         references,
         provider: "apimodels",

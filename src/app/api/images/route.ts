@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 
 import {
+  composeProviderPrompt,
   ImageProviderError,
   isImageResolution,
   sniffImageMime,
@@ -21,7 +22,8 @@ import { describeIntendedProvider, providerKeyVariable, providerLabel, resolveIm
  * основной — API Models (gpt-image-2), запасной — LaoZhang.
  *
  * GET  → статус: настроен ли ключ, какой провайдер, модель и разрешение.
- * POST → multipart: `prompt`, `aspect` («ширина:высота» желаемой пропорции),
+ * POST → multipart: `prompt`, опциональный `negative_prompt`, `aspect`
+ *        («ширина:высота» желаемой пропорции),
  *        0…4 файлов `image` (PNG/JPEG/WEBP до 12 МБ каждый); опционально
  *        `provider`, `resolution`, `final_long_side` для фиксированного по
  *        цене пайплайна улучшения → байты картинки.
@@ -145,8 +147,12 @@ export async function POST(request: Request) {
   }
 
   const prompt = String(form.get("prompt") ?? "").trim()
+  const negativePrompt = String(form.get("negative_prompt") ?? "").trim()
   if (!prompt) return problem(400, { error: "bad_request", message: "Пустой промпт." })
-  if (prompt.length > MAX_PROMPT_CHARS) return problem(400, { error: "bad_request", message: "Слишком длинный промпт." })
+  const providerPrompt = composeProviderPrompt(prompt, negativePrompt)
+  if (providerPrompt.length > MAX_PROMPT_CHARS) {
+    return problem(400, { error: "bad_request", message: "Слишком длинные prompt и negative prompt." })
+  }
 
   const aspect = parseAspect(form.get("aspect"))
   if (!aspect) return problem(400, { error: "bad_request", message: "Пропорция задаётся как «ширина:высота»." })
@@ -171,7 +177,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const image = await provider.generate({ prompt, aspect, references, signal: request.signal })
+    const image = await provider.generate({ prompt: providerPrompt, aspect, references, signal: request.signal })
     const output = finalLongSide
       ? await resizeToLongSideLanczos(image.bytes, finalLongSide)
       : { bytes: image.bytes, mimeType: image.mimeType, width: undefined, height: undefined }

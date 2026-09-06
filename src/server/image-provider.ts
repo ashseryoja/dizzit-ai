@@ -61,6 +61,22 @@ export interface ImageGenerationInput {
   signal?: AbortSignal
 }
 
+/**
+ * GPT Image 2 принимает одну текстовую инструкцию, а не отдельное поле
+ * negative_prompt. Держим positive/negative раздельно до границы бэкенда и
+ * здесь превращаем запреты в последний, наиболее заметный блок инструкции.
+ */
+export function composeProviderPrompt(prompt: string, negativePrompt?: string): string {
+  const negative = negativePrompt?.trim()
+  if (!negative) return prompt.trim()
+  return [
+    prompt.trim(),
+    "NEGATIVE PROMPT — STRICT EXCLUSIONS:",
+    `Do not produce or introduce any of the following: ${negative}`,
+    "These exclusions never permit changing the locked geometry, layout, camera or object placement.",
+  ].join("\n")
+}
+
 export interface GeneratedImageBytes {
   bytes: Uint8Array
   mimeType: string

@@ -43,6 +43,12 @@ export interface ImageProviderStatus {
 
 export interface ImageRequest {
   prompt: string
+  /**
+   * Отдельный negative prompt для инструментов, которым нужны жёсткие
+   * визуальные запреты. Наш API присоединяет его к инструкции, потому что
+   * GPT Image 2 не имеет отдельного negative_prompt в контракте провайдера.
+   */
+  negativePrompt?: string
   aspect: Aspect
   /** Референсы: первый — исходник, дальше вспомогательные (карта областей и т. п.). */
   references?: Blob[]
@@ -211,6 +217,7 @@ interface ProblemBody {
  */
 export async function requestImage({
   prompt,
+  negativePrompt,
   aspect,
   references = [],
   provider,
@@ -220,6 +227,7 @@ export async function requestImage({
 }: ImageRequest): Promise<GeneratedImage> {
   const form = new FormData()
   form.set("prompt", prompt)
+  if (negativePrompt?.trim()) form.set("negative_prompt", negativePrompt.trim())
   form.set("aspect", `${Math.max(1, Math.round(aspect.width))}:${Math.max(1, Math.round(aspect.height))}`)
   if (provider) form.set("provider", provider)
   if (resolution) form.set("resolution", resolution)
