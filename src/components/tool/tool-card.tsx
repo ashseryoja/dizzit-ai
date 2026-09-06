@@ -1,43 +1,25 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { Download, Eye, RefreshCw, Trash2 } from "lucide-react"
+import { useState } from "react"
+import { Download, Eye, ImageOff, RefreshCw, Trash2 } from "lucide-react"
 
 import { ThinkingGlyph } from "@/components/glyphs"
-import { getBlob, resultKey, thumbResultKey, thumbSourceKey } from "@/lib/blob-store"
+import { getBlob, resultKey, sourceKey, thumbResultKey, thumbSourceKey } from "@/lib/blob-store"
 import { previewCaption } from "@/lib/image-generation"
+import { useStoredBlobUrl, type StoredBlobStatus } from "@/lib/use-stored-blob"
 import { cn, fileBaseName } from "@/lib/utils"
 import type { GalleryItemMeta } from "@/types"
 
 /** Блоб из IndexedDB → object URL с уборкой за собой. */
 export function useBlobUrl(key: string | null): string | null {
-  const [url, setUrl] = useState<string | null>(null)
-  useEffect(() => {
-    if (!key) {
-      setUrl(null)
-      return
-    }
-    let cancelled = false
-    let objectUrl: string | null = null
-    void getBlob(key).then((blob) => {
-      if (cancelled || !blob) return
-      objectUrl = URL.createObjectURL(blob)
-      setUrl(objectUrl)
-    })
-    return () => {
-      cancelled = true
-      if (objectUrl) URL.revokeObjectURL(objectUrl)
-      setUrl(null)
-    }
-  }, [key])
-  return url
+  return useStoredBlobUrl([key]).url
 }
 
 /** Скачать полный результат из общего хранилища, а не миниатюру интерфейса. */
 export async function downloadStoredResult(item: GalleryItemMeta, baseName?: string): Promise<void> {
   const blob = await getBlob(resultKey(item.id))
   if (!blob) {
-    window.alert("Результат не найден в хранилище. Повторите обработку.")
+    window.alert("Файл результата ещё не синхронизирован. Подождите и попробуйте скачать снова.")
     return
   }
   const url = URL.createObjectURL(blob)
@@ -76,14 +58,28 @@ export function ToolCard({
   const { id, status } = item
   const [comparing, setComparing] = useState(false)
 
-  const resultThumb = useBlobUrl(status === "done" ? thumbResultKey(id) : null)
-  const sourceThumb = useBlobUrl(thumbSourceKey(id))
+  // Метаданные могут приехать с сервера раньше объектов. Полный файл —
+  // штатный запасной вариант миниатюре; отдельный хук результата продолжает
+  // ограниченные попытки, даже когда карточка уже показывает исходник.
+  const expectsSavedResult = status === "done" || item.syncPending === true
+  const resultAsset = useStoredBlobUrl(
+    expectsSavedResult ? [thumbResultKey(id), resultKey(id)] : []
+  )
+  const sourceAsset = useStoredBlobUrl(
+    item.sourceName ? [thumbSourceKey(id), sourceKey(id)] : []
+  )
+  const preferredAsset = expectsSavedResult && resultAsset.url ? resultAsset : sourceAsset
+  const shownAsset = comparing && sourceAsset.url ? sourceAsset : preferredAsset
+  const shown = shownAsset.url
+  const assetStatus = shown
+    ? "ready"
+    : mergeUnavailableStatus(expectsSavedResult ? [resultAsset.status, sourceAsset.status] : [sourceAsset.status])
+  const showingSourceFallback = Boolean(
+    shown && status === "done" && shownAsset === sourceAsset && !resultAsset.url
+  )
 
-  // До готовности результата карточка живёт на миниатюре исходника (если он есть).
-  const shown = status === "done" && !comparing ? resultThumb : sourceThumb ?? resultThumb
-
-  const width = (status === "done" && item.resultWidth) || item.sourceWidth || 1
-  const height = (status === "done" && item.resultHeight) || item.sourceHeight || 1
+  const width = (expectsSavedResult && item.resultWidth) || item.sourceWidth || 1
+  const height = (expectsSavedResult && item.resultHeight) || item.sourceHeight || 1
 
   const download = async () => {
     await downloadStoredResult(item, downloadBaseName)
@@ -103,6 +99,7 @@ export function ToolCard({
             src={shown}
             alt={item.sourceName ?? item.note ?? ""}
             draggable={false}
+            onError={shownAsset.reportImageError}
             className={cn(
               "absolute inset-0 h-full w-full select-none object-cover",
               status === "processing" && "blur-[6px]"
@@ -122,9 +119,7 @@ export function ToolCard({
               {processingLabel}
             </span>
           </div>
-        ) : null}
-
-        {status === "error" ? (
+        ) : status === "error" ? (
           <div
             className="fade-in absolute inset-0 flex flex-col items-center justify-center gap-3 p-4 text-center"
             style={{ background: "rgba(16,16,18,0.72)" }}
@@ -148,13 +143,31 @@ export function ToolCard({
               </button>
             </div>
           </div>
+        ) : !shown ? (
+          <StoredAssetNotice
+            status={assetStatus}
+            onRetry={() => {
+              resultAsset.retry()
+              sourceAsset.retry()
+            }}
+            className="absolute inset-0"
+          />
         ) : null}
 
-        {status === "done" ? (
+        {showingSourceFallback ? (
+          <StoredAssetNotice
+            status={resultAsset.status}
+            onRetry={resultAsset.retry}
+            compact
+            className="absolute bottom-2 left-2 right-2 rounded-[10px]"
+          />
+        ) : null}
+
+        {shown && status === "done" ? (
           <>
             {/* Действия — по ховеру, как отметки на карточках нейрофотосессии. */}
             <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-              {sourceThumb ? (
+              {sourceAsset.url && resultAsset.url ? (
                 <CardAction
                   label="Показать исходник (удерживайте)"
                   onPointerDown={() => setComparing(true)}
@@ -191,6 +204,64 @@ export function ToolCard({
         ) : null}
       </div>
     </figure>
+  )
+}
+
+function mergeUnavailableStatus(states: StoredBlobStatus[]): StoredBlobStatus {
+  if (states.some((status) => status === "loading")) return "loading"
+  if (states.some((status) => status === "error")) return "error"
+  return "missing"
+}
+
+/**
+ * Терминальное состояние отсутствующего серверного файла. Оно не предлагает
+ * пересоздать результат и не вызывает image API: кнопка лишь повторяет чтение
+ * IndexedDB/object storage, сохраняя карточку и её размеры на месте.
+ */
+export function StoredAssetNotice({
+  status,
+  onRetry,
+  compact = false,
+  showRetry = true,
+  className,
+}: {
+  status: StoredBlobStatus
+  onRetry: () => void
+  compact?: boolean
+  /** false внутри уже интерактивной плитки, чтобы не вкладывать button в button. */
+  showRetry?: boolean
+  className?: string
+}) {
+  const loading = status === "loading"
+  return (
+    <div
+      className={cn(
+        "fade-in flex flex-col items-center justify-center text-center",
+        compact ? "gap-1.5 p-2" : "gap-2.5 p-4",
+        className
+      )}
+      style={{ background: "var(--bg-raised)" }}
+      role="status"
+    >
+      {loading ? (
+        <ThinkingGlyph size={compact ? 17 : 21} className="[color:var(--fg-4)]" />
+      ) : (
+        <ImageOff className={compact ? "h-4 w-4" : "h-5 w-5"} strokeWidth={1.6} style={{ color: "var(--fg-4)" }} />
+      )}
+      <span className={compact ? "text-[10.5px] leading-tight" : "text-[12px] leading-snug"} style={{ color: "var(--fg-3)" }}>
+        {loading ? "Загружаем файл…" : "Файл ещё не синхронизирован"}
+      </span>
+      {!loading && showRetry ? (
+        <button
+          type="button"
+          onClick={onRetry}
+          className={cn("btn-outline", compact ? "h-7 px-2 text-[10.5px]" : "h-8 px-3 text-[12px]")}
+        >
+          <RefreshCw className="h-3 w-3" strokeWidth={1.8} />
+          Проверить снова
+        </button>
+      ) : null}
+    </div>
   )
 }
 

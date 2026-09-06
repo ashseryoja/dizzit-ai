@@ -1,6 +1,6 @@
 import "server-only"
 
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises"
+import { mkdir, readFile, stat, unlink, writeFile } from "node:fs/promises"
 import { join, resolve } from "node:path"
 
 import { del, get, put } from "@vercel/blob"
@@ -23,6 +23,8 @@ export interface ObjectStorage {
   readonly kind: "vercel-blob" | "disk"
   put(key: string, bytes: Uint8Array, contentType: string): Promise<void>
   get(key: string): Promise<StoredObject | null>
+  /** Проверить объект, не скачивая всё изображение в память. */
+  has(key: string): Promise<boolean>
   delete(keys: string[]): Promise<void>
 }
 
@@ -44,6 +46,13 @@ class VercelBlobStorage implements ObjectStorage {
     if (!result || result.statusCode !== 200) return null
     const bytes = new Uint8Array(await new Response(result.stream).arrayBuffer())
     return { bytes, contentType: result.blob.contentType ?? "application/octet-stream" }
+  }
+
+  async has(key: string): Promise<boolean> {
+    const result = await get(key, { access: "private" })
+    if (!result || result.statusCode !== 200) return false
+    await result.stream.cancel().catch(() => undefined)
+    return true
   }
 
   async delete(keys: string[]): Promise<void> {
@@ -87,6 +96,16 @@ class DiskStorage implements ObjectStorage {
       return { bytes, contentType }
     } catch (error) {
       if ((error as { code?: string }).code === "ENOENT") return null
+      throw error
+    }
+  }
+
+  async has(key: string): Promise<boolean> {
+    const { data } = this.paths(key)
+    try {
+      return (await stat(data)).size > 0
+    } catch (error) {
+      if ((error as { code?: string }).code === "ENOENT") return false
       throw error
     }
   }

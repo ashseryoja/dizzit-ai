@@ -53,6 +53,19 @@ export async function GET(request: Request, context: Context) {
   })
 }
 
+/** Быстрая проверка для восстановления/backfill: не читает всё изображение. */
+export async function HEAD(request: Request, context: Context) {
+  const g = await guard(request)
+  if ("error" in g) return g.error
+  const { key } = await context.params
+  if (!KEY_PATTERN.test(key)) return badKey()
+  const exists = await g.storage.has(objectKey(g.session.ownerId, key))
+  return new Response(null, {
+    status: exists ? 200 : 404,
+    headers: { "Cache-Control": "private, no-store" },
+  })
+}
+
 export async function PUT(request: Request, context: Context) {
   const g = await guard(request)
   if ("error" in g) return g.error

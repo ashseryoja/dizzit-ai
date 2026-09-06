@@ -71,10 +71,13 @@ export const useViewsStore = create<ViewsState>()(
             // Записи без списка кадров (черновой формат) не восстановить — убираем.
             sets: current.sets.filter((item) => Array.isArray(item.frames)).map((item) =>
               item.status === "processing"
-                ? {
+                  ? {
                     ...item,
                     status: "error" as GenerationStatus,
-                    error: "Построение сета прервалось — страница была закрыта.",
+                    syncPending: true,
+                    generationUncertain: true,
+                    error:
+                      "Построение сета прервалось — страница была закрыта. Повторная платная генерация отключена; можно только восстановить уже созданные кадры.",
                   }
                 : item
             ),

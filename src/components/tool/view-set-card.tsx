@@ -4,9 +4,10 @@ import { useState } from "react"
 import { Download, Eye, RefreshCw, Trash2 } from "lucide-react"
 
 import { ThinkingGlyph } from "@/components/glyphs"
-import { useBlobUrl } from "@/components/tool/tool-card"
-import { getBlob, thumbSourceKey } from "@/lib/blob-store"
+import { StoredAssetNotice } from "@/components/tool/tool-card"
+import { getBlob, sourceKey, thumbSourceKey } from "@/lib/blob-store"
 import { previewCaption } from "@/lib/image-generation"
+import { useStoredBlobUrl, type StoredBlobStatus, type StoredBlobUrlState } from "@/lib/use-stored-blob"
 import { cn, plural } from "@/lib/utils"
 import { PRESET_LABEL, isWideShot, viewKey, viewThumbKey } from "@/lib/view-engine"
 import type { ViewFrame, ViewSet } from "@/types"
@@ -31,7 +32,7 @@ export function ViewSetCard({
 }) {
   const { id, status } = item
   const [comparing, setComparing] = useState(false)
-  const sourceThumb = useBlobUrl(thumbSourceKey(id))
+  const sourceAsset = useStoredBlobUrl([thumbSourceKey(id), sourceKey(id)])
   const ready = new Set(item.ready ?? [])
   const frames = item.frames ?? []
   const many = frames.length > 1
@@ -39,7 +40,7 @@ export function ViewSetCard({
   const download = async (frame: ViewFrame) => {
     const blob = await getBlob(viewKey(id, frame.key))
     if (!blob) {
-      window.alert("Кадр не найден в хранилище браузера. Постройте сет заново.")
+      window.alert("Файл кадра ещё не синхронизирован. Подождите и попробуйте скачать снова.")
       return
     }
     const url = URL.createObjectURL(blob)
@@ -77,14 +78,14 @@ export function ViewSetCard({
             item={item}
             frame={frame}
             ready={ready.has(frame.key)}
-            sourceThumb={sourceThumb}
+            sourceAsset={sourceAsset}
             comparing={comparing}
             onDownload={() => void download(frame)}
           />
         ))}
       </div>
 
-      {status === "error" ? (
+      {status === "error" && sourceAsset.url ? (
         <div
           className="fade-in absolute inset-0 flex flex-col items-center justify-center gap-3 p-4 text-center"
           style={{ background: "rgba(16,16,18,0.72)" }}
@@ -113,7 +114,7 @@ export function ViewSetCard({
       {status === "done" ? (
         <>
           <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-            {sourceThumb ? (
+            {sourceAsset.url ? (
               <CardAction
                 label="Показать общий план (удерживайте)"
                 onPointerDown={() => setComparing(true)}
@@ -149,19 +150,34 @@ function ViewTile({
   item,
   frame,
   ready,
-  sourceThumb,
+  sourceAsset,
   comparing,
   onDownload,
 }: {
   item: ViewSet
   frame: ViewFrame
   ready: boolean
-  sourceThumb: string | null
+  sourceAsset: StoredBlobUrlState
   comparing: boolean
   onDownload: () => void
 }) {
-  const viewThumb = useBlobUrl(ready ? viewThumbKey(item.id, frame.key) : null)
-  const shown = ready && !comparing ? viewThumb ?? sourceThumb : sourceThumb ?? viewThumb
+  const frameAsset = useStoredBlobUrl(
+    ready ? [viewThumbKey(item.id, frame.key), viewKey(item.id, frame.key)] : []
+  )
+  const preferFrame = ready && !comparing
+  const shownAsset = preferFrame
+    ? frameAsset.url
+      ? frameAsset
+      : sourceAsset
+    : sourceAsset.url
+      ? sourceAsset
+      : frameAsset
+  const shown = shownAsset.url
+  const assetStatus = shown
+    ? "ready"
+    : mergeUnavailableStatus(preferFrame || comparing ? [frameAsset, sourceAsset] : [sourceAsset])
+  const showingSource = Boolean(shown && shownAsset === sourceAsset)
+  const showingSourceFallback = ready && !comparing && showingSource && !frameAsset.url
   const pending = item.status === "processing" && !ready
   const aspect = isWideShot(frame.kind) ? `${item.sourceWidth || 1} / ${item.sourceHeight || 1}` : "4 / 5"
 
@@ -176,11 +192,22 @@ function ViewTile({
           src={shown}
           alt={`${item.sourceName} — ${frame.label}`}
           draggable={false}
+          onError={shownAsset.reportImageError}
           className={cn("absolute inset-0 h-full w-full select-none object-cover", pending && "blur-[6px]")}
         />
       ) : null}
 
-      {pending ? (
+      {!shown ? (
+        <StoredAssetNotice
+          status={assetStatus}
+          onRetry={() => {
+            frameAsset.retry()
+            sourceAsset.retry()
+          }}
+          compact
+          className="absolute inset-0"
+        />
+      ) : pending ? (
         <div
           className="fade-in absolute inset-0 flex flex-col items-center justify-center gap-2"
           style={{ background: "rgba(16,16,18,0.45)" }}
@@ -192,14 +219,23 @@ function ViewTile({
         </div>
       ) : null}
 
+      {showingSourceFallback ? (
+        <StoredAssetNotice
+          status={frameAsset.status}
+          onRetry={frameAsset.retry}
+          compact
+          className="absolute bottom-2 left-2 right-2 rounded-[10px]"
+        />
+      ) : null}
+
       <span
         className="chip absolute left-2 top-2"
         style={{ background: "rgba(16,16,18,0.7)", color: "rgba(255,255,255,0.85)", borderColor: "rgba(255,255,255,0.16)" }}
       >
-        {comparing && ready ? "общий план" : frame.label}
+        {(comparing && ready) || (ready && showingSource) ? "общий план" : frame.label}
       </span>
 
-      {ready && item.status === "done" ? (
+      {ready && item.status === "done" && frameAsset.url ? (
         <button
           type="button"
           onClick={onDownload}
@@ -213,6 +249,12 @@ function ViewTile({
       ) : null}
     </div>
   )
+}
+
+function mergeUnavailableStatus(states: StoredBlobUrlState[]): StoredBlobStatus {
+  if (states.some((state) => state.status === "loading")) return "loading"
+  if (states.some((state) => state.status === "error")) return "error"
+  return "missing"
 }
 
 /** Кнопка на карточке: тёмная плашка поверх изображения (как у ToolCard). */

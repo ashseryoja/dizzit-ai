@@ -10,7 +10,7 @@ import { ToolDropzone } from "@/components/tool/tool-dropzone"
 import { ComposerDock, ToolAside, ToolGallery, ToolShell } from "@/components/tool/tool-shell"
 import { ViewSetCard } from "@/components/tool/view-set-card"
 import { ViewsInvite } from "@/components/tool/views-invite"
-import { getBlob, putBlob, sourceKey } from "@/lib/blob-store"
+import { getBlob, putBlobDurably, sourceKey } from "@/lib/blob-store"
 import { MAX_BATCH, makeThumb } from "@/lib/enhance-engine"
 import { runGalleryQueue, saveSourceFile } from "@/lib/tool-jobs"
 import { useAttachments } from "@/lib/use-attachments"
@@ -93,30 +93,85 @@ export default function ViewsPage() {
      (референс для модели или план вырезок предпросмотра) — один раз на сет. */
   const runSet = useCallback(
     async (meta: ViewSet) => {
+      const ready = new Set(meta.ready ?? [])
+      const generated = new Set([...(meta.generated ?? []), ...ready])
+      let engine: string | undefined = meta.engine
       try {
+        if (meta.generationUncertain) {
+          throw new Error(
+            "Статус предыдущего платного запроса неизвестен. Новая генерация не запущена — откройте исходный браузер для синхронизации или создайте отдельный сет вручную."
+          )
+        }
         const source = await getBlob(sourceKey(meta.id))
         if (!source) throw new Error("Исходник не найден в хранилище браузера.")
+
+        // До ЛЮБОГО нового вызова модели проверяем уже созданные кадры. Если
+        // сервер знает, что провайдер закончил кадр, но самого файла в этом
+        // браузере ещё нет, останавливаем весь Retry: параллельные воркеры не
+        // успеют повторно потратить деньги на остальные ракурсы.
+        const recovered = new Map<string, Blob>()
+        for (const frame of meta.frames) {
+          if (!generated.has(frame.key)) continue
+          const blob = await getBlob(viewKey(meta.id, frame.key))
+          if (!blob) {
+            throw new Error(
+              `Кадр «${frame.label}» уже создан, но ещё не синхронизирован. Откройте исходный браузер и нажмите «Повторить» там — новая генерация не запущена.`
+            )
+          }
+          recovered.set(frame.key, blob)
+        }
+
         const renderer = await prepareViewSet(source, meta.frames, meta.note)
-        const ready: string[] = []
-        let engine: string | undefined
         await mapWithConcurrency(meta.frames, FRAME_CONCURRENCY, async (frame) => {
-          const result = await renderer.render(frame)
-          await putBlob(viewKey(meta.id, frame.key), result.blob)
-          await putBlob(viewThumbKey(meta.id, frame.key), await makeThumb(result.blob))
-          ready.push(frame.key)
-          engine = result.engine
-          update(meta.id, { ready: [...ready] })
+          // После сетевого сбоя готовый кадр уже может лежать локально. В этом
+          // случае повтор только дозагружает его и не вызывает модель ещё раз.
+          let frameBlob = recovered.get(frame.key) ?? (await getBlob(viewKey(meta.id, frame.key)))
+          if (!frameBlob) {
+            if (generated.has(frame.key)) {
+              throw new Error(
+                `Готовый кадр «${frame.label}» ещё не синхронизирован. Платная генерация повторно не запущена.`
+              )
+            }
+            const result = await renderer.render(frame)
+            frameBlob = result.blob
+            engine = result.engine
+          }
+          // Маркер записывается сразу после ответа провайдера (или обнаружения
+          // старой локальной копии), ДО загрузки asset. Даже если PUT оборвётся,
+          // следующий браузер увидит запрет на повторную генерацию.
+          if (!generated.has(frame.key)) {
+            generated.add(frame.key)
+            update(meta.id, {
+              generated: [...generated],
+              engine,
+              syncPending: true,
+            })
+          }
+          await putBlobDurably(viewKey(meta.id, frame.key), frameBlob)
+          const thumb = (await getBlob(viewThumbKey(meta.id, frame.key))) ?? (await makeThumb(frameBlob))
+          await putBlobDurably(viewThumbKey(meta.id, frame.key), thumb)
+          ready.add(frame.key)
+          update(meta.id, {
+            generated: [...generated],
+            ready: [...ready],
+            syncPending: generated.size > ready.size || undefined,
+          })
         })
         update(meta.id, {
           status: "done",
           resultWidth: meta.sourceWidth,
           resultHeight: meta.sourceHeight,
           engine,
+          syncPending: undefined,
+          generationUncertain: undefined,
           error: undefined,
         })
       } catch (error) {
         update(meta.id, {
           status: "error",
+          generated: [...generated],
+          ready: [...ready],
+          syncPending: generated.size > ready.size || undefined,
           error: error instanceof Error ? error.message : "Построение сета не удалось.",
         })
       }
@@ -130,7 +185,7 @@ export default function ViewsPage() {
       const metas: ViewSet[] = []
       for (const file of files) {
         try {
-          const { id, width, height } = await saveSourceFile(file)
+          const { id, width, height } = await saveSourceFile(file, { durable: true })
           metas.push({
             id,
             projectId: project.id,
@@ -167,8 +222,8 @@ export default function ViewsPage() {
   }
 
   const retry = (item: ViewSet) => {
-    update(item.id, { status: "processing", ready: [], error: undefined })
-    void runSet({ ...item, ready: [] })
+    update(item.id, { status: "processing", error: undefined })
+    void runSet(item)
   }
 
   const deleteSet = (item: ViewSet) => {

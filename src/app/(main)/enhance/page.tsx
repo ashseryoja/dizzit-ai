@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Download, Layers, Package, Sofa, Sparkles, Trees } from "lucide-react"
+import { Download, ImageOff, Layers, Package, Plus, RefreshCw, Sofa, Sparkles, Trees } from "lucide-react"
 
 import { ThinkingGlyph } from "@/components/glyphs"
 import {
@@ -14,7 +14,7 @@ import { RegionEditor } from "@/components/tool/region-editor"
 import { RenderReveal } from "@/components/tool/render-reveal"
 import { RenderStrip, RenderTray } from "@/components/tool/render-tray"
 import { BatchGrid, Stage, StagePlaceholder } from "@/components/tool/stage"
-import { downloadStoredResult, useBlobUrl } from "@/components/tool/tool-card"
+import { downloadStoredResult, StoredAssetNotice } from "@/components/tool/tool-card"
 import { ToolComposer, type ToolComposerLabels, type ToolOption } from "@/components/tool/tool-composer"
 import { ToolDropzone } from "@/components/tool/tool-dropzone"
 import { ComposerDock, ToolAside, ToolShell } from "@/components/tool/tool-shell"
@@ -22,13 +22,13 @@ import {
   deleteBlobs,
   getBlob,
   keysOf,
-  putBlob,
   resultKey,
   sourceKey,
   thumbResultKey,
   thumbSourceKey,
 } from "@/lib/blob-store"
-import { MAX_BATCH, enhanceRender, makeThumb } from "@/lib/enhance-engine"
+import { MAX_BATCH, enhanceRender } from "@/lib/enhance-engine"
+import { persistResultDurably, repairPersistedResult } from "@/lib/result-storage"
 import {
   buildEditComment,
   buildRegionsPayload,
@@ -40,6 +40,7 @@ import { runGalleryQueue, saveSourceFile } from "@/lib/tool-jobs"
 import { useAttachments, type AttachedRender, type AttachmentDetachReason } from "@/lib/use-attachments"
 import { useBatchSelection } from "@/lib/use-batch-selection"
 import { usePresence } from "@/lib/use-presence"
+import { useStoredBlobUrl } from "@/lib/use-stored-blob"
 import { cn, fileBaseName } from "@/lib/utils"
 import { useEnhanceStore } from "@/stores/enhance-store"
 import { ensureActiveProject, useActiveProject } from "@/stores/project-store"
@@ -68,13 +69,31 @@ const LABELS: ToolComposerLabels = {
 
 /** Серверная запись может приехать на другое устройство чуть раньше блоба. */
 async function getWorkspaceSource(id: string): Promise<Blob | null> {
-  for (const delay of [0, 400, 1200, 2500, 5000]) {
-    if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay))
-    const blob = await getBlob(sourceKey(id))
-    if (blob) return blob
-  }
-  return null
+  let stopped = false
+  const load = (async () => {
+    for (const delay of [0, 400, 1200, 2500, 5000]) {
+      if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay))
+      if (stopped) return null
+      try {
+        const blob = await getBlob(sourceKey(id))
+        if (blob) return blob
+      } catch {
+        // Сетевой промах одной записи не должен сорвать восстановление остальных.
+      }
+    }
+    return null
+  })()
+  let timeout = 0
+  const deadline = new Promise<null>((resolve) => {
+    timeout = window.setTimeout(() => {
+      stopped = true
+      resolve(null)
+    }, 18_000)
+  })
+  return Promise.race([load, deadline]).finally(() => window.clearTimeout(timeout))
 }
+
+type RestoreState = "idle" | "loading" | "ready" | "missing"
 
 /** Вторая плитка пары в правой панели: будущий или уже готовый результат. */
 function EnhancementVersionThumb({
@@ -88,9 +107,13 @@ function EnhancementVersionThumb({
   active: boolean
   onSelect: () => void
 }) {
-  const sourceThumb = useBlobUrl(thumbSourceKey(enhancement.id))
-  const resultThumb = useBlobUrl(enhancement.status === "done" ? thumbResultKey(enhancement.id) : null)
-  const preview = resultThumb ?? sourceThumb
+  const sourceAsset = useStoredBlobUrl([thumbSourceKey(enhancement.id), sourceKey(enhancement.id)])
+  const expectsResult = enhancement.status === "done" || enhancement.syncPending === true
+  const resultAsset = useStoredBlobUrl(
+    expectsResult ? [thumbResultKey(enhancement.id), resultKey(enhancement.id)] : []
+  )
+  const previewAsset = expectsResult && resultAsset.url ? resultAsset : sourceAsset
+  const preview = previewAsset.url
   const stateLabel =
     enhancement.status === "processing"
       ? "улучшается"
@@ -114,7 +137,17 @@ function EnhancementVersionThumb({
           src={preview}
           alt="Улучшенная версия"
           draggable={false}
+          onError={previewAsset.reportImageError}
           className={cn("h-full w-full object-cover", enhancement.status === "processing" && "blur-[3px]")}
+        />
+      ) : null}
+      {enhancement.status === "done" && !resultAsset.url ? (
+        <StoredAssetNotice
+          status={resultAsset.status}
+          onRetry={resultAsset.retry}
+          compact
+          showRetry={false}
+          className="absolute inset-0"
         />
       ) : null}
       {enhancement.status === "processing" ? (
@@ -191,7 +224,7 @@ export default function EnhancePage() {
     [dropRegions, remove]
   )
   const intake = useAttachments({ maxFiles: MAX_BATCH, onDetach: detachWorkspaceItems })
-  const { restoreAttachments } = intake
+  const { restoreAttachments, detach: detachAttachments } = intake
   const [settingsOpen, setSettingsOpen] = useState(false)
   // «Редактировать все» открывает настройки сами — там и есть все доступные действия.
   const batch = useBatchSelection(intake, {
@@ -200,6 +233,18 @@ export default function EnhancePage() {
     onLeaveBatch: () => setSettingsOpen(false),
   })
   const { attachments, current, focusIndex, pickedItems, workingSet, showBatchGrid } = batch
+  const attachmentsRef = useRef(attachments)
+  attachmentsRef.current = attachments
+  const attachmentProjectRef = useRef<string | null>(activeProject?.id ?? null)
+  useEffect(() => {
+    const nextProjectId = activeProject?.id ?? null
+    const previousProjectId = attachmentProjectRef.current
+    attachmentProjectRef.current = nextProjectId
+    if (!previousProjectId || previousProjectId === nextProjectId || attachments.length === 0) return
+    // При серверном/ручном переключении проекта очищаем только рабочую сцену.
+    // `consume` сохраняет записи и файлы прежнего проекта на сервере.
+    detachAttachments(attachments.map((item) => item.previewUrl), "consume")
+  }, [activeProject?.id, attachments, detachAttachments])
 
   const [tools, setTools] = useState<BatchTools>(DEFAULT_BATCH_TOOLS)
   // Заселение сцены — тумблер в настройках, общий для одного рендера и пачки.
@@ -216,13 +261,19 @@ export default function EnhancePage() {
   }
   const [context, setContext] = useState<EnhanceContext>("auto")
 
-  const visible = useMemo(
+  const activeProjectId = activeProject?.id ?? null
+  const projectEnhancements = useMemo(
     () =>
-      activeProject
-        ? enhancements.filter((item) => item.projectId === activeProject.id && item.status !== "draft")
+      activeProjectId
+        ? enhancements.filter((item) => item.projectId === activeProjectId)
         : [],
-    [activeProject, enhancements]
+    [activeProjectId, enhancements]
   )
+  const visible = useMemo(
+    () => projectEnhancements.filter((item) => item.status !== "draft"),
+    [projectEnhancements]
+  )
+  const hasProjectRecords = projectEnhancements.length > 0
   const enhancementById = useMemo(() => new Map(visible.map((item) => [item.id, item])), [visible])
   const currentEnhancement = current ? enhancementById.get(current.id) : undefined
   const [stageChoice, setStageChoice] = useState<{ id: string; version: "source" | "result" } | null>(null)
@@ -232,9 +283,14 @@ export default function EnhancePage() {
       : currentEnhancement?.status === "done"
         ? "result"
         : "source"
-  const resultUrl = useBlobUrl(
-    currentEnhancement?.status === "done" && stageVersion === "result" ? resultKey(currentEnhancement.id) : null
+  const stageResultAsset = useStoredBlobUrl(
+    currentEnhancement &&
+      stageVersion === "result" &&
+      (currentEnhancement.status === "done" || currentEnhancement.syncPending)
+      ? [resultKey(currentEnhancement.id)]
+      : []
   )
+  const resultUrl = stageResultAsset.url
   const stageAttachment =
     current && currentEnhancement?.status === "done" && stageVersion === "result" && resultUrl
       ? {
@@ -245,9 +301,11 @@ export default function EnhancePage() {
         }
       : current
   const hasAttachments = attachments.length > 0
-  const showComposer = hasAttachments || visible.length > 0
+  const showComposer = hasAttachments || hasProjectRecords
   const composer = usePresence(showComposer)
-  const tray = usePresence(hasAttachments)
+  // Если сервер уже вернул метаданные, правая колонка остаётся на месте даже
+  // во время/после неудачной загрузки файлов — layout больше не схлопывается.
+  const tray = usePresence(hasAttachments || hasProjectRecords)
 
   /* Новое вложение сразу становится черновиком: исходник и миниатюра уходят
      в IndexedDB + сервер, метаданные — в общий стор + Postgres. Поэтому оно
@@ -297,42 +355,77 @@ export default function EnhancePage() {
      но и уже запущенные/готовые пары. Иначе после refresh интерфейс снова
      провалился бы в старую галерею карточек. */
   const restoringSources = useRef<string | null>(null)
+  const [restoreAttempt, setRestoreAttempt] = useState(0)
+  const [restoreState, setRestoreState] = useState<RestoreState>("idle")
+  const [missingSourceCount, setMissingSourceCount] = useState(0)
   const sourcesToRestore = useMemo(() => {
-    if (!activeProject) return []
-    const attachedIds = new Set(attachments.map((attachment) => attachment.id))
-    return enhancements
-      .filter((item) => item.projectId === activeProject.id && !attachedIds.has(item.id))
+    return [...projectEnhancements]
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-      .slice(0, Math.max(0, MAX_BATCH - attachments.length))
-  }, [activeProject, attachments, enhancements])
+      .slice(0, MAX_BATCH)
+  }, [projectEnhancements])
   const restoreSignature = sourcesToRestore.map((item) => item.id).join(",")
   const sourcesToRestoreRef = useRef(sourcesToRestore)
   sourcesToRestoreRef.current = sourcesToRestore
   useEffect(() => {
-    if (!activeProject || !restoreSignature || restoringSources.current === restoreSignature) return
-    restoringSources.current = restoreSignature
+    if (!activeProjectId || !restoreSignature) {
+      setRestoreState("idle")
+      setMissingSourceCount(0)
+      return
+    }
+    const attemptKey = `${activeProjectId}:${restoreSignature}:${restoreAttempt}`
+    if (restoringSources.current === attemptKey) return
+    restoringSources.current = attemptKey
+    setRestoreState("loading")
+    setMissingSourceCount(0)
+    // Серверная десятка — авторитетный рабочий набор. Если в другом браузере
+    // добавили новый рендер, освобождаем место от выпавших старых записей,
+    // иначе локальные 10 вложений навсегда заблокируют восстановление нового.
+    const targetIds = new Set(sourcesToRestoreRef.current.map((item) => item.id))
+    const obsoleteUrls = attachmentsRef.current
+      .filter((item) => !targetIds.has(item.id))
+      .map((item) => item.previewUrl)
+    detachAttachments(obsoleteUrls, "consume")
     let cancelled = false
     void Promise.all(
       sourcesToRestoreRef.current.map(async (item) => {
         const blob = await getWorkspaceSource(item.id)
-        if (!blob) return null
+        if (!blob) return false
         const file = new File([blob], item.sourceName, {
           type: blob.type || "image/jpeg",
           lastModified: Date.parse(item.createdAt) || Date.now(),
         })
-        return { id: item.id, file, width: item.sourceWidth, height: item.sourceHeight }
+        if (!cancelled) {
+          // Прогрессивно показываем каждый готовый исходник; отсутствующий файл
+          // больше не задерживает всю пачку.
+          restoreAttachments([{ id: item.id, file, width: item.sourceWidth, height: item.sourceHeight }])
+        }
+        return true
       })
     )
-      .then((items) => {
-        if (!cancelled) restoreAttachments(items.filter((item): item is NonNullable<typeof item> => Boolean(item)))
+      .then((restored) => {
+        if (cancelled) return
+        const missing = restored.filter((value) => !value).length
+        setMissingSourceCount(missing)
+        setRestoreState(missing > 0 ? "missing" : "ready")
       })
       .finally(() => {
-        if (restoringSources.current === restoreSignature) restoringSources.current = null
+        if (restoringSources.current === attemptKey) restoringSources.current = null
       })
     return () => {
       cancelled = true
     }
-  }, [activeProject, restoreAttachments, restoreSignature])
+  }, [activeProjectId, detachAttachments, restoreAttachments, restoreSignature, restoreAttempt])
+
+  useEffect(() => {
+    if (restoreState !== "missing") return
+    const retryWhenBack = () => setRestoreAttempt((value) => value + 1)
+    window.addEventListener("focus", retryWhenBack)
+    window.addEventListener("online", retryWhenBack)
+    return () => {
+      window.removeEventListener("focus", retryWhenBack)
+      window.removeEventListener("online", retryWhenBack)
+    }
+  }, [restoreState])
 
   /* Точечная правка живёт только у ОДНОГО рендера на сцене: при наборе из
      нескольких холст заморожен — точечные правки к пачке неприменимы. */
@@ -433,13 +526,35 @@ export default function EnhancePage() {
         // Рендер могли убрать из правой панели, пока провайдер считал ответ.
         // Тогда не возвращаем удалённую пару в хранилище.
         if (!useEnhanceStore.getState().enhancements.some((item) => item.id === meta.id)) return
-        await putBlob(resultKey(meta.id), result.blob)
-        await putBlob(thumbResultKey(meta.id), await makeThumb(result.blob))
+        // Сразу после ответа модели, до первого сетевого ожидания, фиксируем:
+        // платная генерация уже состоялась. Маркер синхронно попадает в
+        // localStorage, поэтому reload переведёт Retry в режим дозагрузки.
+        update(meta.id, {
+          resultWidth: result.width,
+          resultHeight: result.height,
+          engine: result.engine,
+          syncPending: true,
+        })
+        try {
+          await persistResultDurably(meta.id, result.blob)
+        } catch {
+          update(meta.id, {
+            status: "error",
+            resultWidth: result.width,
+            resultHeight: result.height,
+            engine: result.engine,
+            syncPending: true,
+            error: "Результат готов, но не успел сохраниться на сервере. Нажмите «Повторить» — генерация заново не запустится.",
+          })
+          return
+        }
         update(meta.id, {
           status: "done",
           resultWidth: result.width,
           resultHeight: result.height,
           engine: result.engine,
+          syncPending: undefined,
+          generationUncertain: undefined,
           error: undefined,
         })
         setStageChoice({ id: meta.id, version: "result" })
@@ -546,6 +661,24 @@ export default function EnhancePage() {
     setStageChoice({ id: enhancement.id, version: "result" })
     update(enhancement.id, { status: "processing", error: undefined })
     void (async () => {
+      if (enhancement.syncPending) {
+        try {
+          await repairPersistedResult(enhancement.id)
+          update(enhancement.id, {
+            status: "done",
+            syncPending: undefined,
+            generationUncertain: undefined,
+            error: undefined,
+          })
+        } catch (error) {
+          update(enhancement.id, {
+            status: "error",
+            syncPending: true,
+            error: error instanceof Error ? error.message : "Не удалось досохранить результат на сервере.",
+          })
+        }
+        return
+      }
       const input = enhancement.inputRole === "result" ? await getBlob(resultKey(enhancement.id)) : undefined
       await runEnhance(enhancement, input ?? undefined)
     })()
@@ -628,7 +761,39 @@ export default function EnhancePage() {
 
           {/* Правая панель-галерея пачки. Только на lg; ниже миниатюры под сценой. */}
           <ToolAside presence={tray} label="Приложенные рендеры">
-            <RenderTray {...enhanceTrayProps} />
+            {hasAttachments ? (
+              <RenderTray {...enhanceTrayProps} />
+            ) : (
+              <div className="flex min-h-0 flex-1 flex-col">
+                <div className="flex h-16 shrink-0 items-center justify-between px-5">
+                  <span className="ds-micro">рендеры</span>
+                  <span className="text-[12px] tabular-nums" style={{ color: "var(--fg-4)" }}>
+                    {projectEnhancements.length} на сервере
+                  </span>
+                </div>
+                <div className="flex flex-1 flex-col items-center justify-center gap-3 px-5 text-center">
+                  {restoreState === "loading" ? <ThinkingGlyph size={22} /> : <ImageOff className="h-5 w-5" strokeWidth={1.6} />}
+                  <p className="text-[12px] leading-relaxed" style={{ color: "var(--fg-3)" }}>
+                    {restoreState === "loading"
+                      ? "Загружаем файлы проекта…"
+                      : `${missingSourceCount || projectEnhancements.length} файл(ов) ещё не синхронизированы с этим браузером.`}
+                  </p>
+                  {restoreState !== "loading" ? (
+                    <button type="button" className="btn-outline h-9 px-3 text-[12px]" onClick={() => setRestoreAttempt((value) => value + 1)}>
+                      <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.8} />
+                      Проверить снова
+                    </button>
+                  ) : null}
+                </div>
+                <div className="shrink-0 px-4 pb-4">
+                  <hr className="ds-divider mb-3" />
+                  <button type="button" onClick={intake.pickFiles} className="btn-ghost h-9 w-full justify-center text-[12px]">
+                    <Plus className="h-3.5 w-3.5" strokeWidth={1.8} />
+                    Добавить рендер
+                  </button>
+                </div>
+              </div>
+            )}
           </ToolAside>
         </>
       }
@@ -665,10 +830,29 @@ export default function EnhancePage() {
                     </div>
                   ) : null}
 
-                  {currentEnhancement?.status === "done" && stageVersion === "result" && !resultUrl ? (
+                  {currentEnhancement?.status === "done" &&
+                  stageVersion === "result" &&
+                  !resultUrl &&
+                  stageResultAsset.status === "loading" ? (
                     <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-2.5 bg-black/25 text-white/90">
                       <ThinkingGlyph size={22} />
                       <span className="text-[12px]">загружаем улучшенную версию…</span>
+                    </div>
+                  ) : null}
+
+                  {currentEnhancement?.status === "done" &&
+                  stageVersion === "result" &&
+                  !resultUrl &&
+                  stageResultAsset.status !== "loading" ? (
+                    <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 bg-black/45 px-6 text-center text-white/90">
+                      <ImageOff className="h-5 w-5" strokeWidth={1.6} />
+                      <p className="max-w-[420px] text-[12.5px] leading-relaxed">
+                        Улучшенная версия ещё не синхронизирована с этим браузером.
+                      </p>
+                      <button type="button" onClick={stageResultAsset.retry} className="btn-outline h-9 px-4 text-[13px]">
+                        <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.8} />
+                        Проверить снова
+                      </button>
                     </div>
                   ) : null}
 
@@ -707,7 +891,7 @@ export default function EnhancePage() {
             <RenderStrip {...enhanceTrayProps} />
           </div>
         </div>
-      ) : visible.length === 0 ? (
+      ) : !hasProjectRecords ? (
         <ToolDropzone
           onPick={intake.pickFiles}
           label="Добавить рендер"
@@ -716,12 +900,34 @@ export default function EnhancePage() {
           description={`Нажмите, перетащите сюда или вставьте из буфера. PNG, JPG или WEBP до 32 МБ, до ${MAX_BATCH} файлов за раз.`}
           caption="Получите более реалистичные и детальные версии — без единого изменения в самих сценах."
         />
-      ) : (
+      ) : restoreState === "loading" ? (
         <StagePlaceholder>
           <ThinkingGlyph size={24} />
           <span className="text-[12px]" style={{ color: "var(--fg-3)" }}>
             восстанавливаем рабочую сцену…
           </span>
+        </StagePlaceholder>
+      ) : (
+        <StagePlaceholder className="gap-4 px-6 text-center">
+          <ImageOff className="h-6 w-6" strokeWidth={1.5} style={{ color: "var(--fg-4)" }} />
+          <div className="flex max-w-[430px] flex-col gap-1.5">
+            <span className="text-[13px]" style={{ color: "var(--fg-2)" }}>
+              Файлы проекта ещё не появились в серверном хранилище
+            </span>
+            <span className="text-[12px] leading-relaxed" style={{ color: "var(--fg-4)" }}>
+              Вернитесь в браузер, где они были добавлены, и обновите страницу — локальные копии дозагрузятся автоматически.
+            </span>
+          </div>
+          <div className="flex flex-wrap justify-center gap-2">
+            <button type="button" className="btn-outline h-9 px-3 text-[12px]" onClick={() => setRestoreAttempt((value) => value + 1)}>
+              <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.8} />
+              Проверить снова
+            </button>
+            <button type="button" className="btn-ghost h-9 px-3 text-[12px]" onClick={intake.pickFiles}>
+              <Plus className="h-3.5 w-3.5" strokeWidth={1.8} />
+              Добавить рендер
+            </button>
+          </div>
         </StagePlaceholder>
       )}
     </ToolShell>

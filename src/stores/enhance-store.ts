@@ -73,10 +73,13 @@ export const useEnhanceStore = create<EnhanceState>()(
           useEnhanceStore.setState((current) => ({
             enhancements: current.enhancements.map((item) =>
               item.status === "processing"
-                ? {
+                  ? {
                     ...item,
                     status: "error" as GenerationStatus,
-                    error: "Обработка прервалась — страница была закрыта.",
+                    syncPending: true,
+                    generationUncertain: true,
+                    error:
+                      "Обработка прервалась — страница была закрыта. Повторная платная генерация отключена; можно только восстановить уже готовый файл.",
                   }
                 : item
             ),

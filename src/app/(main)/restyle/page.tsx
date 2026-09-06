@@ -28,10 +28,11 @@ import { ToolCard } from "@/components/tool/tool-card"
 import { ToolComposer, type ToolComposerLabels, type ToolOption } from "@/components/tool/tool-composer"
 import { ToolDropzone } from "@/components/tool/tool-dropzone"
 import { ComposerDock, ToolAside, ToolGallery, ToolShell } from "@/components/tool/tool-shell"
-import { getBlob, putBlob, resultKey, sourceKey, thumbResultKey } from "@/lib/blob-store"
-import { MAX_BATCH, makeThumb } from "@/lib/enhance-engine"
+import { getBlob, sourceKey } from "@/lib/blob-store"
+import { MAX_BATCH } from "@/lib/enhance-engine"
 import { STYLES, STYLE_LABEL, describeStyle, resolveStyle, restyleRender, type RestyleFamily } from "@/lib/restyle-engine"
 import { runGalleryQueue, saveSourceFile } from "@/lib/tool-jobs"
+import { persistResultDurably, repairPersistedResult } from "@/lib/result-storage"
 import { useAttachments } from "@/lib/use-attachments"
 import { useBatchSelection } from "@/lib/use-batch-selection"
 import { usePresence } from "@/lib/use-presence"
@@ -139,13 +140,34 @@ export default function RestylePage() {
         const source = await getBlob(sourceKey(meta.id))
         if (!source) throw new Error("Исходник не найден в хранилище браузера.")
         const result = await restyleRender(source, { style: meta.style, note: meta.note, excluded: meta.excluded })
-        await putBlob(resultKey(meta.id), result.blob)
-        await putBlob(thumbResultKey(meta.id), await makeThumb(result.blob))
+        // Ответ провайдера уже оплачен: сохраняем маркер до ожидания asset PUT,
+        // чтобы reload/Retry мог только дозагрузить этот же результат.
+        update(meta.id, {
+          resultWidth: result.width,
+          resultHeight: result.height,
+          engine: result.engine,
+          syncPending: true,
+        })
+        try {
+          await persistResultDurably(meta.id, result.blob)
+        } catch {
+          update(meta.id, {
+            status: "error",
+            resultWidth: result.width,
+            resultHeight: result.height,
+            engine: result.engine,
+            syncPending: true,
+            error: "Результат готов, но не сохранился на сервере. «Повторить» только дозагрузит файл без новой генерации.",
+          })
+          return
+        }
         update(meta.id, {
           status: "done",
           resultWidth: result.width,
           resultHeight: result.height,
           engine: result.engine,
+          syncPending: undefined,
+          generationUncertain: undefined,
           error: undefined,
         })
       } catch (error) {
@@ -164,7 +186,7 @@ export default function RestylePage() {
       const metas: Restyle[] = []
       for (const file of files) {
         try {
-          const { id, width, height } = await saveSourceFile(file)
+          const { id, width, height } = await saveSourceFile(file, { durable: true })
           metas.push({
             id,
             projectId: project.id,
@@ -208,7 +230,25 @@ export default function RestylePage() {
 
   const retry = (item: Restyle) => {
     update(item.id, { status: "processing", error: undefined })
-    void runRestyle(item)
+    if (!item.syncPending) {
+      void runRestyle(item)
+      return
+    }
+    void repairPersistedResult(item.id).then(
+      () =>
+        update(item.id, {
+          status: "done",
+          syncPending: undefined,
+          generationUncertain: undefined,
+          error: undefined,
+        }),
+      (error) =>
+        update(item.id, {
+          status: "error",
+          syncPending: true,
+          error: error instanceof Error ? error.message : "Не удалось дозагрузить результат на сервер.",
+        })
+    )
   }
 
   const deleteRestyle = (item: Restyle) => {

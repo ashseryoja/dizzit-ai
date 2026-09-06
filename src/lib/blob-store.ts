@@ -1,6 +1,12 @@
 "use client"
 
-import { fetchAsset, removeAssets, serverStatus, uploadAsset } from "@/lib/server-sync"
+import {
+  fetchAsset,
+  removeAssets,
+  serverStatus,
+  serverStatusTemporarilyUnavailable,
+  uploadAsset,
+} from "@/lib/server-sync"
 
 /**
  * Хранилище изображений инструментов сервиса — база общая для всех.
@@ -22,6 +28,7 @@ import { fetchAsset, removeAssets, serverStatus, uploadAsset } from "@/lib/serve
 const DB_NAME = "dizzit-blobs"
 const STORE = "blobs"
 const VERSION = 1
+const IDB_TIMEOUT_MS = 8_000
 
 /** База прежнего имени сервиса. Содержимое переносится один раз, см. ниже. */
 const LEGACY_DB_NAME = "skizzy-blobs"
@@ -38,6 +45,11 @@ export function keysOf(id: string): string[] {
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null
+const remoteBlobRequests = new Map<string, Promise<Blob | null>>()
+// Последняя копия остаётся доступной в текущей вкладке, даже если браузер
+// запретил IndexedDB. Это позволяет кнопке «Повторить синхронизацию» снова
+// отправить уже оплаченный результат, не вызывая модель второй раз.
+const pendingBlobWrites = new Map<string, Blob>()
 
 function db(): Promise<IDBDatabase> {
   if (typeof indexedDB === "undefined") {
@@ -46,9 +58,28 @@ function db(): Promise<IDBDatabase> {
   if (!dbPromise) {
     dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
       const open = indexedDB.open(DB_NAME, VERSION)
+      let settled = false
+      const timeout = window.setTimeout(() => {
+        if (settled) return
+        settled = true
+        reject(new Error("IndexedDB не ответила вовремя"))
+      }, IDB_TIMEOUT_MS)
       open.onupgradeneeded = () => open.result.createObjectStore(STORE)
-      open.onsuccess = () => resolve(open.result)
-      open.onerror = () => reject(open.error ?? new Error("Не удалось открыть IndexedDB"))
+      open.onsuccess = () => {
+        if (settled) {
+          open.result.close()
+          return
+        }
+        settled = true
+        window.clearTimeout(timeout)
+        resolve(open.result)
+      }
+      open.onerror = () => {
+        if (settled) return
+        settled = true
+        window.clearTimeout(timeout)
+        reject(open.error ?? new Error("Не удалось открыть IndexedDB"))
+      }
     }).then(async (database) => {
       await migrateLegacyBlobs(database)
       return database
@@ -87,11 +118,30 @@ async function migrateLegacyBlobs(target: IDBDatabase): Promise<void> {
     let existed = true
     const legacy = await new Promise<IDBDatabase>((resolve, reject) => {
       const open = indexedDB.open(LEGACY_DB_NAME)
+      let settled = false
+      const timeout = window.setTimeout(() => {
+        if (settled) return
+        settled = true
+        reject(new Error("Старая IndexedDB не ответила вовремя"))
+      }, IDB_TIMEOUT_MS)
       open.onupgradeneeded = () => {
         existed = false
       }
-      open.onsuccess = () => resolve(open.result)
-      open.onerror = () => reject(open.error ?? new Error("Старая база недоступна"))
+      open.onsuccess = () => {
+        if (settled) {
+          open.result.close()
+          return
+        }
+        settled = true
+        window.clearTimeout(timeout)
+        resolve(open.result)
+      }
+      open.onerror = () => {
+        if (settled) return
+        settled = true
+        window.clearTimeout(timeout)
+        reject(open.error ?? new Error("Старая база недоступна"))
+      }
     })
 
     if (existed && legacy.objectStoreNames.contains(STORE)) {
@@ -112,8 +162,29 @@ async function migrateLegacyBlobs(target: IDBDatabase): Promise<void> {
 
 function request<T>(req: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
-    req.onsuccess = () => resolve(req.result)
-    req.onerror = () => reject(req.error ?? new Error("Ошибка IndexedDB"))
+    let settled = false
+    const timeout = window.setTimeout(() => {
+      if (settled) return
+      settled = true
+      try {
+        req.transaction?.abort()
+      } catch {
+        // Транзакция могла уже завершиться.
+      }
+      reject(new Error("IndexedDB не ответила вовремя"))
+    }, IDB_TIMEOUT_MS)
+    req.onsuccess = () => {
+      if (settled) return
+      settled = true
+      window.clearTimeout(timeout)
+      resolve(req.result)
+    }
+    req.onerror = () => {
+      if (settled) return
+      settled = true
+      window.clearTimeout(timeout)
+      reject(req.error ?? new Error("Ошибка IndexedDB"))
+    }
   })
 }
 
@@ -135,9 +206,15 @@ export async function getLocalBlob(key: string): Promise<Blob | null> {
 
 export async function putBlob(key: string, blob: Blob): Promise<void> {
   await putLocalBlob(key, blob)
-  void serverStatus().then((status) => {
-    if (status.persistence) void uploadAsset(key, blob)
-  })
+  void (async () => {
+    try {
+      const status = await serverStatus()
+      if (status.persistence) await uploadAsset(key, blob)
+    } catch (error) {
+      // Локальная копия уже сохранена. Pull на focus/online повторит backfill.
+      console.warn(`[blob-store] upload ${key}: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  })()
 }
 
 /**
@@ -146,30 +223,84 @@ export async function putBlob(key: string, blob: Blob): Promise<void> {
  * открыть на другом устройстве. Без сервера подтверждением остаётся IndexedDB.
  */
 export async function putBlobDurably(key: string, blob: Blob): Promise<void> {
-  await putLocalBlob(key, blob)
+  pendingBlobWrites.set(key, blob)
+
+  let localError: unknown = null
+  try {
+    await putLocalBlob(key, blob)
+  } catch (error) {
+    localError = error
+  }
+
   const status = await serverStatus()
-  if (status.persistence) await uploadAsset(key, blob)
+  if (status.persistence) {
+    // Сервер — источник правды. Пытаемся загрузить туда и при отказе
+    // IndexedDB: успешный PUT уже делает файл доступным другим устройствам.
+    await uploadAsset(key, blob)
+    pendingBlobWrites.delete(key)
+    return
+  }
+
+  if (localError) throw localError
+
+  // В автономном локальном режиме IndexedDB является штатным хранилищем.
+  // Но временный обрыв нельзя принять за успешное серверное сохранение:
+  // вызывающий код пометит запись syncPending и повторит только загрузку.
+  if (
+    serverStatusTemporarilyUnavailable() ||
+    (typeof navigator !== "undefined" && !navigator.onLine) ||
+    (status.authConfigured && !status.signedIn) ||
+    (status.authConfigured && status.signedIn && status.database && !status.storage)
+  ) {
+    throw new Error("Серверное хранилище временно недоступно — файл сохранён в этой вкладке и ждёт синхронизации")
+  }
+
+  pendingBlobWrites.delete(key)
 }
 
 export async function getBlob(key: string): Promise<Blob | null> {
+  const pendingWrite = pendingBlobWrites.get(key)
+  if (pendingWrite) return pendingWrite
+
   const local = await getLocalBlob(key)
   if (local) return local
-  // Промах кэша: объект мог прийти с другого устройства — тянем с сервера.
-  const status = await serverStatus()
-  if (!status.persistence) return null
-  const remote = await fetchAsset(key)
-  if (remote) {
-    try {
-      await putLocalBlob(key, remote)
-    } catch {
-      // Кэш не обязателен — отдаём как есть.
+
+  // Один remote GET на ключ, даже если карточка и сцена запросили его вместе.
+  // После любого исхода запись удаляется: временный сбой не становится
+  // постоянным отрицательным кэшем, следующий вызов сможет попробовать снова.
+  const existing = remoteBlobRequests.get(key)
+  if (existing) return existing
+  const pending = (async () => {
+    const status = await serverStatus()
+    if (!status.persistence) {
+      // Отличаем реальное отсутствие сервера/сессии от временного сетевого
+      // сбоя: UI-хук тогда покажет «не удалось загрузить», а не «файл утерян».
+      if (serverStatusTemporarilyUnavailable() || (typeof navigator !== "undefined" && !navigator.onLine)) {
+        throw new Error("Нет соединения с сервером")
+      }
+      return null
     }
+    const remote = await fetchAsset(key)
+    if (remote) {
+      try {
+        await putLocalBlob(key, remote)
+      } catch {
+        // Кэш не обязателен — отдаём как есть.
+      }
+    }
+    return remote
+  })()
+  remoteBlobRequests.set(key, pending)
+  const clearPending = () => {
+    if (remoteBlobRequests.get(key) === pending) remoteBlobRequests.delete(key)
   }
-  return remote
+  void pending.then(clearPending, clearPending)
+  return pending
 }
 
 export async function deleteBlobs(keys: string[]): Promise<void> {
   if (keys.length === 0) return
+  keys.forEach((key) => pendingBlobWrites.delete(key))
   try {
     const database = await db()
     const store = database.transaction(STORE, "readwrite").objectStore(STORE)
@@ -177,9 +308,14 @@ export async function deleteBlobs(keys: string[]): Promise<void> {
   } catch {
     // Ничего: блоб без метаданных невидим, его доберёт gcBlobs.
   }
-  void serverStatus().then((status) => {
-    if (status.persistence) void removeAssets(keys)
-  })
+  void (async () => {
+    try {
+      const status = await serverStatus()
+      if (status.persistence) await removeAssets(keys)
+    } catch (error) {
+      console.warn(`[blob-store] delete assets: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  })()
 }
 
 /**
@@ -187,6 +323,9 @@ export async function deleteBlobs(keys: string[]): Promise<void> {
  * Вызывать ПОСЛЕ гидрации стора — иначе снесёт живые данные.
  */
 export async function gcBlobs(validIds: ReadonlySet<string>): Promise<void> {
+  for (const key of pendingBlobWrites.keys()) {
+    if (!validIds.has(key.split(":")[0])) pendingBlobWrites.delete(key)
+  }
   try {
     const database = await db()
     const store = database.transaction(STORE, "readwrite").objectStore(STORE)

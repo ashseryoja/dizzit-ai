@@ -67,10 +67,13 @@ export const useMaterialStore = create<MaterialState>()(
           useMaterialStore.setState((current) => ({
             materials: current.materials.map((item) =>
               item.status === "processing"
-                ? {
+                  ? {
                     ...item,
                     status: "error" as GenerationStatus,
-                    error: "Генерация прервалась — страница была закрыта.",
+                    syncPending: true,
+                    generationUncertain: true,
+                    error:
+                      "Генерация прервалась — страница была закрыта. Повторный платный запрос отключён; можно только восстановить уже готовый файл.",
                   }
                 : item
             ),

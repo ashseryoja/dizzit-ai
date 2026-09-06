@@ -7,10 +7,11 @@ import { MaterialPreviewGrid } from "@/components/tool/material-preview-grid"
 import { ToolCard } from "@/components/tool/tool-card"
 import { ToolComposer, type ToolComposerLabels, type ToolOption } from "@/components/tool/tool-composer"
 import { ComposerDock, ToolGallery, ToolShell } from "@/components/tool/tool-shell"
-import { getBlob, putBlob, resultKey, sourceKey, thumbResultKey } from "@/lib/blob-store"
-import { MAX_BATCH, makeThumb } from "@/lib/enhance-engine"
+import { getBlob, sourceKey } from "@/lib/blob-store"
+import { MAX_BATCH } from "@/lib/enhance-engine"
 import { generateMaterial } from "@/lib/material-engine"
 import { runGalleryQueue, saveSourceFile } from "@/lib/tool-jobs"
+import { persistResultDurably, repairPersistedResult } from "@/lib/result-storage"
 import { useAttachments } from "@/lib/use-attachments"
 import { createId } from "@/lib/utils"
 import { useMaterialStore } from "@/stores/material-store"
@@ -87,19 +88,43 @@ export default function MaterialsPage() {
       try {
         // Референс не обязателен: без него генерация идёт по одному описанию.
         const ref = meta.sourceName ? await getBlob(sourceKey(meta.id)) : null
+        if (meta.sourceName && !ref) {
+          throw new Error("Референс ещё не синхронизирован. Генерация без него не запущена.")
+        }
         const result = await generateMaterial({
           category: meta.category,
           note: meta.note,
           seed: meta.id,
           ref,
         })
-        await putBlob(resultKey(meta.id), result.blob)
-        await putBlob(thumbResultKey(meta.id), await makeThumb(result.blob))
+        // Ответ провайдера уже оплачен: ставим персистентный маркер до
+        // сетевой загрузки, чтобы «Повторить» никогда не вызвал модель снова.
+        update(meta.id, {
+          resultWidth: result.width,
+          resultHeight: result.height,
+          engine: result.engine,
+          syncPending: true,
+        })
+        try {
+          await persistResultDurably(meta.id, result.blob)
+        } catch {
+          update(meta.id, {
+            status: "error",
+            resultWidth: result.width,
+            resultHeight: result.height,
+            engine: result.engine,
+            syncPending: true,
+            error: "Материал готов, но не сохранился на сервере. «Повторить» только дозагрузит файл без новой генерации.",
+          })
+          return
+        }
         update(meta.id, {
           status: "done",
           resultWidth: result.width,
           resultHeight: result.height,
           engine: result.engine,
+          syncPending: undefined,
+          generationUncertain: undefined,
           error: undefined,
         })
       } catch (error) {
@@ -123,7 +148,7 @@ export default function MaterialsPage() {
           continue
         }
         try {
-          const { id, width, height } = await saveSourceFile(job.file)
+          const { id, width, height } = await saveSourceFile(job.file, { durable: true })
           metas.push({
             ...base,
             id,
@@ -159,7 +184,25 @@ export default function MaterialsPage() {
 
   const retry = (material: Material) => {
     update(material.id, { status: "processing", error: undefined })
-    void runGenerate(material)
+    if (!material.syncPending) {
+      void runGenerate(material)
+      return
+    }
+    void repairPersistedResult(material.id).then(
+      () =>
+        update(material.id, {
+          status: "done",
+          syncPending: undefined,
+          generationUncertain: undefined,
+          error: undefined,
+        }),
+      (error) =>
+        update(material.id, {
+          status: "error",
+          syncPending: true,
+          error: error instanceof Error ? error.message : "Не удалось дозагрузить материал на сервер.",
+        })
+    )
   }
 
   const deleteMaterial = (material: Material) => {

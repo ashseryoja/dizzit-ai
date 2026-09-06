@@ -44,6 +44,18 @@ export interface GalleryItemMeta {
    * (см. lib/image-generation). У записей до подключения провайдера поля нет.
    */
   engine?: string
+  /**
+   * Результат уже посчитан и лежит в локальном кэше, но его серверная копия
+   * ещё не подтверждена. Повтор в этом состоянии чинит только сохранение и
+   * никогда не запускает платную генерацию второй раз.
+   */
+  syncPending?: boolean
+  /**
+   * Вкладка закрылась, пока платный запрос был в полёте, и достоверного ответа
+   * нет. Автоматический Retry в таком состоянии не имеет права снова вызывать
+   * провайдера: сначала можно только искать/дозагружать прежний результат.
+   */
+  generationUncertain?: boolean
   error?: string
   createdAt: string
 }
@@ -116,12 +128,14 @@ export interface ViewFrame {
 /**
  * Сет кадров по одному рендеру: общий план на входе — раскадровка для
  * публикации на выходе, без 3D-модели. Каждый кадр лежит в IndexedDB под
- * своим ключом (`${id}:view-${frame.key}`, см. lib/view-engine); `ready` —
- * ключи готовых, запись считается done, когда готовы все `frames`.
+ * своим ключом (`${id}:view-${frame.key}`, см. lib/view-engine); `generated`
+ * фиксирует завершившийся вызов модели, а `ready` — подтверждённое серверное
+ * сохранение. Разделение не позволяет Retry оплатить тот же кадр ещё раз.
  */
 export interface ViewSet extends GalleryItemMeta {
   preset: ViewPreset
   frames: ViewFrame[]
+  generated?: string[]
   ready?: string[]
   sourceName: string
   sourceWidth: number

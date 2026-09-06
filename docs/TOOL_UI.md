@@ -241,9 +241,13 @@ useBatchSelection ─► batch ──► Stage / BatchGrid / RenderTray / Render
 
 ### `ToolCard`, `ViewSetCard` — карточки результата
 
-`ToolCard` общая: миниатюры из IndexedDB, «до/после» по удержанию, скачать,
-удалить, повтор при ошибке. У «Ракурсов» своя `ViewSetCard` — контактный лист
-из кадров сета.
+`ToolCard` общая: миниатюры и полные файлы из IndexedDB/серверного хранилища,
+«до/после» по удержанию, скачать, удалить, повтор при ошибке. `useStoredBlobUrl`
+проверяет запасные ключи по порядку, ограниченно ждёт запаздывающий объект и
+возвращает `loading / ready / missing / error`. В терминальном состоянии
+`StoredAssetNotice` оставляет размеры карточки стабильными и предлагает только
+«Проверить снова» — без повторной генерации. У «Ракурсов» своя `ViewSetCard` —
+контактный лист из кадров сета с тем же поведением для каждой плитки.
 
 ### Каталог: все файлы общего слоя
 
@@ -258,8 +262,9 @@ useBatchSelection ─► batch ──► Stage / BatchGrid / RenderTray / Render
 | `render-tray.tsx` | `RenderTray`, `RenderStrip` | панель-галерея пачки и полоска миниатюр |
 | `stage.tsx` | `Stage`, `StagePlaceholder`, `BatchGrid` | сцена, её состояние восстановления и пакетный грид |
 | `tool-dropzone.tsx` | `ToolDropzone` | пустой экран-дропзона |
-| `tool-card.tsx` | `ToolCard`, `useBlobUrl`, `downloadStoredResult` | карточка результата; хук «блоб → object URL»; скачивание полного результата |
+| `tool-card.tsx` | `ToolCard`, `StoredAssetNotice`, `useBlobUrl`, `downloadStoredResult` | карточка результата; стабильное состояние отсутствующего файла; совместимый хук «блоб → object URL»; скачивание полного результата |
 | `view-set-card.tsx` | `ViewSetCard` | карточка сета кадров («Ракурсы») |
+| `src/lib/use-stored-blob.ts` | `useStoredBlobUrl` | загрузка с fallback-ключами, ограниченный автоповтор и ручная проверка серверного файла |
 | `batch-tools.tsx` | `BatchToolsPanel`, `QualityToggle`, `PopulateToggle` | улучшение качества, пакетные функции и тумблер «Заселить сцену» |
 | `region-editor.tsx` | `RegionEditor` | холст точечной правки поверх сцены (кисть, обводка, рамка) |
 | `style-dock.tsx` | `StyleDock` | материалы выбранного стиля с галочками — секция над композером |

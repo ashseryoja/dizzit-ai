@@ -1,20 +1,21 @@
 "use client"
 
 import { useCallback, useState } from "react"
-import { Armchair, Box, LampDesk, Library, RefreshCw, Sofa, Sparkles, Table, Trash2 } from "lucide-react"
+import { Armchair, Box, ImageOff, LampDesk, Library, RefreshCw, Sofa, Sparkles, Table, Trash2 } from "lucide-react"
 
 import { ThinkingGlyph } from "@/components/glyphs"
 import { FurnitureMorph } from "@/components/tool/furniture-morph"
-import { useBlobUrl } from "@/components/tool/tool-card"
+import { StoredAssetNotice } from "@/components/tool/tool-card"
 import { ToolComposer, type ToolComposerLabels, type ToolOption } from "@/components/tool/tool-composer"
 import { ToolDropzone } from "@/components/tool/tool-dropzone"
 import { ComposerDock, ToolShell } from "@/components/tool/tool-shell"
-import { thumbSourceKey } from "@/lib/blob-store"
+import { sourceKey, thumbSourceKey } from "@/lib/blob-store"
 import { SHAPE_LABEL } from "@/lib/furniture-wire"
 import { buildModelLocally, resolveShape, type FurnitureOption } from "@/lib/model-engine"
 import { saveSourceFile } from "@/lib/tool-jobs"
 import { useAttachments } from "@/lib/use-attachments"
 import { usePresence } from "@/lib/use-presence"
+import { useStoredBlobUrl } from "@/lib/use-stored-blob"
 import { cn, plural } from "@/lib/utils"
 import { useModelStore } from "@/stores/model-store"
 import { ensureActiveProject, useActiveProject } from "@/stores/project-store"
@@ -94,7 +95,7 @@ export default function PhotoTo3DPage() {
     async (file: File, buildNote: string, buildOption: FurnitureOption) => {
       const project = ensureActiveProject()
       try {
-        const { id, width, height } = await saveSourceFile(file)
+        const { id, width, height } = await saveSourceFile(file, { durable: true })
         const meta: Model3D = {
           id,
           projectId: project.id,
@@ -214,7 +215,7 @@ function ModelStage({
   onRetry: () => void
   onDelete: () => void
 }) {
-  const sourceThumb = useBlobUrl(thumbSourceKey(model.id))
+  const sourceAsset = useStoredBlobUrl([thumbSourceKey(model.id), sourceKey(model.id)])
   const done = model.status === "done"
 
   return (
@@ -226,13 +227,20 @@ function ModelStage({
         className={cn("h-[52dvh] min-h-[360px] w-full", model.status === "error" && "opacity-30")}
       />
 
-      {sourceThumb ? (
+      {sourceAsset.url ? (
         <div
           className="fade-in absolute left-3 top-3 flex items-center gap-2 rounded-[10px] p-1 pr-3"
           style={{ background: "rgba(16,16,18,0.62)", border: "1px solid rgba(255,255,255,0.12)" }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={sourceThumb} alt="" aria-hidden className="h-12 w-12 rounded-[7px] object-cover" draggable={false} />
+          <img
+            src={sourceAsset.url}
+            alt=""
+            aria-hidden
+            className="h-12 w-12 rounded-[7px] object-cover"
+            draggable={false}
+            onError={sourceAsset.reportImageError}
+          />
           <span className="flex flex-col">
             <span className="text-[11px] uppercase tracking-wide" style={{ color: "rgba(255,255,255,0.5)" }}>
               фото
@@ -242,7 +250,14 @@ function ModelStage({
             </span>
           </span>
         </div>
-      ) : null}
+      ) : (
+        <StoredAssetNotice
+          status={sourceAsset.status}
+          onRetry={sourceAsset.retry}
+          compact
+          className="absolute left-3 top-3 z-10 min-h-[76px] w-[224px] rounded-[10px] border [border-color:var(--line)]"
+        />
+      )}
 
       <div className="absolute right-3 top-3 flex gap-1">
         {model.status !== "processing" ? (
@@ -300,7 +315,7 @@ function ModelStage({
 
 /** Лента моделей проекта под сценой. */
 function ModelChip({ model, active, onClick }: { model: Model3D; active: boolean; onClick: () => void }) {
-  const thumb = useBlobUrl(thumbSourceKey(model.id))
+  const sourceAsset = useStoredBlobUrl([thumbSourceKey(model.id), sourceKey(model.id)])
   return (
     <button
       type="button"
@@ -309,11 +324,28 @@ function ModelChip({ model, active, onClick }: { model: Model3D; active: boolean
       className={cn("nav-item h-14 shrink-0 gap-2.5 pl-1.5 pr-3", active && "is-active")}
       style={{ borderRadius: "var(--r-md)" }}
     >
-      {thumb ? (
+      {sourceAsset.url ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={thumb} alt="" aria-hidden className="h-11 w-11 rounded-[8px] object-cover" draggable={false} />
+        <img
+          src={sourceAsset.url}
+          alt=""
+          aria-hidden
+          className="h-11 w-11 rounded-[8px] object-cover"
+          draggable={false}
+          onError={sourceAsset.reportImageError}
+        />
       ) : (
-        <span className="h-11 w-11 rounded-[8px]" style={{ background: "var(--bg-raised)" }} />
+        <span
+          className="flex h-11 w-11 items-center justify-center rounded-[8px]"
+          style={{ background: "var(--bg-raised)", color: "var(--fg-4)" }}
+          title={sourceAsset.status === "loading" ? "Загружаем фото…" : "Файл ещё не синхронизирован"}
+        >
+          {sourceAsset.status === "loading" ? (
+            <ThinkingGlyph size={15} />
+          ) : (
+            <ImageOff className="h-4 w-4" strokeWidth={1.6} />
+          )}
+        </span>
       )}
       <span className="flex flex-col text-left">
         <span className="text-[13px]" style={{ color: "var(--fg-1)" }}>

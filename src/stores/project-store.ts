@@ -5,7 +5,15 @@ import { persist } from "zustand/middleware"
 
 import { attachServerSync } from "@/lib/server-sync"
 import { createId } from "@/lib/utils"
+import { fetchWorkspaceProject, hasPendingWorkspaceSave, saveWorkspaceProject } from "@/lib/workspace-sync"
 import type { Project } from "@/types"
+
+// Не даём медленному GET, начатому до локального клика, вернуть старый проект.
+let workspaceSelectionRevision = 0
+function rememberWorkspaceProject(id: string | null) {
+  workspaceSelectionRevision += 1
+  void saveWorkspaceProject(id)
+}
 
 /**
  * Проекты — центральная сущность приложения: селектор в сайдбаре живёт на
@@ -65,10 +73,14 @@ export const useProjectStore = create<ProjectState>()(
           projects: [project, ...state.projects],
           activeProjectId: project.id,
         }))
+        rememberWorkspaceProject(project.id)
         return project
       },
 
-      selectProject: (id) => set({ activeProjectId: id }),
+      selectProject: (id) => {
+        set({ activeProjectId: id })
+        rememberWorkspaceProject(id)
+      },
 
       renameProject: (id, title) => {
         set((state) => ({
@@ -83,12 +95,14 @@ export const useProjectStore = create<ProjectState>()(
       deleteProject: (id) => {
         const { projects, activeProjectId } = get()
         const rest = projects.filter((project) => project.id !== id)
+        const nextActiveProjectId = activeProjectId === id ? rest[0]?.id ?? null : activeProjectId
         set({
           projects: rest,
           // Удалили активный — переключаемся на следующий, иначе разделы
           // остались бы с пустым контекстом.
-          activeProjectId: activeProjectId === id ? rest[0]?.id ?? null : activeProjectId,
+          activeProjectId: nextActiveProjectId,
         })
+        rememberWorkspaceProject(nextActiveProjectId)
       },
     }),
     {
@@ -131,3 +145,54 @@ attachServerSync(useProjectStore, {
   },
   hydrated: (state) => state.hydrated,
 })
+
+/*
+ * activeProjectId раньше был только в localStorage, поэтому два браузера
+ * могли открыть разные одноимённые проекты. Серверный указатель применяется
+ * после появления списка проектов и перечитывается при возврате во вкладку.
+ */
+if (typeof window !== "undefined") {
+  let pendingProjectId: string | null = null
+  let refreshing = false
+
+  const applyPending = () => {
+    if (!pendingProjectId) return
+    const state = useProjectStore.getState()
+    if (state.projects.some((project) => project.id === pendingProjectId)) {
+      // setState уведомляет подписчиков синхронно. Сначала очищаем pending,
+      // иначе этот же subscribe рекурсивно вызовет applyPending до overflow.
+      const nextProjectId = pendingProjectId
+      pendingProjectId = null
+      if (state.activeProjectId !== nextProjectId) {
+        useProjectStore.setState({ activeProjectId: nextProjectId })
+      }
+    }
+  }
+
+  const refreshWorkspace = async () => {
+    if (refreshing) return
+    // Пока явный локальный выбор не подтверждён, старое серверное значение не
+    // имеет права откатывать UI назад.
+    if (hasPendingWorkspaceSave()) return
+    refreshing = true
+    const revisionAtStart = workspaceSelectionRevision
+    try {
+      const projectId = await fetchWorkspaceProject()
+      if (revisionAtStart !== workspaceSelectionRevision || hasPendingWorkspaceSave()) return
+      pendingProjectId = projectId
+      applyPending()
+    } catch {
+      // Локальный выбор остаётся рабочим; следующая focus/online-попытка повторит.
+    } finally {
+      refreshing = false
+    }
+  }
+
+  useProjectStore.subscribe(applyPending)
+  window.addEventListener("focus", refreshWorkspace)
+  window.addEventListener("online", refreshWorkspace)
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") void refreshWorkspace()
+  })
+  void refreshWorkspace()
+}

@@ -65,10 +65,13 @@ export const useRestyleStore = create<RestyleState>()(
           useRestyleStore.setState((current) => ({
             restyles: current.restyles.map((item) =>
               item.status === "processing"
-                ? {
+                  ? {
                     ...item,
                     status: "error" as GenerationStatus,
-                    error: "Перенос стиля прервался — страница была закрыта.",
+                    syncPending: true,
+                    generationUncertain: true,
+                    error:
+                      "Перенос стиля прервался — страница была закрыта. Повторная платная генерация отключена; можно только восстановить уже готовый файл.",
                   }
                 : item
             ),
