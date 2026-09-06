@@ -128,7 +128,8 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof LaoZhangError) {
       console.error(`[api/images] ${error.kind}${error.status ? ` http=${error.status}` : ""}: ${error.message}`)
-      const status = error.kind === "auth" ? 502 : error.kind === "safety" ? 422 : error.kind === "timeout" ? 504 : 502
+      const status =
+        error.kind === "quota" ? 402 : error.kind === "auth" ? 502 : error.kind === "safety" ? 422 : error.kind === "timeout" ? 504 : 502
       return problem(status, { error: `provider_${error.kind}`, message: publicMessage(error), retryable: error.retryable })
     }
     console.error("[api/images] unexpected:", error)
@@ -143,6 +144,8 @@ function publicMessage(error: LaoZhangError): string {
       return error.status === 403
         ? "Провайдер отклонил доступ (HTTP 403): токен отключён, IP сервера не в белом списке или нет доступа к модели. Подробности — в логах сервера."
         : "Провайдер не принял ключ LAOZHANG_API_KEY (HTTP 401) — проверьте его в переменных окружения."
+    case "quota":
+      return "На счёте LaoZhang закончились средства — пополните баланс в кабинете (Account → Balance recharge) и повторите."
     case "safety":
       return "Провайдер отклонил задание по политике контента. Переформулируйте комментарий."
     case "rate_limit":

@@ -56,7 +56,7 @@ const supportsQuality = (model: string) => !["gpt-image-2", "gpt-image-2-vip"].i
 const supportsOutputFormat = (model: string) => !["gpt-image-2", "gpt-image-2-vip"].includes(model)
 const supportsSize = (model: string) => model !== "gpt-image-2-vip"
 
-export type LaoZhangErrorKind = "auth" | "safety" | "rate_limit" | "upstream" | "network" | "bad_response" | "timeout"
+export type LaoZhangErrorKind = "auth" | "quota" | "safety" | "rate_limit" | "upstream" | "network" | "bad_response" | "timeout"
 
 export class LaoZhangError extends Error {
   readonly kind: LaoZhangErrorKind
@@ -130,6 +130,11 @@ function isTransientStatus(status: number): boolean {
 /** HTTP-ошибка провайдера → наша таксономия; сырой ответ в сообщение не попадает целиком. */
 function classifyHttpError(status: number, body: string, model: string): LaoZhangError {
   const snippet = body.replace(/\s+/g, " ").slice(0, 300)
+  // LaoZhang отвечает 403 и на пустой баланс аккаунта (insufficient_user_quota) —
+  // это не про ключ, и пользователю нужно сказать «пополните счёт», а не «проверьте токен».
+  if (/insufficient_user_quota|quota .* is not enough|Insufficient user quota|额度不足/i.test(body)) {
+    return new LaoZhangError("quota", `На счёте LaoZhang закончились средства (HTTP ${status}): ${snippet}`, { status, retryable: false })
+  }
   if (status === 401 || status === 403) {
     // Тело ответа — в серверный лог: по нему видно, отключён ли токен, не пускает ли IP или модель.
     return new LaoZhangError("auth", `LaoZhang отклонил ключ (HTTP ${status}): ${snippet}`, { status, retryable: false })
