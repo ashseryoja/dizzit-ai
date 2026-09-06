@@ -6,6 +6,15 @@ import { ChevronLeft, ChevronRight, LayoutGrid, X } from "lucide-react"
 import type { AttachedRender } from "@/lib/use-attachments"
 import { cn, plural } from "@/lib/utils"
 
+/** Большая поверхность сцены, пока её содержимое восстанавливается. */
+export function StagePlaceholder({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <div className={cn("stage flex min-h-[320px] flex-1 flex-col items-center justify-center gap-2.5", className)}>
+      {children}
+    </div>
+  )
+}
+
 /**
  * Сцена: выбранный рендер пачки во весь доступный экран. В углах — имя и
  * размер, счётчик «2 / 7», по бокам стрелки (стили .stage-* в surfaces.css).

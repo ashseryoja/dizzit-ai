@@ -1,5 +1,6 @@
 "use client"
 
+import { Fragment, type ReactNode } from "react"
 import { Check, Plus, SlidersHorizontal, X } from "lucide-react"
 
 import type { AttachedRender } from "@/components/tool/tool-composer"
@@ -28,6 +29,10 @@ interface RenderTrayProps {
   title?: string
   /** Глагол кнопки набора: «Редактировать», «Перенести». */
   editLabel?: string
+  /** Подпись обычной плитки, когда рядом показывается производная версия. */
+  sourceLabel?: string
+  /** Дополнительная плитка после исходника: результат, вариант, ракурс. */
+  renderVersion?: (attachment: AttachedRender, index: number) => ReactNode
 }
 
 /**
@@ -55,6 +60,8 @@ export function RenderTray({
   noun,
   title = "рендеры",
   editLabel = "Редактировать",
+  sourceLabel,
+  renderVersion,
 }: RenderTrayProps) {
   const count = attachments.length
   const pickedCount = attachments.filter((item) => picked.has(item.previewUrl)).length
@@ -88,16 +95,19 @@ export function RenderTray({
       <div className="scroll-thin min-h-0 flex-1 overflow-y-auto px-4 pb-4">
         <div className="grid grid-cols-2 gap-2" role="listbox" aria-multiselectable={picking} aria-label="Приложенные рендеры">
           {attachments.map((attachment, index) => (
-            <TrayThumb
-              key={attachment.previewUrl}
-              attachment={attachment}
-              index={index}
-              picked={picked.has(attachment.previewUrl)}
-              focused={index === focus}
-              picking={picking}
-              onSelect={() => onSelect(index)}
-              onRemove={() => onRemove(index)}
-            />
+            <Fragment key={attachment.previewUrl}>
+              <TrayThumb
+                attachment={attachment}
+                index={index}
+                label={sourceLabel ? `${index + 1} · ${sourceLabel}` : undefined}
+                picked={picked.has(attachment.previewUrl)}
+                focused={index === focus}
+                picking={picking}
+                onSelect={() => onSelect(index)}
+                onRemove={() => onRemove(index)}
+              />
+              {!picking ? renderVersion?.(attachment, index) : null}
+            </Fragment>
           ))}
 
           {count < maxFiles && !picking ? (
@@ -153,24 +163,33 @@ export function RenderStrip({
   onPickFiles,
   maxFiles,
   editLabel = "Редактировать",
+  sourceLabel,
+  renderVersion,
 }: Omit<RenderTrayProps, "onClear" | "noun" | "onPickAll" | "title">) {
   const pickedCount = attachments.filter((item) => picked.has(item.previewUrl)).length
   return (
     <div className="flex items-center gap-2">
       <div className="no-scrollbar flex min-w-0 flex-1 gap-2 overflow-x-auto py-1" role="listbox" aria-multiselectable={picking} aria-label="Приложенные рендеры">
-        {attachments.map((attachment, index) => (
-          <div key={attachment.previewUrl} className="w-[96px] shrink-0">
-            <TrayThumb
-              attachment={attachment}
-              index={index}
-              picked={picked.has(attachment.previewUrl)}
-              focused={index === focus}
-              picking={picking}
-              onSelect={() => onSelect(index)}
-              onRemove={() => onRemove(index)}
-            />
-          </div>
-        ))}
+        {attachments.map((attachment, index) => {
+          const version = !picking ? renderVersion?.(attachment, index) : null
+          return (
+            <Fragment key={attachment.previewUrl}>
+              <div className="w-[96px] shrink-0">
+                <TrayThumb
+                  attachment={attachment}
+                  index={index}
+                  label={sourceLabel ? `${index + 1} · ${sourceLabel}` : undefined}
+                  picked={picked.has(attachment.previewUrl)}
+                  focused={index === focus}
+                  picking={picking}
+                  onSelect={() => onSelect(index)}
+                  onRemove={() => onRemove(index)}
+                />
+              </div>
+              {version ? <div className="w-[96px] shrink-0">{version}</div> : null}
+            </Fragment>
+          )
+        })}
         {attachments.length < maxFiles && !picking ? (
           <button
             type="button"
@@ -202,6 +221,7 @@ export function RenderStrip({
 function TrayThumb({
   attachment,
   index,
+  label,
   picked,
   focused,
   picking,
@@ -210,6 +230,7 @@ function TrayThumb({
 }: {
   attachment: AttachedRender
   index: number
+  label?: string
   picked: boolean
   focused: boolean
   picking: boolean
@@ -245,7 +266,7 @@ function TrayThumb({
         draggable={false}
       />
       <span className="tray-thumb-index" aria-hidden>
-        {index + 1}
+        {label ?? index + 1}
       </span>
       {picking ? (
         /* Кружок-чекбокс в режиме выбора — паттерн «Фото» iOS. */

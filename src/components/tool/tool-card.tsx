@@ -6,7 +6,7 @@ import { Download, Eye, RefreshCw, Trash2 } from "lucide-react"
 import { ThinkingGlyph } from "@/components/glyphs"
 import { getBlob, resultKey, thumbResultKey, thumbSourceKey } from "@/lib/blob-store"
 import { previewCaption } from "@/lib/image-generation"
-import { cn } from "@/lib/utils"
+import { cn, fileBaseName } from "@/lib/utils"
 import type { GalleryItemMeta } from "@/types"
 
 /** Блоб из IndexedDB → object URL с уборкой за собой. */
@@ -31,6 +31,21 @@ export function useBlobUrl(key: string | null): string | null {
     }
   }, [key])
   return url
+}
+
+/** Скачать полный результат из общего хранилища, а не миниатюру интерфейса. */
+export async function downloadStoredResult(item: GalleryItemMeta, baseName?: string): Promise<void> {
+  const blob = await getBlob(resultKey(item.id))
+  if (!blob) {
+    window.alert("Результат не найден в хранилище. Повторите обработку.")
+    return
+  }
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement("a")
+  link.href = url
+  link.download = `${baseName ?? `${fileBaseName(item.sourceName ?? "", "result")}-result`}.${blob.type === "image/png" ? "png" : "jpg"}`
+  link.click()
+  URL.revokeObjectURL(url)
 }
 
 /**
@@ -71,18 +86,7 @@ export function ToolCard({
   const height = (status === "done" && item.resultHeight) || item.sourceHeight || 1
 
   const download = async () => {
-    const blob = await getBlob(resultKey(id))
-    if (!blob) {
-      window.alert("Результат не найден в хранилище браузера. Повторите генерацию.")
-      return
-    }
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement("a")
-    link.href = url
-    const extension = blob.type === "image/png" ? "png" : "jpg"
-    link.download = `${downloadBaseName}.${extension}`
-    link.click()
-    URL.revokeObjectURL(url)
+    await downloadStoredResult(item, downloadBaseName)
   }
 
   return (

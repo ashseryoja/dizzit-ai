@@ -23,10 +23,10 @@
 | Замечание над строкой ввода («Выберите настройки…»), теги областей, «волна» подсветки по контролам | `tool-composer.tsx` | пропсы `notice`, `regionTags`, `attentionKey` |
 | Секция, пристыкованная над композером (материалы стиля с галочками) | `tool-composer.tsx` — обёртка; `style-dock.tsx` — содержимое | проп `dock` |
 | Улучшение качества GPT Image 2 + Lanczos 2000 px, тумблер «Заселить сцену», пакетные функции (качество, фильтр, время) | `src/components/tool/batch-tools.tsx` | `QualityToggle`, `PopulateToggle`, `BatchToolsPanel` |
-| Правая панель-галерея пачки: заголовок «рендеры · 3 из 10», «Выбрать», плитки, «Добавить», «Очистить», «Редактировать все» | `src/components/tool/render-tray.tsx` | `RenderTray`, `TrayThumb` |
+| Правая панель-галерея пачки: заголовок «рендеры · 3 из 10», «Выбрать», плитки, производные версии, «Добавить», «Очистить», «Редактировать все» | `src/components/tool/render-tray.tsx` | `RenderTray`, `TrayThumb`, проп `renderVersion` |
 | Полоска миниатюр под сценой на узких экранах | `render-tray.tsx` | `RenderStrip` |
 | Закреплённая правая панель как поверхность (ширина, тень, рамка, анимация выезда) | `src/components/tool/tool-shell.tsx` | `ToolAside` |
-| Сцена: рендер во весь экран, бейджи имени/размера и «2 / 7», стрелки | `src/components/tool/stage.tsx` | `Stage` |
+| Сцена: рендер во весь экран, бейджи имени/размера и «2 / 7», стрелки; поверхность во время восстановления | `src/components/tool/stage.tsx` | `Stage`, `StagePlaceholder` |
 | Пакетный грид с заголовком «Пакетное …» и кнопкой «К просмотру» | `stage.tsx` | `BatchGrid` |
 | Пустой экран — дропзона с пунктиром, приглашением, заголовком и подписью | `src/components/tool/tool-dropzone.tsx` | `ToolDropzone` |
 | Слой «Отпустите, чтобы приложить…», скрытый `<input type="file">`, отступы под композер и панель, скелет до гидрации | `tool-shell.tsx` | `ToolShell` |
@@ -107,8 +107,10 @@ useBatchSelection ─► batch ──► Stage / BatchGrid / RenderTray / Render
 становится записью `enhancements` со статусом `draft`: исходник и миниатюра
 сохраняются в IndexedDB и, при включённом серверном хранении, в Vercel Blob;
 метаданные синхронизируются с Postgres. После перезагрузки такие записи
-возвращаются в `useAttachments` через `restoreAttachments`, но не попадают в
-галерею результатов. Удаление из пачки удаляет черновик и его объекты.
+возвращаются в `useAttachments` через `restoreAttachments`. В редакторе таким
+же способом возвращаются исходники уже готовых и ошибочных обработок, чтобы
+рабочая сцена и пары версий не исчезали после refresh. Удаление пары из пачки
+удаляет её запись и объекты.
 
 ### `useBatchSelection(intake, options)` — `src/lib/use-batch-selection.ts`
 
@@ -129,6 +131,16 @@ useBatchSelection ─► batch ──► Stage / BatchGrid / RenderTray / Render
 `takeWorkingSet()` — забирает набор в обработку и сбрасывает выбор, и
 `trayProps` — пропсы `RenderTray`/`RenderStrip` одним объектом:
 `<RenderTray {...batch.trayProps} />`.
+
+`takeWorkingSet({ retain: true })` завершает режим пакетного выбора, но не
+убирает исходники со сцены. Так работает «Редактор рендера»: во время
+обработки исходник остаётся большим, а после неё на его месте показывается
+результат. Новый файл, добавленный к непустой пачке, автоматически становится
+текущим — следующую обработку можно запустить сразу.
+
+Если на сцене выбрана плитка «новый», повторная точечная правка берёт текущий
+результат как вход (`Enhancement.inputRole = "result"`) и перезаписывает только
+новую версию пары. Серверный исходник остаётся прежним.
 
 Набор ведётся по `previewUrl`: он уникален и переживает удаление соседей.
 Инструменты без просмотра пачки на сцене («Материалы», «Фото → 3D») этот хук
@@ -203,7 +215,11 @@ useBatchSelection ─► batch ──► Stage / BatchGrid / RenderTray / Render
 
 Панель-галерея пачки и её узкая версия. Пропсы приходят из
 `batch.trayProps`; сверх них — `title` («интерьеры») и `editLabel`
-(«Перенести», «Построить»).
+(«Перенести», «Построить»). `sourceLabel` подписывает исходную плитку, а
+`renderVersion(attachment, index)` добавляет рядом производную плитку. В
+«Редакторе рендера» это пара «исходник / новый»; новая версия показывает
+состояния обработки и ошибки и выбирается на большой сцене независимо от
+исходника.
 
 ### `Stage`, `BatchGrid` — `src/components/tool/stage.tsx`
 
@@ -211,6 +227,8 @@ useBatchSelection ─► batch ──► Stage / BatchGrid / RenderTray / Render
   точечной правки) переключает раскладку: картинка ложится в бокс ровно по
   кадру, размер считается по пропорции. `itemLabel` — для подписей стрелок,
   `className` — размер сцены (`aspect-[4/3] w-full` у переноса стиля).
+- `StagePlaceholder` — та же большая поверхность без изображения: например,
+  пока рабочая пара восстанавливается из серверного хранилища.
 - `BatchGrid` — грид рабочего набора с заголовком и «К просмотру»;
   `compact` — для узкой колонки переноса стиля.
 
@@ -238,9 +256,9 @@ useBatchSelection ─► batch ──► Stage / BatchGrid / RenderTray / Render
 | `tool-shell.tsx` | `ToolShell`, `ComposerDock`, `ToolAside`, `ToolGallery` | каркас экрана и плавающие слои |
 | `tool-composer.tsx` | `ToolComposer` | композер с панелью настроек |
 | `render-tray.tsx` | `RenderTray`, `RenderStrip` | панель-галерея пачки и полоска миниатюр |
-| `stage.tsx` | `Stage`, `BatchGrid` | сцена и пакетный грид |
+| `stage.tsx` | `Stage`, `StagePlaceholder`, `BatchGrid` | сцена, её состояние восстановления и пакетный грид |
 | `tool-dropzone.tsx` | `ToolDropzone` | пустой экран-дропзона |
-| `tool-card.tsx` | `ToolCard`, `useBlobUrl` | карточка результата; хук «блоб из IndexedDB → object URL» |
+| `tool-card.tsx` | `ToolCard`, `useBlobUrl`, `downloadStoredResult` | карточка результата; хук «блоб → object URL»; скачивание полного результата |
 | `view-set-card.tsx` | `ViewSetCard` | карточка сета кадров («Ракурсы») |
 | `batch-tools.tsx` | `BatchToolsPanel`, `QualityToggle`, `PopulateToggle` | улучшение качества, пакетные функции и тумблер «Заселить сцену» |
 | `region-editor.tsx` | `RegionEditor` | холст точечной правки поверх сцены (кисть, обводка, рамка) |
@@ -282,8 +300,8 @@ useBatchSelection ─► batch ──► Stage / BatchGrid / RenderTray / Render
 | `Stage` | ✓ с `overlay` (RegionEditor) | ✓ | ✓ `aspect-[4/3]` | — | — (своя `ModelStage`) |
 | `BatchGrid` | ✓ | ✓ | ✓ `compact` | — | — |
 | `ToolDropzone` | ✓ RenderReveal | ✓ ViewsInvite | ✓ StyleSwap | — (MaterialPreviewGrid) | ✓ FurnitureMorph, `armed` |
-| `ToolGallery` + карточка | ✓ ToolCard | ✓ ViewSetCard | ✓ ToolCard | ✓ ToolCard | — (сцена + лента) |
-| Своё на странице | контекст, качество GPT Image 2 + Lanczos 2000 px, заселение, пакетные функции, области правки, `notice` | выбор набора кадров, подпись под сценой | стили, док материалов, вторая панель, `notice` | референсы не обязательны | одно фото, `ModelStage`/`ModelChip` |
+| `ToolGallery` + карточка | — (результат остаётся на Stage) | ✓ ViewSetCard | ✓ ToolCard | ✓ ToolCard | — (сцена + лента) |
+| Своё на странице | постоянная пара «исходник / новый» в `RenderTray`, результат на Stage, контекст, качество GPT Image 2 + Lanczos 2000 px, заселение, пакетные функции, области правки, `notice` | выбор набора кадров, подпись под сценой | стили, док материалов, вторая панель, `notice` | референсы не обязательны | одно фото, `ModelStage`/`ModelChip` |
 
 Страницы после выноса общего: `enhance` ≈ 420 строк, `restyle` ≈ 375, `views` ≈ 275,
 `materials` ≈ 220, `photo-3d` ≈ 330 — в них только конфигурация и логика инструмента.

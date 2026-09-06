@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 
 import type { AttachedRender, AttachmentIntake } from "@/lib/use-attachments"
 import { plural } from "@/lib/utils"
@@ -57,8 +57,8 @@ export interface BatchSelection {
   selectNext: () => void
   removeAttachment: (index: number) => void
   clearAttachments: () => void
-  /** Забрать рабочий набор в обработку: файлы уходят из пачки, выбор и режимы сбрасываются. */
-  takeWorkingSet: () => { items: AttachedRender[]; files: File[]; urls: string[] }
+  /** Забрать рабочий набор; `retain` оставляет файлы на сцене во время и после обработки. */
+  takeWorkingSet: (options?: { retain?: boolean }) => { items: AttachedRender[]; files: File[]; urls: string[] }
   trayProps: TrayProps
 }
 
@@ -78,6 +78,7 @@ export function useBatchSelection(intake: AttachmentIntake, { noun, onEditAll, o
   const [picked, setPicked] = useState<Set<string>>(() => new Set())
   const [picking, setPicking] = useState(false)
   const [batchEditing, setBatchEditing] = useState(false)
+  const previousUrls = useRef(new Set<string>())
 
   const focusIndex = Math.min(focus, Math.max(0, attachments.length - 1))
   const current = attachments[focusIndex] ?? null
@@ -87,6 +88,20 @@ export function useBatchSelection(intake: AttachmentIntake, { noun, onEditAll, o
   const pickedItems = attachments.filter((item) => picked.has(item.previewUrl))
   const workingSet = picking || pickedItems.length > 0 ? pickedItems : current ? [current] : []
   const showBatchGrid = batchEditing && pickedItems.length > 0
+
+  // Новый файл, добавленный к уже открытой пачке, сразу становится рабочим:
+  // пользователь может без лишнего клика запустить следующую обработку.
+  useEffect(() => {
+    const previous = previousUrls.current
+    const addedIndex = attachments.findIndex((item) => !previous.has(item.previewUrl))
+    if (previous.size > 0 && addedIndex >= 0) {
+      const added = attachments[addedIndex]
+      setFocus(addedIndex)
+      if (!picking) setPicked(new Set([added.previewUrl]))
+      setBatchEditing(false)
+    }
+    previousUrls.current = new Set(attachments.map((item) => item.previewUrl))
+  }, [attachments, picking])
 
   const selectionLabel =
     attachments.length === 0
@@ -194,11 +209,16 @@ export function useBatchSelection(intake: AttachmentIntake, { noun, onEditAll, o
 
   /* В обработку уходит рабочий набор; остальная пачка остаётся в панели,
      чтобы к ней можно было применить другие настройки. */
-  const takeWorkingSet = () => {
+  const takeWorkingSet = ({ retain = false }: { retain?: boolean } = {}) => {
     const urls = workingSet.map((item) => item.previewUrl)
     const files = workingSet.map((item) => item.file)
-    detach(urls, "consume")
-    reset()
+    if (retain) {
+      setPicking(false)
+      setBatchEditing(false)
+    } else {
+      detach(urls, "consume")
+      reset()
+    }
     return { items: workingSet, files, urls }
   }
 

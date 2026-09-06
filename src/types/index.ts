@@ -81,6 +81,8 @@ export interface Enhancement extends GalleryItemMeta {
   sourceHeight: number
   /** Черновик полностью записал исходник и миниатюру в активное хранилище. */
   sourceReady?: boolean
+  /** Повторная правка может использовать текущий результат, не затирая исходник. */
+  inputRole?: "source" | "result"
   tools?: BatchTools
   /** Области точечной правки (см. lib/render-regions): геометрия в долях кадра. */
   regions?: RegionPayload[]
