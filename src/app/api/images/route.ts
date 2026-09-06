@@ -10,6 +10,7 @@ import {
   type ImageReference,
   type ImageResolution,
 } from "@/server/image-provider"
+import { isSameOrigin, problem } from "@/server/http"
 import { resizeToLongSideLanczos } from "@/server/image-postprocess"
 import { describeIntendedProvider, providerKeyVariable, providerLabel, resolveImageProvider } from "@/server/providers"
 
@@ -36,38 +37,16 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
 
-const MAX_PROMPT_CHARS = 8_000
+/**
+ * Потолок инструкции провайдеру. Промпт улучшения — это задание, инвентарь
+ * сцены (до 1600 символов) и блок запретов; gpt-image-2 принимает заметно
+ * больше, лимит здесь защищает от случайного мусора, а не от длины задания.
+ */
+const MAX_PROMPT_CHARS = 14_000
 const MAX_REFERENCES = 4
 const MAX_REFERENCE_BYTES = 12 * 1024 * 1024
 const MIN_FINAL_LONG_SIDE = 512
 const MAX_FINAL_LONG_SIDE = 4_096
-
-interface ProblemBody {
-  error: string
-  message: string
-  retryable?: boolean
-}
-
-function problem(status: number, body: ProblemBody): NextResponse<ProblemBody> {
-  return NextResponse.json(body, { status })
-}
-
-/**
- * Минимальная защита от чужих страниц: браузерный запрос с другого origin
- * отклоняется. curl это не остановит — авторизации у сервиса пока нет, и это
- * осознанно (README, «Что осознанно НЕ сделано»).
- */
-function isSameOrigin(request: Request): boolean {
-  const origin = request.headers.get("origin")
-  if (!origin) return true
-  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host")
-  if (!host) return true
-  try {
-    return new URL(origin).host === host
-  } catch {
-    return false
-  }
-}
 
 /** «1600:900» → пропорция; пусто — квадрат. */
 function parseAspect(value: FormDataEntryValue | null): AspectRatio | null {

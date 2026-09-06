@@ -9,6 +9,12 @@
  * состав кадра; результат — в ближайшей из пропорций провайдера, разрешение
  * по его ступени (2K у API Models).
  *
+ * Перед промптом — разбор сцены (`lib/scene-analysis`): vision-модель
+ * составляет инвентарь предметов кадра (телевизор выключен, шторы тюлевые,
+ * люстра горит…), и он уходит в задание авторитетным описанием. Так генератор
+ * не путает выключенный экран с окном и не сплавляет шторы со стеной.
+ * Инвентарь сохраняется в записи и на повторе не считается заново.
+ *
  * Без ключа провайдера работает `enhanceLocally` — ПРЕДПРОСМОТР на canvas:
  * деликатная цветокоррекция в размере исходника. Так главная кнопка не
  * остаётся без результата и в локальной разработке; такой результат помечен
@@ -27,6 +33,7 @@ import {
   type GeneratedImage,
 } from "@/lib/image-generation"
 import { BRUSH_HALF_WIDTH, type RegionPayload } from "@/lib/render-regions"
+import { describeScene, type SceneInventory } from "@/lib/scene-analysis"
 import { populateScene } from "@/lib/scene-population"
 import type { BatchFilter, BatchTime, BatchTools, EnhanceContext } from "@/types"
 
@@ -37,7 +44,10 @@ export const ENHANCE_LONG_SIDE = 2000
 /** Пачка за одну отправку: как лимит вложений в прежнем чате. */
 export const MAX_BATCH = 10
 
-export type EnhanceResult = GeneratedImage
+export interface EnhanceResult extends GeneratedImage {
+  /** Инвентарь сцены, посчитанный в этом прогоне (нет — взят из записи или разбор выключен). */
+  inventory?: SceneInventory
+}
 
 export function isAcceptedRender(file: File): boolean {
   return ENHANCE_ACCEPT.split(",").includes(file.type)
@@ -80,9 +90,50 @@ export interface EnhanceJob extends EnhanceOptions {
   tools?: BatchTools
   /** Области точечной правки — уходят моделью картой поверх исходника. */
   regions?: RegionPayload[]
+  /**
+   * Инвентарь сцены от vision-модели (lib/scene-analysis). Есть в записи —
+   * используется как есть; нет — `enhanceRender` запросит его сам.
+   */
+  inventory?: string
+  /** Размер исходника: маленький рендер получает отдельную инструкцию. */
+  sourceSize?: { width: number; height: number }
+}
+
+/** Что страница узнаёт по ходу обработки, до её конца. */
+export interface EnhanceHooks {
+  /** Инвентарь сцены получен — запись сохраняет его до платной генерации. */
+  onInventory?: (inventory: SceneInventory) => void
 }
 
 /* ── Промпт ─────────────────────────────────────────────────────────── */
+
+/** Ниже этой длинной стороны исходник считается маленьким и получает отдельную инструкцию. */
+export const SMALL_SOURCE_LONG_SIDE = 1200
+
+/**
+ * Предметы кадра — как реальные предметы. Главная причина «не пойми чего» на
+ * месте телевизора или штор — генератор не распознал предмет и дорисовал
+ * форму; этот блок называет типичные случаи и их правильное поведение.
+ */
+const OBJECT_IDENTITY_HINT =
+  "OBJECT IDENTITY: Before changing a single pixel, recognize what every object in IMAGE 1 is and render it as exactly that real-world object with its true function, scale and material behavior; never let an ambiguous shape drift into a different object. A television or monitor stays a thin flat panel with a flat black glossy screen that is switched off (dark, with only faint dim reflections of the room) unless the source clearly shows content, with a slim bezel and its wall mount or stand — never a window, painting, mirror, niche or glowing rectangle. Curtains stay fabric: sheer voile is translucent and softly transmits daylight, blackout drapes are opaque with heavy vertical folds; both hang from their rod or ceiling track with natural pleats and a gentle break at the floor — never fused into the wall or turned into rigid panels. Light fixtures (pendants, chandeliers, sconces, spots, cove LED strips, floor and table lamps) keep their exact form, count, mounting and on/off state, with believable emissive glow, shades, cords and hardware. Windows and glass doors show a plausible exterior with correct exposure, real glass thickness, mullions and subtle reflections. Mirrors reflect the actual room consistently with the viewpoint. Artwork and photographs keep their exact subject, framing and mount. Plants get botanically believable leaves and stems; rugs and upholstery get true pile, weave and seams; wood keeps species-like grain, stone its veining, metal its brushed or polished finish."
+
+/** Инвентарь сцены — авторитетное описание кадра, сильнее любых спорных пикселей. */
+function sceneInventoryBlock(inventory: string | undefined): string {
+  const text = inventory?.trim()
+  if (!text) return ""
+  return [
+    "SCENE INVENTORY (authoritative visual analysis of IMAGE 1 — trust it over any ambiguous pixels):",
+    text,
+    "Render every listed object as exactly that object, in its listed position, material and state, and resolve each EASILY MISREAD item as described. The inventory never authorizes adding, removing or moving anything.",
+  ].join("\n")
+}
+
+/** Маленький исходник: размытые пятна — это предметы из инвентаря, а не новые объекты. */
+function sourceQualityHint(size: EnhanceJob["sourceSize"]): string {
+  if (!size || Math.max(size.width, size.height) >= SMALL_SOURCE_LONG_SIDE) return ""
+  return `SOURCE QUALITY: IMAGE 1 is a low-resolution source (${Math.round(size.width)}×${Math.round(size.height)} px). Its soft, blocky or aliased shapes must be resolved into the objects named above with plausible fine detail at full output resolution — never into new or different objects. Do not reproduce its blur, compression artifacts or pixelation.`
+}
 
 const CONTEXT_HINT: Record<EnhanceContext, string> = {
   auto: "SCENE TYPE: Infer the photographed subject from IMAGE 1 and use the corresponding real-world photographic language.",
@@ -145,6 +196,7 @@ export function buildEnhanceNegativePrompt(job: EnhanceJob): string {
     "flat lighting, sterile lighting, shadowless scene, inconsistent light direction, random light sources, fake HDR, HDR halos, clipped highlights, blown-out windows, crushed blacks, harsh artificial shadows, fake volumetric fog, exaggerated god rays, painted-on sunbeams, fake lens-flare overlay",
     "unnatural colors, neon color cast, orange wash, excessive saturation, excessive contrast, oversharpening, crunchy edges, waxy denoising, blur, low resolution, pixelation, JPEG artifacts, banding, moire, coarse noise",
     "cartoon, illustration, concept art, painterly image, surrealism, fantasy styling, miniature or dollhouse look",
+    "misidentified objects, objects changed into different objects, TV screen turned into a window or painting, screen showing a landscape or glowing content, curtains merged into the wall, curtains turned into solid panels, melted or malformed light fixtures, lamps turned into blobs, missing fixtures, mirror without reflection, replaced artwork subject",
     "fisheye distortion, warped perspective, leaning verticals, changed camera angle, changed crop, changed room geometry, moved walls, moved doors or windows, redesigned ceiling or floor, altered furniture, added furniture, removed objects, duplicated objects, floating objects, malformed decor, text, logo, watermark",
     time === "night" ? "sunlight, daylight, sunbeams, morning light, visible god rays" : "night-time exposure, black windows",
   ].join(", ")
@@ -165,7 +217,10 @@ export function buildEnhancePrompt(job: EnhanceJob): string {
   const lines: string[] = [
     "TASK: Transform IMAGE 1 from a computer-generated render into a convincing real professional photograph. IMAGE 1 is the authoritative design reference. The result must be immediately believable as a photograph of a real, physically built subject, not a cleaner CGI render.",
     CONTEXT_HINT[job.context ?? "auto"],
+    sceneInventoryBlock(job.inventory),
     "NON-NEGOTIABLE PRESERVATION: Keep the exact camera position, lens/focal-length feel, perspective, vertical lines, crop, aspect ratio, framing and composition. Preserve every wall, opening, ceiling, floor boundary, built-in element, piece of furniture, fixture and decor item in exactly the same shape, scale, count and position. Preserve the design, material identities, patterns and base colors. Do not redesign, restyle, invent, remove, move or replace anything unless the designer explicitly requests it below.",
+    improveQuality ? OBJECT_IDENTITY_HINT : "",
+    improveQuality ? sourceQualityHint(job.sourceSize) : "",
     improveQuality
       ? "RENDER-TO-PHOTO PASS: Do not merely upscale, sharpen or polish the existing CGI pixels. Re-light and re-render every visible surface as real material under real light while keeping the locked design unchanged. Use physically plausible global illumination, indirect bounce, ambient occlusion, ray tracing and consistent light direction/color temperature. Replace flat procedural shading with scale-accurate photographic material response: natural wood grain and pores, individual textile fibers and weave, subtle plaster variation, realistic glass thickness/refraction, metal roughness, joints, seams, tiny edge bevels and grounded surface contact. Add restrained micro-imperfections and non-uniform roughness so surfaces feel manufactured and touched, never sterile or synthetic."
       : "Preserve the rendering quality as is; apply only the changes requested below.",
@@ -296,16 +351,34 @@ export async function renderRegionMap(source: Blob, regions: RegionPayload[], ma
 
 /* ── Основной путь ──────────────────────────────────────────────────── */
 
-/** Улучшение рендера: модель, а без ключа — локальный предпросмотр. */
-export async function enhanceRender(source: Blob, job: EnhanceJob): Promise<EnhanceResult> {
+/**
+ * Улучшение рендера: модель, а без ключа — локальный предпросмотр.
+ *
+ * При включённом улучшении качества и без готового инвентаря в задании сначала
+ * идёт разбор сцены; его результат отдаётся в `hooks.onInventory` ещё до
+ * генерации, чтобы запись сохранила его даже при сбое генератора. Разбор
+ * не удался или выключен — улучшение идёт без инвентаря, как раньше.
+ */
+export async function enhanceRender(source: Blob, job: EnhanceJob, hooks: EnhanceHooks = {}): Promise<EnhanceResult> {
   const improveQuality = job.tools?.quality ?? true
   return withImageProvider(
     async () => {
       const { width, height } = await readBlobSize(source)
       const references = [await prepareReference(source)]
       if (job.regions && job.regions.length > 0) references.push(await renderRegionMap(source, job.regions))
-      const prompts = buildEnhancePrompts(job)
-      return requestImage({
+
+      let inventory = job.inventory?.trim() || undefined
+      let found: SceneInventory | undefined
+      if (improveQuality && !inventory) {
+        found = (await describeScene(source, { context: job.context })) ?? undefined
+        if (found) {
+          inventory = found.text
+          hooks.onInventory?.(found)
+        }
+      }
+
+      const prompts = buildEnhancePrompts({ ...job, inventory, sourceSize: { width, height } })
+      const image = await requestImage({
         prompt: prompts.prompt,
         negativePrompt: prompts.negativePrompt,
         aspect: { width, height },
@@ -314,6 +387,7 @@ export async function enhanceRender(source: Blob, job: EnhanceJob): Promise<Enha
         resolution: "2K",
         finalLongSide: improveQuality ? ENHANCE_LONG_SIDE : undefined,
       })
+      return { ...image, inventory: found }
     },
     () => enhanceLocally(source, job),
     { provider: "apimodels", resolution: "2K" }

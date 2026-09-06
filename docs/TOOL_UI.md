@@ -37,7 +37,8 @@
 | Рабочий набор: режим «Выбрать», «Выбрать все», стрелки и Escape, «Редактировать все», что уходит в обработку | `src/lib/use-batch-selection.ts` | `useBatchSelection` |
 | Сохранение исходника в IndexedDB/на сервере, серверный черновик до запуска, очередь пачки | `src/lib/tool-jobs.ts`, `src/app/(main)/enhance/page.tsx` | `saveSourceFile({ durable: true })`, статус `draft`, `runGalleryQueue` |
 | Где живут записи и картинки: кэш IndexedDB, синхронизация со своим сервером, вход по паролю, подпись «серверное хранение / локальный режим» | `src/lib/server-sync.ts` — клиент (очередь, слияние, `useServerStatus`); `src/lib/blob-store.ts` — кэш блобов; `src/server/{auth,records,storage,db}.ts` + `src/app/api/{records,assets,session,auth}` — сервер; `src/middleware.ts` — дверь | `attachServerSync` в каждом сторе; `serverStatus`, `useServerStatus` |
-| Куда уходит генерация картинок: positive/negative prompt, провайдер, пропорции, уменьшение референса, Lanczos-постобработка, предпросмотр без ключа, подпись «предпросмотр без ключа» на карточке | `src/lib/image-generation.ts` — клиент; `src/app/api/images/route.ts` + `src/server/image-provider.ts`, `providers.ts` (выбор), `apimodels.ts`, `laozhang.ts`, `image-postprocess.ts` — сервер | `requestImage`, `composeProviderPrompt`, `withImageProvider`, `prepareReference`, `resizeToLongSideLanczos`, `previewCaption`; промпты — в движке инструмента (`build*Prompt`) |
+| Куда уходит генерация картинок: positive/negative prompt, провайдер, пропорции, уменьшение референса, Lanczos-постобработка, предпросмотр без ключа, подпись «предпросмотр без ключа» на карточке | `src/lib/image-generation.ts` — клиент; `src/app/api/images/route.ts` + `src/server/image-provider.ts`, `providers.ts` (выбор), `apimodels.ts`, `laozhang.ts`, `image-postprocess.ts`, `http.ts` — сервер | `requestImage`, `composeProviderPrompt`, `withImageProvider`, `prepareReference`, `resizeToLongSideLanczos`, `previewCaption`; промпты — в движке инструмента (`build*Prompt`) |
+| Разбор сцены перед улучшением: vision-модель составляет инвентарь предметов кадра (телевизор выключен, шторы тюлевые, люстра горит), он уходит в промпт gpt-image-2 и хранится в записи (`sceneInventory`); выбор модели, промпт аналитика, чистка ответа | `src/lib/scene-analysis.ts` — клиент; `src/app/api/scene/route.ts` + `src/server/scene-inventory.ts`, `vision-provider.ts`, `providers.ts` (`resolveVisionProviders` — цепочка с запасными) — сервер; блоки промпта — `src/lib/enhance-engine.ts` | `describeScene`, `sceneAnalysisStatus`; `analyzeScene`, `buildSceneInventoryPrompt`, `tidyInventory`; `OBJECT_IDENTITY_HINT`, `sceneInventoryBlock`, `sourceQualityHint`, `EnhanceHooks.onInventory` |
 | В какой проект класть новые записи | `src/stores/project-store.ts` | `ensureActiveProject`, `useActiveProject` |
 | Внешний вид всего перечисленного (рецепты CSS) | `src/styles/ds/surfaces.css` | `.stage-*`, `.batch-tile`, `.tray-*`, `.dropzone`, `.popover`, `.presence-*`, `.composer-notice`, `.rg-tag`, `.style-dock` |
 
@@ -162,6 +163,12 @@ useBatchSelection ─► batch ──► Stage / BatchGrid / RenderTray / Render
   провайдеру картинок для всех движков; без ключа — локальный предпросмотр,
   помеченный `engine: "preview"`. `previewCaption(item)` — хвост подписи
   карточки для такого результата (`ToolCard`, `ViewSetCard`).
+- `describeScene(blob, { context })` (`src/lib/scene-analysis.ts`) — инвентарь
+  предметов кадра от vision-модели через `/api/scene`; `null`, если разбор
+  выключен или не удался — движок продолжает без него. `enhanceRender(source,
+  job, { onInventory })` зовёт его сам и отдаёт инвентарь странице до платной
+  генерации, чтобы запись (`Enhancement.sceneInventory`) переиспользовала его на
+  повторе.
 - `attachServerSync(store, options)` (`src/lib/server-sync.ts`) — одна строка в
   конце файла стора: слияние с сервером при гидрации и отправка изменений;
   `useServerStatus()` — статус для компонентов (сайдбар, настройки).
@@ -306,7 +313,7 @@ useBatchSelection ─► batch ──► Stage / BatchGrid / RenderTray / Render
 | `BatchGrid` | ✓ | ✓ | ✓ `compact` | — | — |
 | `ToolDropzone` | ✓ RenderReveal | ✓ ViewsInvite | ✓ StyleSwap | — (MaterialPreviewGrid) | ✓ FurnitureMorph, `armed` |
 | `ToolGallery` + карточка | — (результат остаётся на Stage) | ✓ ViewSetCard | ✓ ToolCard | ✓ ToolCard | — (сцена + лента) |
-| Своё на странице | постоянная пара «исходник / новый» в `RenderTray`, результат на Stage, контекст, качество GPT Image 2 + Lanczos 2000 px, заселение, пакетные функции, области правки, `notice` | выбор набора кадров, подпись под сценой | стили, док материалов, вторая панель, `notice` | референсы не обязательны | одно фото, `ModelStage`/`ModelChip` |
+| Своё на странице | постоянная пара «исходник / новый» в `RenderTray`, результат на Stage, контекст, разбор сцены (инвентарь предметов) + качество GPT Image 2 + Lanczos 2000 px, заселение, пакетные функции, области правки, `notice` | выбор набора кадров, подпись под сценой | стили, док материалов, вторая панель, `notice` | референсы не обязательны | одно фото, `ModelStage`/`ModelChip` |
 
 Страницы после выноса общего: `enhance` ≈ 420 строк, `restyle` ≈ 375, `views` ≈ 275,
 `materials` ≈ 220, `photo-3d` ≈ 330 — в них только конфигурация и логика инструмента.

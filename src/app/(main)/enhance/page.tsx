@@ -57,13 +57,13 @@ const LABELS: ToolComposerLabels = {
   filesTitle: "Рендеры",
   filesQuality: "исходники",
   uploadTitle: "Загрузить рендеры",
-  filesCaption: "GPT Image 2 · результат 2000 px · $0,03 за рендер",
+  filesCaption: "GPT Image 2 + разбор сцены · результат 2000 px · ≈ $0,04 за рендер",
   optionsTitle: "Контекст",
   optionsIcon: Layers,
   footer:
-    "Содержимое кадра не меняется: геометрия, материалы и композиция остаются вашими — растут только детализация и реализм.",
+    "Содержимое кадра не меняется: геометрия, материалы и композиция остаются вашими. Перед обработкой vision-модель распознаёт предметы кадра — телевизор, шторы, светильники, — чтобы каждый стал реальнее, а не другим предметом.",
   inputPlaceholder: "Комментарий к обработке…",
-  submitLabel: "Улучшить · $0,03",
+  submitLabel: "Улучшить · $0,04",
   batchNoun: ["рендер", "рендера", "рендеров"],
 }
 
@@ -515,14 +515,23 @@ export default function EnhancePage() {
       try {
         const source = input ?? (await getBlob(sourceKey(meta.id)))
         if (!source) throw new Error("Исходник не найден в хранилище браузера.")
-        const result = await enhanceRender(source, {
-          populate: meta.populate,
-          context: meta.context,
-          seed: meta.id,
-          note: meta.note,
-          tools: meta.tools,
-          regions: meta.regions,
-        })
+        const result = await enhanceRender(
+          source,
+          {
+            populate: meta.populate,
+            context: meta.context,
+            seed: meta.id,
+            note: meta.note,
+            tools: meta.tools,
+            regions: meta.regions,
+            inventory: meta.sceneInventory,
+          },
+          {
+            // Инвентарь сцены — в запись сразу: повтор после сбоя генератора
+            // не платит за разбор второй раз.
+            onInventory: (found) => update(meta.id, { sceneInventory: found.text }),
+          }
+        )
         // Рендер могли убрать из правой панели, пока провайдер считал ответ.
         // Тогда не возвращаем удалённую пару в хранилище.
         if (!useEnhanceStore.getState().enhancements.some((item) => item.id === meta.id)) return
