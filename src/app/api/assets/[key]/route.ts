@@ -27,7 +27,7 @@ async function guard(request: Request) {
   if (!session) return { error: unauthorized() }
   const storage = resolveStorage()
   if (!storage) {
-    return { error: NextResponse.json({ error: "no_storage", message: "Хранилище объектов не настроено (R2)." }, { status: 503 }) }
+    return { error: NextResponse.json({ error: "no_storage", message: "Хранилище объектов не настроено (Vercel Blob)." }, { status: 503 }) }
   }
   return { session, storage }
 }

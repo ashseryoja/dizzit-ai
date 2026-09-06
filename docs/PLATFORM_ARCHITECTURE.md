@@ -34,7 +34,7 @@ LaoZhang, OpenAI-совместимый синхронный вызов (про�
 локальный canvas-предпросмотр (будущий `FakeProvider`, §4.4). Есть дверь входа
 (`middleware.ts`, пароль рабочего пространства — прообраз `AuthGuard`, §5),
 Postgres (`server/db.ts`, `records.ts` — таблицы `records`/`assets`) и порт
-`ObjectStorage` с R2 и диском (`server/storage.ts`, §3.4). Клиент держит
+`ObjectStorage` с приватным Vercel Blob и диском (`server/storage.ts`, §3.4). Клиент держит
 IndexedDB как кэш и синхронизирует сторы (`lib/server-sync.ts`, §8). Квот,
 учёта расходов, очереди и остальных гейтов §5 пока нет — запрос к провайдеру
 держится открытым до `maxDuration`.

@@ -350,7 +350,7 @@ LLM-адаптер и `api/estimate`; сторы смет и справочни�
 
 ```
 zustand-стор ──attachServerSync──▶ src/lib/server-sync.ts ──▶ PUT/DELETE /api/records   ──▶ Postgres (Neon), таблица records
-IndexedDB   ──putBlob/getBlob────▶ (кэш)                   ──▶ PUT/GET   /api/assets/:key ──▶ R2 (прод) | .data/assets (dev)
+IndexedDB   ──putBlob/getBlob────▶ (кэш)                   ──▶ PUT/GET   /api/assets/:key ──▶ Vercel Blob (прод) | .data/assets (dev)
                                                               /api/session — статус; middleware.ts — дверь /login
 ```
 
@@ -363,8 +363,8 @@ IndexedDB   ──putBlob/getBlob────▶ (кэш)                   ─�
 - **База** — Postgres (`DATABASE_URL`, Neon), таблицы `records` (запись любого
   инструмента и проекты, тело в jsonb) и `assets` (учёт объектов). Миграции —
   `db/migrations/*.sql`, применяются `npm run db:migrate`.
-- **Картинки** — Cloudflare R2 через S3-совместимый API (`R2_*`); в
-  разработке без R2 — каталог `.data/assets`. Ключ объекта тот же, что у блоба
+- **Картинки** — приватное Vercel Blob (`BLOB_STORE_ID` + временный OIDC-токен); в
+  разработке без Blob — каталог `.data/assets`. Ключ объекта тот же, что у блоба
   в IndexedDB (`{id}:{роль}`), поэтому `getBlob` при промахе кэша просто
   зовёт `/api/assets/:key`. Крупное перед отправкой ужимается до 3,5 МБ
   (лимит тела запроса на Vercel) — локальная копия остаётся полноразмерной.
@@ -402,7 +402,7 @@ src/
 │   ├── config.ts          окружение сервера в одном месте
 │   ├── auth.ts            пароль, cookie сессии, владелец
 │   ├── db.ts              клиент Postgres · records.ts — таблицы records/assets
-│   ├── storage.ts         ObjectStorage: R2 или диск
+│   ├── storage.ts         ObjectStorage: приватный Vercel Blob или диск
 │   ├── image-provider.ts  контракт ImageProvider, ошибки, помощники
 │   ├── providers.ts       выбор провайдера по окружению
 │   ├── apimodels.ts       API Models: задача → опрос → resultUrls

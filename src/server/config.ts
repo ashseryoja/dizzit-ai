@@ -10,13 +10,6 @@ import "server-only"
 
 const env = (name: string) => (process.env[name] ?? "").trim()
 
-export interface R2Config {
-  accountId: string
-  accessKeyId: string
-  secretAccessKey: string
-  bucket: string
-}
-
 export const serverConfig = {
   /** Neon/Postgres. Пусто — серверного хранения нет, приложение живёт в браузере. */
   get databaseUrl(): string {
@@ -30,18 +23,13 @@ export const serverConfig = {
   get accessPassword(): string {
     return env("APP_ACCESS_PASSWORD")
   },
-  /** Cloudflare R2 — объектное хранилище картинок. */
-  get r2(): R2Config | null {
-    const accountId = env("R2_ACCOUNT_ID")
-    const accessKeyId = env("R2_ACCESS_KEY_ID")
-    const secretAccessKey = env("R2_SECRET_ACCESS_KEY")
-    const bucket = env("R2_BUCKET")
-    if (!accountId || !accessKeyId || !secretAccessKey || !bucket) return null
-    return { accountId, accessKeyId, secretAccessKey, bucket }
+  /** Приватное Vercel Blob: OIDC в проде или read-write токен локально. */
+  get blobConfigured(): boolean {
+    return Boolean(env("BLOB_STORE_ID") || env("BLOB_READ_WRITE_TOKEN"))
   },
   /**
-   * Каталог для картинок на диске — замена R2 в локальной разработке.
-   * В проде (Vercel) диска нет: без R2 хранение картинок выключено.
+   * Каталог для картинок на диске — замена Blob в локальной разработке.
+   * В проде (Vercel) диска нет: без Blob хранение картинок выключено.
    */
   get localAssetsDir(): string {
     const explicit = env("ASSETS_DIR")

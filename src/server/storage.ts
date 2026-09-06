@@ -3,13 +3,13 @@ import "server-only"
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises"
 import { join, resolve } from "node:path"
 
-import { DeleteObjectsCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3"
+import { del, get, put } from "@vercel/blob"
 
 import { serverConfig } from "@/server/config"
 
 /**
  * Хранилище картинок за портом `ObjectStorage` (docs/PLATFORM_ARCHITECTURE.md
- * §3.4). Две реализации: Cloudflare R2 через S3-совместимый API (прод) и
+ * §3.4). Две реализации: приватное Vercel Blob (прод) и
  * каталог на диске (локальная разработка). Ключ объекта — `${owner}/${key}`,
  * где `key` тот же, что у блоба в IndexedDB клиента (`${id}:${role}`).
  */
@@ -20,49 +20,35 @@ export interface StoredObject {
 }
 
 export interface ObjectStorage {
-  readonly kind: "r2" | "disk"
+  readonly kind: "vercel-blob" | "disk"
   put(key: string, bytes: Uint8Array, contentType: string): Promise<void>
   get(key: string): Promise<StoredObject | null>
   delete(keys: string[]): Promise<void>
 }
 
-class R2Storage implements ObjectStorage {
-  readonly kind = "r2" as const
-  private readonly client: S3Client
-  private readonly bucket: string
+class VercelBlobStorage implements ObjectStorage {
+  readonly kind = "vercel-blob" as const
 
-  constructor(config: NonNullable<typeof serverConfig.r2>) {
-    this.bucket = config.bucket
-    this.client = new S3Client({
-      region: "auto",
-      endpoint: `https://${config.accountId}.r2.cloudflarestorage.com`,
-      credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
-      forcePathStyle: true,
+  async put(key: string, bytes: Uint8Array, contentType: string): Promise<void> {
+    await put(key, Buffer.from(bytes), {
+      access: "private",
+      addRandomSuffix: false,
+      allowOverwrite: true,
+      contentType,
+      cacheControlMaxAge: 31536000,
     })
   }
 
-  async put(key: string, bytes: Uint8Array, contentType: string): Promise<void> {
-    await this.client.send(new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: bytes, ContentType: contentType }))
-  }
-
   async get(key: string): Promise<StoredObject | null> {
-    try {
-      const result = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }))
-      if (!result.Body) return null
-      return { bytes: await result.Body.transformToByteArray(), contentType: result.ContentType ?? "application/octet-stream" }
-    } catch (error) {
-      const name = (error as { name?: string }).name
-      if (name === "NoSuchKey" || name === "NotFound") return null
-      throw error
-    }
+    const result = await get(key, { access: "private" })
+    if (!result || result.statusCode !== 200) return null
+    const bytes = new Uint8Array(await new Response(result.stream).arrayBuffer())
+    return { bytes, contentType: result.blob.contentType ?? "application/octet-stream" }
   }
 
   async delete(keys: string[]): Promise<void> {
-    for (let i = 0; i < keys.length; i += 1000) {
-      const batch = keys.slice(i, i + 1000)
-      await this.client.send(
-        new DeleteObjectsCommand({ Bucket: this.bucket, Delete: { Objects: batch.map((Key) => ({ Key })), Quiet: true } })
-      )
+    for (let i = 0; i < keys.length; i += 100) {
+      await del(keys.slice(i, i + 100))
     }
   }
 }
@@ -121,12 +107,11 @@ class DiskStorage implements ObjectStorage {
 
 const globalRef = globalThis as typeof globalThis & { __dizzitStorage?: ObjectStorage | null }
 
-/** R2, если настроен; иначе диск в разработке; в проде без R2 — ничего. */
+/** Vercel Blob, если настроен; иначе диск в разработке; в проде без Blob — ничего. */
 export function resolveStorage(): ObjectStorage | null {
   if (globalRef.__dizzitStorage !== undefined) return globalRef.__dizzitStorage
-  const r2 = serverConfig.r2
-  const storage: ObjectStorage | null = r2
-    ? new R2Storage(r2)
+  const storage: ObjectStorage | null = serverConfig.blobConfigured
+    ? new VercelBlobStorage()
     : serverConfig.localAssetsDir
       ? new DiskStorage(serverConfig.localAssetsDir)
       : null

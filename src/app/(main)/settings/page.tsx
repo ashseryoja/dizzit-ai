@@ -310,12 +310,12 @@ function SettingRow({
 function storageDescription(server: ReturnType<typeof useServerStatus>): string {
   if (!server) return "Проверяем подключение к серверу…"
   if (server.persistence) {
-    return `Вход выполнен, база подключена, картинки — в ${server.storage === "r2" ? "Cloudflare R2" : "хранилище на диске сервера"}. Галерея одна на всех устройствах.`
+    return `Вход выполнен, база подключена, картинки — в ${server.storage === "vercel-blob" ? "приватном Vercel Blob" : "хранилище на диске сервера"}. Галерея одна на всех устройствах.`
   }
   if (!server.authConfigured) return "На сервере не задан пароль входа (AUTH_SECRET и APP_ACCESS_PASSWORD) — серверное хранение выключено."
   if (!server.signedIn) return "Сессия не активна — войдите заново, чтобы синхронизация продолжилась."
   if (!server.database) return "Не задана база данных (DATABASE_URL)."
-  if (!server.storage) return "Не настроено хранилище картинок (R2_*)."
+  if (!server.storage) return "Не настроено хранилище картинок (BLOB_STORE_ID)."
   return "Синхронизация недоступна."
 }
 
