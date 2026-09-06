@@ -140,7 +140,9 @@ export async function POST(request: Request) {
 function publicMessage(error: LaoZhangError): string {
   switch (error.kind) {
     case "auth":
-      return "Провайдер отклонил ключ LAOZHANG_API_KEY — проверьте его в .env.local."
+      return error.status === 403
+        ? "Провайдер отклонил доступ (HTTP 403): токен отключён, IP сервера не в белом списке или нет доступа к модели. Подробности — в логах сервера."
+        : "Провайдер не принял ключ LAOZHANG_API_KEY (HTTP 401) — проверьте его в переменных окружения."
     case "safety":
       return "Провайдер отклонил задание по политике контента. Переформулируйте комментарий."
     case "rate_limit":

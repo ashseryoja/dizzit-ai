@@ -131,7 +131,8 @@ function isTransientStatus(status: number): boolean {
 function classifyHttpError(status: number, body: string, model: string): LaoZhangError {
   const snippet = body.replace(/\s+/g, " ").slice(0, 300)
   if (status === 401 || status === 403) {
-    return new LaoZhangError("auth", `LaoZhang отклонил ключ (HTTP ${status})`, { status, retryable: false })
+    // Тело ответа — в серверный лог: по нему видно, отключён ли токен, не пускает ли IP или модель.
+    return new LaoZhangError("auth", `LaoZhang отклонил ключ (HTTP ${status}): ${snippet}`, { status, retryable: false })
   }
   if (status === 400 && /safety|moderation|policy|content_policy/i.test(body)) {
     return new LaoZhangError("safety", `LaoZhang отклонил запрос по политике контента (model=${model}): ${snippet}`, {
