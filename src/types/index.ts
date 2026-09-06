@@ -18,7 +18,7 @@ export interface Project {
    выходе, но реалистичнее и в большем разрешении. Содержимое кадра
    не меняется — это обещание продукта, а не настройка. */
 
-export type GenerationStatus = "processing" | "done" | "error"
+export type GenerationStatus = "draft" | "processing" | "done" | "error"
 
 /**
  * Общий скелет записи галереи инструмента. Каждый инструмент профиля
@@ -79,6 +79,8 @@ export interface Enhancement extends GalleryItemMeta {
   sourceName: string
   sourceWidth: number
   sourceHeight: number
+  /** Черновик полностью записал исходник и миниатюру в активное хранилище. */
+  sourceReady?: boolean
   tools?: BatchTools
   /** Области точечной правки (см. lib/render-regions): геометрия в долях кадра. */
   regions?: RegionPayload[]

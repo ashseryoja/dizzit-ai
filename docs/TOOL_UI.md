@@ -35,7 +35,7 @@
 | Карточка результата: «до/после», скачать, удалить, статусы | `src/components/tool/tool-card.tsx` | `ToolCard` (у сетов кадров — своя `view-set-card.tsx`) |
 | Правила приёма файлов: форматы, лимит, предупреждения, перенос, вставка из буфера, замена вместо добавления | `src/lib/use-attachments.ts` | `useAttachments`; константы форматов и лимитов — `src/lib/enhance-engine.ts` |
 | Рабочий набор: режим «Выбрать», «Выбрать все», стрелки и Escape, «Редактировать все», что уходит в обработку | `src/lib/use-batch-selection.ts` | `useBatchSelection` |
-| Сохранение исходника в IndexedDB, очередь пачки (карточки сразу, обработка по одной) | `src/lib/tool-jobs.ts` | `saveSourceFile`, `runGalleryQueue` |
+| Сохранение исходника в IndexedDB/на сервере, серверный черновик до запуска, очередь пачки | `src/lib/tool-jobs.ts`, `src/app/(main)/enhance/page.tsx` | `saveSourceFile({ durable: true })`, статус `draft`, `runGalleryQueue` |
 | Где живут записи и картинки: кэш IndexedDB, синхронизация со своим сервером, вход по паролю, подпись «серверное хранение / локальный режим» | `src/lib/server-sync.ts` — клиент (очередь, слияние, `useServerStatus`); `src/lib/blob-store.ts` — кэш блобов; `src/server/{auth,records,storage,db}.ts` + `src/app/api/{records,assets,session,auth}` — сервер; `src/middleware.ts` — дверь | `attachServerSync` в каждом сторе; `serverStatus`, `useServerStatus` |
 | Куда уходит генерация картинок: провайдер, пропорции, уменьшение референса, Lanczos-постобработка, предпросмотр без ключа, подпись «предпросмотр без ключа» на карточке | `src/lib/image-generation.ts` — клиент; `src/app/api/images/route.ts` + `src/server/providers.ts` (выбор), `apimodels.ts`, `laozhang.ts`, `image-postprocess.ts` — сервер | `requestImage`, `withImageProvider`, `prepareReference`, `resizeToLongSideLanczos`, `previewCaption`; промпты — в движке инструмента (`build*Prompt`) |
 | В какой проект класть новые записи | `src/stores/project-store.ts` | `ensureActiveProject`, `useActiveProject` |
@@ -95,12 +95,20 @@ useBatchSelection ─► batch ──► Stage / BatchGrid / RenderTray / Render
 | --- | --- |
 | `maxFiles` | лимит пачки; по умолчанию `MAX_BATCH` (10) |
 | `replace` | новые файлы заменяют приложенные («Фото → 3D»: одно фото на модель) |
-| `onDetach(urls)` | файлы ушли из пачки (убрали, очистили, отправили) — страница подчищает своё по `previewUrl` (области правки у редактора рендера) |
+| `onDetach(items, reason)` | файлы ушли из пачки; `discard` означает удалить черновик, `consume` — превратить его в задание; страница также подчищает своё по `previewUrl` |
 
 Возвращает `AttachmentIntake`: `attachments`, `attachFiles`, `removeAttachment`,
-`clearAttachments`, `detach(urls)`, `pickFiles`, а также всё, что нужно
+`clearAttachments`, `detach(urls, reason)`, `restoreAttachments(items)`,
+`pickFiles`, а также всё, что нужно
 `ToolShell` для скрытого input и переноса (`inputRef`, `onInputChange`,
 `accept`, `multiple`, `dragOver`, `dropProps`). Хук ничего не рендерит.
+
+У каждого `AttachedRender` есть стабильный `id`. В редакторе рендера он сразу
+становится записью `enhancements` со статусом `draft`: исходник и миниатюра
+сохраняются в IndexedDB и, при включённом серверном хранении, в Vercel Blob;
+метаданные синхронизируются с Postgres. После перезагрузки такие записи
+возвращаются в `useAttachments` через `restoreAttachments`, но не попадают в
+галерею результатов. Удаление из пачки удаляет черновик и его объекты.
 
 ### `useBatchSelection(intake, options)` — `src/lib/use-batch-selection.ts`
 
@@ -128,8 +136,9 @@ useBatchSelection ─► batch ──► Stage / BatchGrid / RenderTray / Render
 
 ### Помощники
 
-- `saveSourceFile(file)` (`src/lib/tool-jobs.ts`) — исходник и миниатюра в
-  IndexedDB под новым id; возвращает `{ id, width, height }`.
+- `saveSourceFile(file, options)` (`src/lib/tool-jobs.ts`) — исходник и
+  миниатюра в IndexedDB под новым или стабильным `options.id`; с
+  `durable: true` ждёт серверную копию. Возвращает `{ id, width, height }`.
 - `runGalleryQueue(metas, add, run)` — карточки появляются все сразу,
   обработка по одной; порядок галереи совпадает с порядком выбора файлов.
 - `ensureActiveProject()` (`src/stores/project-store.ts`) — активный проект

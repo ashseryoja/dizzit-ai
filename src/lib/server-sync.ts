@@ -234,7 +234,7 @@ export function uploadAsset(key: string, blob: Blob): Promise<void> {
 }
 
 export async function fetchAsset(key: string): Promise<Blob | null> {
-  const response = await fetch(`/api/assets/${encodeURIComponent(key)}`)
+  const response = await fetch(`/api/assets/${encodeURIComponent(key)}`, { cache: "no-store" })
   if (response.status === 404) return null
   if (response.status === 401) {
     markSignedOut()

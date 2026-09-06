@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Layers, Package, Sofa, Sparkles, Trees } from "lucide-react"
 
 import {
@@ -19,7 +19,7 @@ import { ToolCard } from "@/components/tool/tool-card"
 import { ToolComposer, type ToolComposerLabels, type ToolOption } from "@/components/tool/tool-composer"
 import { ToolDropzone } from "@/components/tool/tool-dropzone"
 import { ComposerDock, ToolAside, ToolGallery, ToolShell } from "@/components/tool/tool-shell"
-import { getBlob, putBlob, resultKey, sourceKey, thumbResultKey } from "@/lib/blob-store"
+import { deleteBlobs, getBlob, keysOf, putBlob, resultKey, sourceKey, thumbResultKey } from "@/lib/blob-store"
 import { MAX_BATCH, enhanceRender, makeThumb } from "@/lib/enhance-engine"
 import {
   buildEditComment,
@@ -29,7 +29,7 @@ import {
   type RegionPayload,
 } from "@/lib/render-regions"
 import { runGalleryQueue, saveSourceFile } from "@/lib/tool-jobs"
-import { useAttachments } from "@/lib/use-attachments"
+import { useAttachments, type AttachedRender, type AttachmentDetachReason } from "@/lib/use-attachments"
 import { useBatchSelection } from "@/lib/use-batch-selection"
 import { usePresence } from "@/lib/use-presence"
 import { fileBaseName, plural } from "@/lib/utils"
@@ -63,6 +63,16 @@ const LABELS: ToolComposerLabels = {
   inputPlaceholder: "Комментарий к обработке…",
   submitLabel: "Улучшить · $0,03",
   batchNoun: ["рендер", "рендера", "рендеров"],
+}
+
+/** Серверная запись может приехать на другое устройство чуть раньше блоба. */
+async function getDraftSource(id: string): Promise<Blob | null> {
+  for (const delay of [0, 400, 1200, 2500, 5000]) {
+    if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay))
+    const blob = await getBlob(sourceKey(id))
+    if (blob) return blob
+  }
+  return null
 }
 
 /** Хвост подписи карточки для пакетной обработки: что именно применили. */
@@ -132,7 +142,19 @@ export default function EnhancePage() {
     })
   }, [])
 
-  const intake = useAttachments({ maxFiles: MAX_BATCH, onDetach: dropRegions })
+  const detachDrafts = useCallback(
+    (items: AttachedRender[], reason: AttachmentDetachReason) => {
+      dropRegions(items.map((item) => item.previewUrl))
+      if (reason !== "discard") return
+      const current = useEnhanceStore.getState().enhancements
+      for (const item of items) {
+        if (current.some((record) => record.id === item.id && record.status === "draft")) remove(item.id)
+      }
+    },
+    [dropRegions, remove]
+  )
+  const intake = useAttachments({ maxFiles: MAX_BATCH, onDetach: detachDrafts })
+  const { restoreAttachments } = intake
   const [settingsOpen, setSettingsOpen] = useState(false)
   // «Редактировать все» открывает настройки сами — там и есть все доступные действия.
   const batch = useBatchSelection(intake, {
@@ -157,11 +179,99 @@ export default function EnhancePage() {
   }
   const [context, setContext] = useState<EnhanceContext>("auto")
 
-  const visible = activeProject ? enhancements.filter((item) => item.projectId === activeProject.id) : []
+  const visible = activeProject
+    ? enhancements.filter((item) => item.projectId === activeProject.id && item.status !== "draft")
+    : []
   const hasAttachments = attachments.length > 0
   const showComposer = hasAttachments || visible.length > 0
   const composer = usePresence(showComposer)
   const tray = usePresence(hasAttachments)
+
+  /* Новое вложение сразу становится черновиком: исходник и миниатюра уходят
+     в IndexedDB + сервер, метаданные — в общий стор + Postgres. Поэтому оно
+     переживает refresh ещё до нажатия «Улучшить». */
+  const savingDrafts = useRef(new Map<string, ReturnType<typeof saveSourceFile>>())
+  useEffect(() => {
+    if (!activeProject) {
+      if (attachments.length > 0) ensureActiveProject()
+      return
+    }
+    for (const attachment of attachments) {
+      const existing = enhancements.find((item) => item.id === attachment.id)
+      if (!existing) {
+        add({
+          id: attachment.id,
+          projectId: activeProject.id,
+          status: "draft",
+          context: "auto",
+          note: "",
+          sourceName: attachment.file.name,
+          sourceWidth: attachment.width,
+          sourceHeight: attachment.height,
+          sourceReady: false,
+          createdAt: new Date().toISOString(),
+        })
+      }
+      if ((existing && (existing.status !== "draft" || existing.sourceReady)) || savingDrafts.current.has(attachment.id)) {
+        continue
+      }
+
+      const saving = saveSourceFile(attachment.file, { id: attachment.id, durable: true })
+      savingDrafts.current.set(attachment.id, saving)
+      void saving
+        .then(() => {
+          const current = useEnhanceStore.getState().enhancements.find((item) => item.id === attachment.id)
+          if (current?.status === "draft") update(attachment.id, { sourceReady: true })
+          else if (!current) void deleteBlobs(keysOf(attachment.id))
+        })
+        .catch(() => {
+          window.alert(`«${attachment.file.name}» сохранён в браузере, но сервер пока не подтвердил загрузку. Повторим автоматически после обновления.`)
+        })
+        .finally(() => savingDrafts.current.delete(attachment.id))
+    }
+  }, [activeProject, add, attachments, enhancements, update])
+
+  /* После гидрации стора достаём исходники черновиков из локального кэша,
+     а на другом устройстве — из приватного Vercel Blob. */
+  const restoringDrafts = useRef<string | null>(null)
+  const draftsToRestore = useMemo(() => {
+    if (!activeProject) return []
+    const attachedIds = new Set(attachments.map((attachment) => attachment.id))
+    return enhancements
+      .filter(
+        (item) => item.projectId === activeProject.id && item.status === "draft" && !attachedIds.has(item.id)
+      )
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      .slice(0, Math.max(0, MAX_BATCH - attachments.length))
+  }, [activeProject, attachments, enhancements])
+  const restoreSignature = draftsToRestore.map((draft) => draft.id).join(",")
+  const draftsToRestoreRef = useRef(draftsToRestore)
+  draftsToRestoreRef.current = draftsToRestore
+  useEffect(() => {
+    if (!activeProject || !restoreSignature || restoringDrafts.current === restoreSignature) return
+    restoringDrafts.current = restoreSignature
+    let cancelled = false
+    void Promise.all(
+      draftsToRestoreRef.current.map(async (draft) => {
+        const blob = await getDraftSource(draft.id)
+        if (!blob) return null
+        const file = new File([blob], draft.sourceName, {
+          type: blob.type || "image/jpeg",
+          lastModified: Date.parse(draft.createdAt) || Date.now(),
+        })
+        return { id: draft.id, file, width: draft.sourceWidth, height: draft.sourceHeight }
+      })
+    )
+      .then((items) => {
+        if (!cancelled) restoreAttachments(items.filter((item): item is NonNullable<typeof item> => Boolean(item)))
+      })
+      .finally(() => {
+        if (restoringDrafts.current === restoreSignature) restoringDrafts.current = null
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [activeProject, restoreAttachments, restoreSignature])
 
   /* Точечная правка живёт только у ОДНОГО рендера на сцене: при наборе из
      нескольких холст заморожен — точечные правки к пачке неприменимы. */
@@ -228,7 +338,7 @@ export default function EnhancePage() {
 
   const startBatch = useCallback(
     async (
-      files: File[],
+      items: AttachedRender[],
       batchNote: string,
       batchContext: EnhanceContext,
       batchPopulate: boolean,
@@ -237,9 +347,17 @@ export default function EnhancePage() {
     ) => {
       const project = ensureActiveProject()
       const metas: Enhancement[] = []
-      for (const file of files) {
+      for (const item of items) {
+        const file = item.file
         try {
-          const { id, width, height } = await saveSourceFile(file)
+          const draft = useEnhanceStore.getState().enhancements.find((record) => record.id === item.id)
+          const pending = savingDrafts.current.get(item.id)
+          const saved = pending
+            ? await pending
+            : draft?.sourceReady
+              ? { id: item.id, width: item.width, height: item.height }
+              : await saveSourceFile(file, { id: item.id, durable: true })
+          const { id, width, height } = saved
           metas.push({
             id,
             projectId: project.id,
@@ -252,15 +370,24 @@ export default function EnhancePage() {
             sourceName: file.name,
             sourceWidth: width,
             sourceHeight: height,
+            sourceReady: true,
             createdAt: new Date().toISOString(),
           })
         } catch {
           window.alert(`«${file.name}» не удалось сохранить в хранилище браузера.`)
         }
       }
-      await runGalleryQueue(metas, add, runEnhance)
+      await runGalleryQueue(
+        metas,
+        (meta) => {
+          const exists = useEnhanceStore.getState().enhancements.some((item) => item.id === meta.id)
+          if (exists) update(meta.id, meta)
+          else add(meta)
+        },
+        runEnhance
+      )
     },
-    [add, runEnhance]
+    [add, runEnhance, update]
   )
 
   const submit = () => {
@@ -281,10 +408,10 @@ export default function EnhancePage() {
     const regionsPayload = regionEditingActive && currentRegions.length > 0 ? buildRegionsPayload(currentRegions) : undefined
     const noteToSend = regionEditingActive ? built.comment : note.trim()
     const batchTools = tools
-    const { files } = batch.takeWorkingSet()
+    const { items } = batch.takeWorkingSet()
     setSettingsOpen(false)
     setNote("")
-    void startBatch(files, noteToSend, context, populate, batchTools, regionsPayload)
+    void startBatch(items, noteToSend, context, populate, batchTools, regionsPayload)
   }
 
   const retry = (enhancement: Enhancement) => {

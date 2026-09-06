@@ -3,13 +3,25 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type DragEvent, type RefObject } from "react"
 
 import { ENHANCE_ACCEPT, MAX_BATCH, MAX_FILE_BYTES, isAcceptedRender, readImageSize } from "@/lib/enhance-engine"
+import { createId } from "@/lib/utils"
 
 /** Приложенный файл до отправки: сам файл + размеры + превью. */
 export interface AttachedRender {
+  /** Стабильный id черновика: связывает запись, исходник и превью между перезагрузками. */
+  id: string
   file: File
   width: number
   height: number
   previewUrl: string
+}
+
+export type AttachmentDetachReason = "discard" | "consume"
+
+export interface RestoredAttachment {
+  id: string
+  file: File
+  width: number
+  height: number
 }
 
 export interface UseAttachmentsOptions {
@@ -21,7 +33,7 @@ export interface UseAttachmentsOptions {
    * Файлы уходят из пачки (убрали один, очистили, отправили в обработку) —
    * страница подчищает то, что хранила по previewUrl (области правки и т.п.).
    */
-  onDetach?: (urls: string[]) => void
+  onDetach?: (items: AttachedRender[], reason: AttachmentDetachReason) => void
 }
 
 /** Приём файлов инструмента — то, что нужно ToolShell и композеру. */
@@ -33,7 +45,9 @@ export interface AttachmentIntake {
   removeAttachment: (index: number) => void
   clearAttachments: () => void
   /** Убрать из пачки перечисленные (по previewUrl) — так уходит рабочий набор при отправке. */
-  detach: (urls: Iterable<string>) => void
+  detach: (urls: Iterable<string>, reason?: AttachmentDetachReason) => void
+  /** Восстановить уже проверенные файлы из IndexedDB/серверного хранилища. */
+  restoreAttachments: (items: RestoredAttachment[]) => void
   /** Открыть системный диалог выбора файлов. */
   pickFiles: () => void
   /** Скрытый <input type="file"> — его рендерит ToolShell. */
@@ -73,14 +87,15 @@ export function useAttachments({ maxFiles = MAX_BATCH, replace = false, onDetach
   const onDetachRef = useRef(onDetach)
   onDetachRef.current = onDetach
 
-  const detach = useCallback((urls: Iterable<string>) => {
+  const detach = useCallback((urls: Iterable<string>, reason: AttachmentDetachReason = "discard") => {
     const gone = new Set(urls)
     if (gone.size === 0) return
+    const detached = attachmentsRef.current.filter((item) => gone.has(item.previewUrl))
     setAttachments((current) => {
       current.filter((item) => gone.has(item.previewUrl)).forEach((item) => URL.revokeObjectURL(item.previewUrl))
       return current.filter((item) => !gone.has(item.previewUrl))
     })
-    onDetachRef.current?.([...gone])
+    onDetachRef.current?.(detached, reason)
   }, [])
 
   const removeAttachment = useCallback(
@@ -109,7 +124,7 @@ export function useAttachments({ maxFiles = MAX_BATCH, replace = false, onDetach
         }
         try {
           const { width, height } = await readImageSize(file)
-          accepted.push({ file, width, height, previewUrl: URL.createObjectURL(file) })
+          accepted.push({ id: createId(), file, width, height, previewUrl: URL.createObjectURL(file) })
         } catch {
           rejected.push(file.name)
         }
@@ -144,6 +159,22 @@ export function useAttachments({ maxFiles = MAX_BATCH, replace = false, onDetach
       if (warnings.length > 0) window.alert(warnings.join("\n"))
     },
     [maxFiles, replace, detach]
+  )
+
+  const restoreAttachments = useCallback(
+    (items: RestoredAttachment[]) => {
+      if (items.length === 0) return
+      setAttachments((current) => {
+        const currentIds = new Set(current.map((item) => item.id))
+        const room = Math.max(0, maxFiles - current.length)
+        const restored = items
+          .filter((item) => !currentIds.has(item.id))
+          .slice(0, room)
+          .map((item) => ({ ...item, previewUrl: URL.createObjectURL(item.file) }))
+        return [...current, ...restored]
+      })
+    },
+    [maxFiles]
   )
 
   const pickFiles = useCallback(() => inputRef.current?.click(), [])
@@ -196,6 +227,7 @@ export function useAttachments({ maxFiles = MAX_BATCH, replace = false, onDetach
     removeAttachment,
     clearAttachments,
     detach,
+    restoreAttachments,
     pickFiles,
     inputRef,
     onInputChange,

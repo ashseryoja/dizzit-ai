@@ -62,7 +62,8 @@ export const useEnhanceStore = create<EnhanceState>()(
       partialize: (state) => ({ enhancements: state.enhancements }),
       onRehydrateStorage: () => (state) => {
         state?.setHydrated()
-        // Обработка, застрявшая в «processing» (вкладку закрыли на полпути),
+        // Черновики остаются черновиками. Обработка, застрявшая в «processing»
+        // (вкладку закрыли на полпути),
         // после перезагрузки крутилась бы вечно. Исходник цел в IndexedDB,
         // поэтому это ошибка с кнопкой «Повторить», а не тупик.
         // localStorage синхронный: этот колбэк срабатывает ещё внутри create(),

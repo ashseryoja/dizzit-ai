@@ -140,6 +140,17 @@ export async function putBlob(key: string, blob: Blob): Promise<void> {
   })
 }
 
+/**
+ * Как `putBlob`, но при настроенном сервере ждёт подтверждения загрузки.
+ * Нужен для черновиков: запись не помечается готовой, пока исходник нельзя
+ * открыть на другом устройстве. Без сервера подтверждением остаётся IndexedDB.
+ */
+export async function putBlobDurably(key: string, blob: Blob): Promise<void> {
+  await putLocalBlob(key, blob)
+  const status = await serverStatus()
+  if (status.persistence) await uploadAsset(key, blob)
+}
+
 export async function getBlob(key: string): Promise<Blob | null> {
   const local = await getLocalBlob(key)
   if (local) return local

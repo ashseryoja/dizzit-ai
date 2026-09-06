@@ -58,7 +58,7 @@ export interface BatchSelection {
   removeAttachment: (index: number) => void
   clearAttachments: () => void
   /** Забрать рабочий набор в обработку: файлы уходят из пачки, выбор и режимы сбрасываются. */
-  takeWorkingSet: () => { files: File[]; urls: string[] }
+  takeWorkingSet: () => { items: AttachedRender[]; files: File[]; urls: string[] }
   trayProps: TrayProps
 }
 
@@ -197,9 +197,9 @@ export function useBatchSelection(intake: AttachmentIntake, { noun, onEditAll, o
   const takeWorkingSet = () => {
     const urls = workingSet.map((item) => item.previewUrl)
     const files = workingSet.map((item) => item.file)
-    detach(urls)
+    detach(urls, "consume")
     reset()
-    return { files, urls }
+    return { items: workingSet, files, urls }
   }
 
   return {
