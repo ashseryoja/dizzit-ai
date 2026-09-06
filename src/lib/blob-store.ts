@@ -1,5 +1,7 @@
 "use client"
 
+import { fetchAsset, removeAssets, serverStatus, uploadAsset } from "@/lib/server-sync"
+
 /**
  * Хранилище изображений инструментов сервиса — база общая для всех.
  *
@@ -7,6 +9,10 @@
  * разделение такое: метаданные обработок — в zustand+persist (localStorage,
  * попадают в резервную копию настроек), а блобы — здесь, в IndexedDB.
  * Ключ блоба — `${enhancementId}:{роль}`, роли перечислены ниже.
+ *
+ * Когда настроено серверное хранение (см. lib/server-sync), IndexedDB —
+ * кэш: `putBlob` дублирует объект на сервер под тем же ключом, `getBlob` при
+ * промахе тянет его оттуда, `deleteBlobs` удаляет и там.
  *
  * Резервная копия JSON блобы НЕ включает (см. README). Осиротевшие блобы —
  * например после «Удалить все данные» — подчищает gcBlobs() на входе
@@ -111,12 +117,13 @@ function request<T>(req: IDBRequest<T>): Promise<T> {
   })
 }
 
-export async function putBlob(key: string, blob: Blob): Promise<void> {
+/** Только IndexedDB, без сервера: для выгрузки старой галереи и кэша. */
+export async function putLocalBlob(key: string, blob: Blob): Promise<void> {
   const database = await db()
   await request(database.transaction(STORE, "readwrite").objectStore(STORE).put(blob, key))
 }
 
-export async function getBlob(key: string): Promise<Blob | null> {
+export async function getLocalBlob(key: string): Promise<Blob | null> {
   try {
     const database = await db()
     const value = await request(database.transaction(STORE, "readonly").objectStore(STORE).get(key))
@@ -124,6 +131,30 @@ export async function getBlob(key: string): Promise<Blob | null> {
   } catch {
     return null
   }
+}
+
+export async function putBlob(key: string, blob: Blob): Promise<void> {
+  await putLocalBlob(key, blob)
+  void serverStatus().then((status) => {
+    if (status.persistence) void uploadAsset(key, blob)
+  })
+}
+
+export async function getBlob(key: string): Promise<Blob | null> {
+  const local = await getLocalBlob(key)
+  if (local) return local
+  // Промах кэша: объект мог прийти с другого устройства — тянем с сервера.
+  const status = await serverStatus()
+  if (!status.persistence) return null
+  const remote = await fetchAsset(key)
+  if (remote) {
+    try {
+      await putLocalBlob(key, remote)
+    } catch {
+      // Кэш не обязателен — отдаём как есть.
+    }
+  }
+  return remote
 }
 
 export async function deleteBlobs(keys: string[]): Promise<void> {
@@ -135,6 +166,9 @@ export async function deleteBlobs(keys: string[]): Promise<void> {
   } catch {
     // Ничего: блоб без метаданных невидим, его доберёт gcBlobs.
   }
+  void serverStatus().then((status) => {
+    if (status.persistence) void removeAssets(keys)
+  })
 }
 
 /**

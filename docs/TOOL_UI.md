@@ -36,6 +36,7 @@
 | Правила приёма файлов: форматы, лимит, предупреждения, перенос, вставка из буфера, замена вместо добавления | `src/lib/use-attachments.ts` | `useAttachments`; константы форматов и лимитов — `src/lib/enhance-engine.ts` |
 | Рабочий набор: режим «Выбрать», «Выбрать все», стрелки и Escape, «Редактировать все», что уходит в обработку | `src/lib/use-batch-selection.ts` | `useBatchSelection` |
 | Сохранение исходника в IndexedDB, очередь пачки (карточки сразу, обработка по одной) | `src/lib/tool-jobs.ts` | `saveSourceFile`, `runGalleryQueue` |
+| Где живут записи и картинки: кэш IndexedDB, синхронизация со своим сервером, вход по паролю, подпись «серверное хранение / локальный режим» | `src/lib/server-sync.ts` — клиент (очередь, слияние, `useServerStatus`); `src/lib/blob-store.ts` — кэш блобов; `src/server/{auth,records,storage,db}.ts` + `src/app/api/{records,assets,session,auth}` — сервер; `src/middleware.ts` — дверь | `attachServerSync` в каждом сторе; `serverStatus`, `useServerStatus` |
 | Куда уходит генерация картинок: провайдер, пропорции, уменьшение референса, предпросмотр без ключа, подпись «предпросмотр без ключа» на карточке | `src/lib/image-generation.ts` — клиент; `src/app/api/images/route.ts` + `src/server/providers.ts` (выбор), `apimodels.ts`, `laozhang.ts` — сервер (ключи) | `requestImage`, `withImageProvider`, `prepareReference`, `previewCaption`; промпты — в движке инструмента (`build*Prompt`) |
 | В какой проект класть новые записи | `src/stores/project-store.ts` | `ensureActiveProject`, `useActiveProject` |
 | Внешний вид всего перечисленного (рецепты CSS) | `src/styles/ds/surfaces.css` | `.stage-*`, `.batch-tile`, `.tray-*`, `.dropzone`, `.popover`, `.presence-*`, `.composer-notice`, `.rg-tag`, `.style-dock` |
@@ -140,6 +141,9 @@ useBatchSelection ─► batch ──► Stage / BatchGrid / RenderTray / Render
   провайдеру картинок для всех движков; без ключа — локальный предпросмотр,
   помеченный `engine: "preview"`. `previewCaption(item)` — хвост подписи
   карточки для такого результата (`ToolCard`, `ViewSetCard`).
+- `attachServerSync(store, options)` (`src/lib/server-sync.ts`) — одна строка в
+  конце файла стора: слияние с сервером при гидрации и отправка изменений;
+  `useServerStatus()` — статус для компонентов (сайдбар, настройки).
 - `mapWithConcurrency(items, limit, run)` (`src/lib/utils.ts`) — несколько
   запросов к провайдеру разом с потолком (кадры сета в «Ракурсах»).
 

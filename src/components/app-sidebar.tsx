@@ -19,6 +19,7 @@ import { PhotoToCubeGlyph, RenderEditorGlyph, RestyleGlyph, ViewsGlyph } from "@
 import { Logo } from "@/components/logo"
 import { usePresence } from "@/lib/use-presence"
 import { cn } from "@/lib/utils"
+import { useServerStatus } from "@/lib/server-sync"
 import { useCompanyStore } from "@/stores/company-store"
 import { useEnhanceStore } from "@/stores/enhance-store"
 import { useMaterialStore } from "@/stores/material-store"
@@ -323,6 +324,7 @@ function AccountTrigger({
   onClick: () => void
 }) {
   const companyName = useCompanyStore((state) => state.name)
+  const server = useServerStatus()
   const title = companyName.trim() || "Ваш аккаунт"
   const initial = (companyName.trim()[0] ?? "С").toUpperCase()
 
@@ -348,7 +350,7 @@ function AccountTrigger({
           {title}
         </span>
         <span className="truncate text-[11px] leading-tight" style={{ color: "var(--fg-5)" }}>
-          локальный режим
+          {server?.persistence ? "серверное хранение" : "локальный режим"}
         </span>
       </span>
       <ChevronDown

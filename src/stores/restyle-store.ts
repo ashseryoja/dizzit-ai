@@ -4,6 +4,7 @@ import { create } from "zustand"
 import { persist } from "zustand/middleware"
 
 import { deleteBlobs, keysOf } from "@/lib/blob-store"
+import { attachServerSync } from "@/lib/server-sync"
 import type { GenerationStatus, Restyle } from "@/types"
 
 /**
@@ -77,3 +78,11 @@ export const useRestyleStore = create<RestyleState>()(
     }
   )
 )
+
+attachServerSync(useRestyleStore, {
+  collection: "restyles",
+  select: (state) => state.restyles,
+  apply: (restyles) => useRestyleStore.setState({ restyles }),
+  hydrated: (state) => state.hydrated,
+  onRemovedLocally: (item) => void deleteBlobs(keysOf(item.id)),
+})

@@ -4,6 +4,7 @@ import { create } from "zustand"
 import { persist } from "zustand/middleware"
 
 import { deleteBlobs, keysOf } from "@/lib/blob-store"
+import { attachServerSync } from "@/lib/server-sync"
 import type { GenerationStatus, Material } from "@/types"
 
 /**
@@ -79,3 +80,11 @@ export const useMaterialStore = create<MaterialState>()(
     }
   )
 )
+
+attachServerSync(useMaterialStore, {
+  collection: "materials",
+  select: (state) => state.materials,
+  apply: (materials) => useMaterialStore.setState({ materials }),
+  hydrated: (state) => state.hydrated,
+  onRemovedLocally: (item) => void deleteBlobs(keysOf(item.id)),
+})

@@ -4,6 +4,7 @@ import { create } from "zustand"
 import { persist } from "zustand/middleware"
 
 import { deleteBlobs, keysOf } from "@/lib/blob-store"
+import { attachServerSync } from "@/lib/server-sync"
 import { viewKeysOf } from "@/lib/view-engine"
 import type { GenerationStatus, ViewSet } from "@/types"
 
@@ -83,3 +84,13 @@ export const useViewsStore = create<ViewsState>()(
     }
   )
 )
+
+// У сета кадров свои ключи блобов — по паре на кадр, см. blobKeys.
+attachServerSync(useViewsStore, {
+  collection: "views",
+  select: (state) => state.sets,
+  apply: (sets) => useViewsStore.setState({ sets }),
+  hydrated: (state) => state.hydrated,
+  assetKeys: blobKeys,
+  onRemovedLocally: (item) => void deleteBlobs(blobKeys(item)),
+})

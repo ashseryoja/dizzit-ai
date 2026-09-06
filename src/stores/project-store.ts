@@ -3,6 +3,7 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
 
+import { attachServerSync } from "@/lib/server-sync"
 import { createId } from "@/lib/utils"
 import type { Project } from "@/types"
 
@@ -117,3 +118,16 @@ export function ensureActiveProject(): Project {
   const { projects, activeProjectId, createProject } = useProjectStore.getState()
   return projects.find((project) => project.id === activeProjectId) ?? createProject()
 }
+
+// Сервер (если настроен): проекты сливаются первыми — записи инструментов
+// фильтруются по активному проекту, и он должен существовать на любом устройстве.
+attachServerSync(useProjectStore, {
+  collection: "projects",
+  select: (state) => state.projects,
+  apply: (projects) => {
+    const { activeProjectId } = useProjectStore.getState()
+    const active = projects.some((project) => project.id === activeProjectId) ? activeProjectId : projects[0]?.id ?? null
+    useProjectStore.setState({ projects, activeProjectId: active })
+  },
+  hydrated: (state) => state.hydrated,
+})

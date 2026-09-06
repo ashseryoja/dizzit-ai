@@ -1,7 +1,7 @@
 "use client"
 
 import { useRef, type ReactNode } from "react"
-import { Download, Monitor, Moon, Sun, Trash2, Upload, type LucideIcon } from "lucide-react"
+import { Cloud, Download, LogOut, Monitor, Moon, Sun, Trash2, Upload, type LucideIcon } from "lucide-react"
 
 import { PageHeader } from "@/components/page-header"
 import { PageLoader } from "@/components/page-loader"
@@ -9,6 +9,7 @@ import { Field } from "@/components/ui/field"
 import { Panel, SectionTitle } from "@/components/ui/panel"
 import { Switch } from "@/components/ui/switch"
 import { clearAppData, downloadBackup, restoreBackup, storageBytes } from "@/lib/backup"
+import { useServerStatus } from "@/lib/server-sync"
 import { useMounted } from "@/lib/use-mounted"
 import { cn, formatNumber, plural } from "@/lib/utils"
 import { useCompanyStore } from "@/stores/company-store"
@@ -26,6 +27,12 @@ export default function SettingsPage() {
   const company = useCompanyStore()
   const projectCount = useProjectStore((state) => state.projects.length)
   const settings = useSettingsStore()
+  const server = useServerStatus()
+
+  const signOut = async () => {
+    await fetch("/api/auth/logout", { method: "POST" })
+    window.location.href = "/login"
+  }
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -167,6 +174,37 @@ export default function SettingsPage() {
         </Panel>
 
         <Panel>
+          <SectionTitle>Хранение</SectionTitle>
+          <div className="flex flex-col gap-4">
+            <SettingRow
+              title={server?.persistence ? "Проекты и результаты хранятся на сервере" : "Проекты и результаты хранятся в этом браузере"}
+              description={storageDescription(server)}
+              control={
+                <span className="flex items-center gap-1.5 text-[12px]" style={{ color: "var(--fg-4)" }}>
+                  <Cloud className="h-4 w-4" strokeWidth={1.7} />
+                  {server?.persistence ? "синхронизация включена" : "локальный режим"}
+                </span>
+              }
+            />
+            {server?.signedIn ? (
+              <>
+                <hr className="ds-divider" />
+                <SettingRow
+                  title="Выйти из рабочего пространства"
+                  description="Сессия на этом устройстве закроется; данные на сервере останутся."
+                  control={
+                    <button type="button" onClick={() => void signOut()} className="btn-secondary">
+                      <LogOut className="h-4 w-4" strokeWidth={1.7} />
+                      Выйти
+                    </button>
+                  }
+                />
+              </>
+            ) : null}
+          </div>
+        </Panel>
+
+        <Panel>
           <SectionTitle>Данные</SectionTitle>
           <div className="flex flex-col gap-4">
             <SettingRow
@@ -217,7 +255,8 @@ export default function SettingsPage() {
           </div>
           <p className="ds-caption mt-5">
             Сейчас в браузере: {projectCount} {plural(projectCount, ["проект", "проекта", "проектов"])} ·
-            данные занимают {formatBytes(storageBytes())}. На сервер ничего не отправляется.
+            данные занимают {formatBytes(storageBytes())}.{" "}
+            {server?.persistence ? "Копия каждой записи и картинки уходит на сервер." : "На сервер ничего не отправляется."}
           </p>
         </Panel>
       </div>
@@ -265,6 +304,19 @@ function SettingRow({
       <div className={cn("flex shrink-0 items-center gap-2", controlClassName)}>{control}</div>
     </div>
   )
+}
+
+/** Почему данные там, где они есть: чего не хватает для серверного хранения. */
+function storageDescription(server: ReturnType<typeof useServerStatus>): string {
+  if (!server) return "Проверяем подключение к серверу…"
+  if (server.persistence) {
+    return `Вход выполнен, база подключена, картинки — в ${server.storage === "r2" ? "Cloudflare R2" : "хранилище на диске сервера"}. Галерея одна на всех устройствах.`
+  }
+  if (!server.authConfigured) return "На сервере не задан пароль входа (AUTH_SECRET и APP_ACCESS_PASSWORD) — серверное хранение выключено."
+  if (!server.signedIn) return "Сессия не активна — войдите заново, чтобы синхронизация продолжилась."
+  if (!server.database) return "Не задана база данных (DATABASE_URL)."
+  if (!server.storage) return "Не настроено хранилище картинок (R2_*)."
+  return "Синхронизация недоступна."
 }
 
 function formatBytes(bytes: number): string {

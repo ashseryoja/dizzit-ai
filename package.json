@@ -13,12 +13,15 @@
     "lint": "next lint && node scripts/check-tool-ui.mjs",
     "check:ui": "node scripts/check-tool-ui.mjs",
     "type-check": "tsc --noEmit",
-    "fake:images": "node scripts/fake-image-provider.mjs"
+    "fake:images": "node scripts/fake-image-provider.mjs",
+    "db:migrate": "node scripts/db-migrate.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1127.0",
     "clsx": "^2.1.1",
     "lucide-react": "^0.454.0",
     "next": "^15.5.7",
+    "postgres": "^3.4.9",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "server-only": "^0.0.1",

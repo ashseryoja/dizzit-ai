@@ -4,6 +4,7 @@ import { create } from "zustand"
 import { persist } from "zustand/middleware"
 
 import { deleteBlobs, keysOf } from "@/lib/blob-store"
+import { attachServerSync } from "@/lib/server-sync"
 import type { Enhancement, GenerationStatus } from "@/types"
 
 /**
@@ -84,3 +85,12 @@ export const useEnhanceStore = create<EnhanceState>()(
     }
   )
 )
+
+// Сервер (если настроен): слияние при гидрации и отправка каждого изменения.
+attachServerSync(useEnhanceStore, {
+  collection: "enhancements",
+  select: (state) => state.enhancements,
+  apply: (enhancements) => useEnhanceStore.setState({ enhancements }),
+  hydrated: (state) => state.hydrated,
+  onRemovedLocally: (item) => void deleteBlobs(keysOf(item.id)),
+})
