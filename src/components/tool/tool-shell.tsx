@@ -181,6 +181,6 @@ export function ToolAside({
  * широкие карточки одна под другой (сеты кадров: исходник слева, кадры справа).
  */
 export function ToolGallery({ children, layout = "columns" }: { children: ReactNode; layout?: "columns" | "stack" }) {
-  if (layout === "stack") return <div className="flex flex-col gap-4">{children}</div>
+  if (layout === "stack") return <div className="flex flex-col gap-8">{children}</div>
   return <div className="columns-1 gap-4 sm:columns-2 xl:columns-3">{children}</div>
 }

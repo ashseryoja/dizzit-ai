@@ -378,26 +378,50 @@ select.field option { background: var(--bg-overlay); color: var(--fg-1); }
 }
 .seg-item.aspect-choice.is-active .aspect-hint { color: var(--fg-3); }
 
-/* Карточка сета кадров (ViewSetCard): общий план слева, кадры справа. На
-   узких экранах — столбиком. Левая колонка липнет к верху, пока правая
-   прокручивается. */
+/* Карточка сета кадров (ViewSetCard): без рамки и подложки — в цвет страницы.
+   Слева общий план узкой колонкой, справа кадры компактными плитками с
+   отступами и скруглением; плитки не растут шире потолка, лишнее место
+   остаётся пустым. На узких экранах — столбиком. */
 .view-set {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
 }
 @media (min-width: 768px) {
-  .view-set { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); }
-  .view-set-source { position: sticky; top: 16px; align-self: start; }
+  .view-set { grid-template-columns: 260px minmax(0, 1fr); gap: 20px; }
+  .view-set-source { position: sticky; top: 16px; }
 }
 .view-set-frames {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 2px;
-  background: var(--line);
+  grid-template-columns: repeat(auto-fill, minmax(120px, 156px));
+  gap: 8px;
 }
-@media (min-width: 1280px) {
-  .view-set-frames.is-wide { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .view-set-frames.is-tall { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.view-set-frames.is-wide { grid-template-columns: repeat(auto-fill, minmax(150px, 196px)); }
+.view-set-tile {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border-radius: var(--r-md);
+  background: var(--bg-raised);
+}
+.view-set-chip {
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  max-width: calc(100% - 12px);
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 6px;
+  font-size: 10.5px;
+  line-height: 20px;
+  color: rgba(255, 255, 255, 0.88);
+  background: rgba(16, 16, 18, 0.62);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Опасный вариант второстепенной кнопки: очистка данных и подобное. */

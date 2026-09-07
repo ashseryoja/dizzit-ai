@@ -79,10 +79,10 @@ export function ViewSetCard({
       .join(" · ") + previewCaption(item)
 
   return (
-    <figure className="card rise-in relative overflow-hidden" style={{ borderRadius: "var(--r-lg)" }}>
+    <figure className="rise-in relative">
       <div className="view-set">
         {/* Общий план: что приложили, с подписью и действиями. */}
-        <div className="view-set-source flex flex-col gap-3 p-3 md:border-r" style={{ borderColor: "var(--line)" }}>
+        <div className="view-set-source flex flex-col gap-2.5">
           <div
             className="relative w-full overflow-hidden"
             style={{
@@ -103,12 +103,10 @@ export function ViewSetCard({
             ) : (
               <StoredAssetNotice status={sourceAsset.status} onRetry={sourceAsset.retry} compact className="absolute inset-0" />
             )}
-            <span className="chip absolute left-2 top-2" style={OVERLAY_CHIP}>
-              общий план
-            </span>
+            <span className="view-set-chip">общий план</span>
           </div>
 
-          <figcaption className="flex min-w-0 flex-col gap-1 px-1">
+          <figcaption className="flex min-w-0 flex-col gap-1 px-0.5">
             <span className="truncate text-[13px]" style={{ color: "var(--fg-1)" }} title={item.sourceName}>
               {item.sourceName}
             </span>
@@ -121,7 +119,7 @@ export function ViewSetCard({
           </figcaption>
 
           {status === "error" ? (
-            <div className="flex flex-col gap-2.5 px-1">
+            <div className="flex flex-col gap-2.5 px-0.5">
               <p className="text-[12.5px] leading-snug" style={{ color: "var(--danger)" }}>
                 {item.error ?? "Не получилось."}
               </p>
@@ -136,17 +134,17 @@ export function ViewSetCard({
               </div>
             </div>
           ) : status === "done" ? (
-            <div className="flex items-center gap-2 px-1">
-              <button type="button" onClick={() => void downloadAll()} className="btn-ghost h-9 gap-2 px-3 text-[13px]">
+            <div className="-ml-1 flex items-center gap-1">
+              <button type="button" onClick={() => void downloadAll()} className="btn-ghost h-8 gap-2 px-2.5 text-[12.5px]">
                 <Download className="h-3.5 w-3.5" strokeWidth={1.8} />
                 {frames.length > 1 ? "Скачать все" : "Скачать"}
               </button>
-              <button type="button" onClick={onDelete} aria-label="Удалить сет" className="btn-icon btn-danger h-9 w-9">
-                <Trash2 className="h-4 w-4" strokeWidth={1.7} />
+              <button type="button" onClick={onDelete} aria-label="Удалить сет" className="btn-icon btn-danger h-8 w-8">
+                <Trash2 className="h-3.5 w-3.5" strokeWidth={1.7} />
               </button>
             </div>
           ) : (
-            <div className="flex items-center gap-2 px-1 text-[12.5px]" style={{ color: "var(--fg-3)" }} aria-live="polite">
+            <div className="flex items-center gap-2 px-0.5 text-[12.5px]" style={{ color: "var(--fg-3)" }} aria-live="polite">
               <ThinkingGlyph size={16} className="[color:var(--fg-4)]" />
               {ready.size === 0 && !item.planned
                 ? "разбираем сцену и подбираем кадры…"
@@ -165,12 +163,6 @@ export function ViewSetCard({
     </figure>
   )
 }
-
-const OVERLAY_CHIP = {
-  background: "rgba(16,16,18,0.7)",
-  color: "rgba(255,255,255,0.85)",
-  borderColor: "rgba(255,255,255,0.16)",
-} as const
 
 /** Плитка одного кадра: миниатюра из IndexedDB, подпись, скачивание по ховеру. */
 function ViewTile({
@@ -200,7 +192,7 @@ function ViewTile({
       : "4 / 5"
 
   return (
-    <div className="group/tile relative w-full overflow-hidden" style={{ aspectRatio: aspect, background: "var(--bg-raised)" }}>
+    <div className="group/tile view-set-tile" style={{ aspectRatio: aspect }}>
       {shown ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -225,8 +217,8 @@ function ViewTile({
         />
       ) : pending ? (
         <div className="fade-in absolute inset-0 flex flex-col items-center justify-center gap-2" style={{ background: "rgba(16,16,18,0.45)" }}>
-          <ThinkingGlyph size={20} className="text-white/80" />
-          <span className="text-[11.5px]" style={{ color: "rgba(255,255,255,0.85)" }}>
+          <ThinkingGlyph size={16} className="text-white/80" />
+          <span className="text-[10.5px]" style={{ color: "rgba(255,255,255,0.85)" }}>
             строим кадр…
           </span>
         </div>
@@ -236,8 +228,8 @@ function ViewTile({
         <StoredAssetNotice status={frameAsset.status} onRetry={frameAsset.retry} compact className="absolute bottom-2 left-2 right-2 rounded-[10px]" />
       ) : null}
 
-      <span className="chip absolute left-2 top-2 max-w-[calc(100%-16px)]" style={OVERLAY_CHIP} title={frame.brief}>
-        <span className="truncate">{frame.label}</span>
+      <span className="view-set-chip" title={frame.brief}>
+        {frame.label}
       </span>
 
       {ready && item.status === "done" && frameAsset.url ? (
@@ -246,10 +238,10 @@ function ViewTile({
           onClick={onDownload}
           aria-label={`Скачать кадр «${frame.label}»`}
           title="Скачать кадр"
-          className="absolute bottom-2 right-2 flex h-7 w-7 items-center justify-center rounded-[7px] opacity-0 transition-opacity group-hover/tile:opacity-100 focus-visible:opacity-100"
+          className="absolute bottom-1.5 right-1.5 flex h-6 w-6 items-center justify-center rounded-[6px] opacity-0 transition-opacity group-hover/tile:opacity-100 focus-visible:opacity-100"
           style={{ background: "rgba(16,16,18,0.66)", border: "1px solid rgba(255,255,255,0.18)", color: "rgba(255,255,255,0.92)" }}
         >
-          <Download className="h-3.5 w-3.5" strokeWidth={1.8} />
+          <Download className="h-3 w-3" strokeWidth={1.8} />
         </button>
       ) : null}
     </div>
