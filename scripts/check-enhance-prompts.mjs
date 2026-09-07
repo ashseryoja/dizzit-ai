@@ -19,6 +19,13 @@ const positiveTerms = [
   // Материалы — как выбрал дизайнер: травертин не становится микроцементом.
   "MATERIAL FIDELITY",
   "never swapping it for a smoother, plainer or more common lookalike",
+  // Мелкая структура: число спотов, ножки мебели и просвет под ней, раскладка пола.
+  "STRUCTURE LOCK",
+  "never merge two fixtures into one",
+  "thin legs stay thin and separate",
+  "do not narrow, widen, rotate or re-lay the boards",
+  // Режим «оставить как есть» не приносит выдуманное солнце.
+  "EXISTING LIGHT",
   "volumetric lighting",
   "god rays",
   "cinematic lighting",
@@ -50,6 +57,9 @@ const negativeTerms = [
   "curtains merged into the wall",
   "substituted materials",
   "travertine or limestone turned into microcement",
+  "changed number of spotlights",
+  "merged furniture legs",
+  "changed plank width",
 ]
 
 const missing = [...positiveTerms, ...negativeTerms].filter((term) => !engine.includes(term))
@@ -63,6 +73,9 @@ if (!engine.includes("inventory: meta.sceneInventory") && !engine.includes("job.
 if (!sceneClient.includes('fetch("/api/scene"')) throw new Error("scene-analysis не ходит в /api/scene")
 if (!sceneRoute.includes("analyzeScene(")) throw new Error("/api/scene не вызывает analyzeScene")
 if (!sceneInventory.includes("NOT microcement")) throw new Error("Промпт разбора сцены не требует называть материал-двойник (NOT …)")
+if (!sceneInventory.includes("exact COUNT and layout")) throw new Error("Промпт разбора сцены не требует точного числа светильников")
+if (!sceneInventory.includes("legs or supports")) throw new Error("Промпт разбора сцены не описывает опоры мебели и просвет под ней")
+if (!sceneInventory.includes("board width")) throw new Error("Промпт разбора сцены не фиксирует ширину и направление досок пола")
 if (!engine.includes("hasMaterialsSection(job.inventory)")) throw new Error("enhance-engine не отбрасывает инвентарь без секции MATERIALS")
 for (const section of ["ROOM:", "LIGHT:", "MATERIALS:", "OBJECTS:", "EASILY MISREAD:"]) {
   if (!sceneInventory.includes(section)) throw new Error(`Промпт разбора сцены без секции ${section}`)

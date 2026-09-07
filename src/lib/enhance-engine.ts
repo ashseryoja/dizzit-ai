@@ -128,6 +128,16 @@ const OBJECT_IDENTITY_HINT =
 const MATERIAL_FIDELITY_HINT =
   "MATERIAL FIDELITY: Every surface keeps the exact material of IMAGE 1 (and of the MATERIALS section of the inventory when present): the same stone type, wood species and veneer grain direction, tile format with its joints and grout, fabric type and weave, metal finish, paint or plaster type, and the same base color and value. Photorealism here means rendering the true micro-structure of THAT material at correct scale — travertine's pits and fine linear veining, marble's vein color, oak's grain and pores, bouclé's loops, brushed brass's hairline finish — never swapping it for a smoother, plainer or more common lookalike. Travertine or limestone must not become microcement, concrete or plaster; a seamless floor must not gain joints and a slab or plank floor must not lose them; veneer must not become laminate; marble must not lose its veining; painted walls must not become plaster or stone and vice versa. Light may change how a material looks, never what it is."
 
+/**
+ * Замок на мелкую структуру: именно её генератор ломает чаще всего — сливает
+ * тонкие ножки в монолит, меняет число потолочных спотов, перекладывает доски
+ * пола. На пробе пользователя (коридор) из трёх групп спотов остались две,
+ * появилась выдуманная LED-линия, под консолью пропал просвет, пол сменил
+ * ширину досок и тон. Общего «preserve count» для этого мало.
+ */
+const STRUCTURE_LOCK_HINT =
+  "STRUCTURE LOCK: Light fixtures keep their exact number, grouping, spacing and positions — count the ceiling spots, downlights, pendants and LED lines in IMAGE 1 and reproduce exactly that many in exactly those places; never merge two fixtures into one, drop one, add one, or turn spots into a strip or a strip into spots. Furniture keeps its exact construction: the same number, thickness and shape of legs, supports, shelves and frames, with the same open space beneath and between them — the floor and wall visible under a table, console, bench or sofa in IMAGE 1 stay visible; thin legs stay thin and separate, never fused into a solid block or a shadow mass. Floors keep the same board or slab format: the same plank or tile width, count across the frame, direction, joint layout, grain scale, finish and color — do not narrow, widen, rotate or re-lay the boards and do not shift the floor's tone. Doors, handles, skirtings, frames, mouldings and ceiling recesses keep their exact profile and position."
+
 /** Инвентарь сцены — авторитетное описание кадра, сильнее любых спорных пикселей. */
 function sceneInventoryBlock(inventory: string | undefined): string {
   const text = inventory?.trim()
@@ -181,13 +191,19 @@ const MORNING_SUNLIGHT_KEYWORD = "morning sunlight coming through window"
 
 function naturalLightHint(time: BatchTime): string {
   if (time === "night") return ""
-  const lightingKeywords =
-    time === "keep" || time === "morning"
-      ? `${LIGHTING_KEYWORDS}, ${MORNING_SUNLIGHT_KEYWORD}`
-      : LIGHTING_KEYWORDS
+  if (time === "keep") {
+    // Режим «оставить как есть»: схема света — из исходника. Раньше сюда тоже
+    // попадало «morning sunlight coming through window», и модель заливала
+    // коридор солнцем из дальнего окна, попутно перерисовывая споты на потолке.
+    return [
+      `LIGHTING KEYWORDS: ${LIGHTING_KEYWORDS}.`,
+      "EXISTING LIGHT: Keep the lighting scheme of IMAGE 1 — the same light sources, the same direction, the same balance of daylight and artificial light, the same time-of-day feel and mood. Do not introduce sunlight, sunbeams or a new opening that IMAGE 1 does not show; do not brighten a switched-off fixture or dim a lit one. Make the existing light physically believable instead: correct penumbra and contact shadows, indirect bounce, realistic falloff from each fixture, subtle specular glints on glass, metal and polished wood, gentle highlight roll-off. Keep windows and highlights recoverable; no fake flare overlay, exaggerated god rays, orange wash or random light sources.",
+    ].join("\n")
+  }
+  const lightingKeywords = time === "morning" ? `${LIGHTING_KEYWORDS}, ${MORNING_SUNLIGHT_KEYWORD}` : LIGHTING_KEYWORDS
   return [
     `LIGHTING KEYWORDS: ${lightingKeywords}.`,
-    "NATURAL SUNLIGHT: Use one coherent sun direction from an existing visible opening or a plausible off-camera window/opening. Add restrained volumetric sunbeams only where light can physically enter, soft shadows from windows, correct penumbra and contact shadows, warm direct highlights with cooler bounced skylight fill, and subtle specular sun glints on glass, metal and polished wood. Use gentle photographic highlight bloom and a barely perceptible lens flare when physically justified. Keep windows and highlights recoverable; no fake flare overlay, exaggerated god rays, orange wash or random light sources.",
+    "NATURAL SUNLIGHT: Use one coherent sun direction from an existing visible opening or a plausible off-camera window/opening. Add restrained volumetric sunbeams only where light can physically enter, soft shadows from windows, correct penumbra and contact shadows, warm direct highlights with cooler bounced skylight fill, and subtle specular sun glints on glass, metal and polished wood. Use gentle photographic highlight bloom and a barely perceptible lens flare when physically justified. Keep windows and highlights recoverable; no fake flare overlay, exaggerated god rays, orange wash or random light sources. Sunlight changes the illumination only, never the fixtures: every lamp, spot and strip of IMAGE 1 stays in place, in the same number.",
   ].join("\n")
 }
 
@@ -213,6 +229,7 @@ export function buildEnhanceNegativePrompt(job: EnhanceJob): string {
     "cartoon, illustration, concept art, painterly image, surrealism, fantasy styling, miniature or dollhouse look",
     "misidentified objects, objects changed into different objects, TV screen turned into a window or painting, screen showing a landscape or glowing content, curtains merged into the wall, curtains turned into solid panels, melted or malformed light fixtures, lamps turned into blobs, missing fixtures, mirror without reflection, replaced artwork subject",
     "substituted materials, changed floor material, travertine or limestone turned into microcement or concrete or plaster, stone veining removed, marble veins repainted, tile joints or grout lines removed, seamless floor where the source has slabs or planks, added joints on a seamless floor, changed wood species, changed veneer grain direction, veneer turned into laminate, changed fabric type, changed metal finish, recolored materials",
+    "changed number of spotlights, merged downlights, missing or extra ceiling spots, added LED strip, spots turned into a strip, redesigned ceiling lighting, moved fixtures, merged furniture legs, fused legs, thickened legs, filled-in space under furniture, solid block under a table or console, missing gap under furniture, changed plank width, narrower or wider boards, re-laid floor, rotated floor boards, changed floor color, shifted floor tone",
     "fisheye distortion, warped perspective, leaning verticals, changed camera angle, changed crop, changed room geometry, moved walls, moved doors or windows, redesigned ceiling or floor, altered furniture, added furniture, removed objects, duplicated objects, floating objects, malformed decor, text, logo, watermark",
     time === "night" ? "sunlight, daylight, sunbeams, morning light, visible god rays" : "night-time exposure, black windows",
   ].join(", ")
@@ -234,7 +251,8 @@ export function buildEnhancePrompt(job: EnhanceJob): string {
     "TASK: Transform IMAGE 1 from a computer-generated render into an ultra-realistic real professional photograph. IMAGE 1 is the authoritative design reference. The result must be immediately believable as an ultra-realistic photograph of a real, physically built subject — hyper-detailed, true-to-life materials and light — not a cleaner CGI render.",
     CONTEXT_HINT[job.context ?? "auto"],
     sceneInventoryBlock(job.inventory),
-    "NON-NEGOTIABLE PRESERVATION: Keep the exact camera position, lens/focal-length feel, perspective, vertical lines, crop, aspect ratio, framing and composition. Preserve every wall, opening, ceiling, floor boundary, built-in element, piece of furniture, fixture and decor item in exactly the same shape, scale, count and position. Preserve the design, material identities, patterns and base colors. Do not redesign, restyle, invent, remove, move or replace anything unless the designer explicitly requests it below.",
+    "NON-NEGOTIABLE PRESERVATION: This is an enhancement of IMAGE 1, never a redesign or a reinterpretation. Keep the exact camera position, lens/focal-length feel, perspective, vertical lines, crop, aspect ratio, framing and composition. Preserve every wall, opening, ceiling, floor boundary, built-in element, piece of furniture, fixture and decor item in exactly the same shape, scale, count and position. Preserve the design, material identities, patterns and base colors. Do not redesign, restyle, invent, remove, move or replace anything unless the designer explicitly requests it below.",
+    STRUCTURE_LOCK_HINT,
     improveQuality ? OBJECT_IDENTITY_HINT : "",
     improveQuality ? MATERIAL_FIDELITY_HINT : "",
     improveQuality ? sourceQualityHint(job.sourceSize) : "",
@@ -246,7 +264,7 @@ export function buildEnhancePrompt(job: EnhanceJob): string {
       : "",
     improveQuality ? PHOTOREALISM_HINT : "",
     improveQuality
-      ? "CONTROLLED EDIT FREEDOM: Make a substantial change to illumination, shadows, reflections, microtexture and surface shading so the result no longer inherits the flat CGI look. This freedom applies only to light and photographic material response; the preservation rules for geometry, layout, objects and camera always win."
+      ? "CONTROLLED EDIT FREEDOM: Change how every existing surface responds to light — shading, shadows, reflections, microtexture and material response — so the result no longer inherits the flat CGI look. This freedom applies only to surface response and photographic rendering; it never extends to the light sources themselves (their number, placement, form and on/off state), nor to geometry, layout, objects, floor layout or camera. The preservation rules always win."
       : "",
     improveQuality ? naturalLightHint(time) : "",
     tools ? FILTER_HINT[tools.filter] : "",
