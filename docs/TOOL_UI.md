@@ -33,6 +33,7 @@
 | Слой «Отпустите, чтобы приложить…», скрытый `<input type="file">`, отступы под композер и панель, скелет до гидрации | `tool-shell.tsx` | `ToolShell` |
 | Положение композера внизу (отступ под сайдбар и панель, анимация появления) | `tool-shell.tsx` | `ComposerDock` |
 | Галерея результатов: масонри колонками или широкие карточки одна под другой (`layout="stack"` у сетов кадров) | `tool-shell.tsx` | `ToolGallery` |
+| Плитка «Добавить кадр» под последним результатом, когда дропзоны уже нет | `src/components/tool/add-tile.tsx`; `.add-tile*` в `surfaces.css` | `AddTile`, `onClick={intake.pickFiles}` |
 | Выбор формата кадров (9:16, 3:4, 1:1, 4:3, 16:9) с глифами пропорций в панели настроек | `src/components/tool/aspect-picker.tsx` — секция; `src/lib/frame-aspect.ts` — список и пропорции; `src/styles/ds/surfaces.css` — `.aspect-*` | `AspectPicker`, слот `extras` композера |
 | Планировщик раскадровки: vision-модель смотрит на рендер и составляет список кадров под него (что снять крупно, откуда ракурс, какую фактуру); параллельно — разбор сцены (`describeScene`, `ViewSet.sceneInventory`) в промпт каждого кадра, готовый кадр — Lanczos3 до 2000 px (`VIEW_LONG_SIDE`); без ключа — кадры по составу набора | `src/lib/shot-planning.ts` — клиент; `src/app/api/shots/route.ts` + `src/server/shot-planner.ts` — сервер; `src/lib/view-presets.ts` — состав наборов слотами и сборка кадров | `planViewFrames`; `buildShotListPrompt`, `parseShotList`, `planShotList`; `PRESET_SLOTS`, `assignShots`, `framesOf` |
 | Карточка результата: «до/после», скачать, удалить, статусы | `src/components/tool/tool-card.tsx` | `ToolCard` (у сетов кадров — своя `view-set-card.tsx`) |
@@ -311,6 +312,7 @@ refresh. Удаление пары из пачки
 | `tool-card.tsx` | `ToolCard`, `StoredAssetNotice`, `useBlobUrl`, `downloadStoredResult` | карточка результата; стабильное состояние отсутствующего файла; совместимый хук «блоб → object URL»; скачивание полного результата |
 | `view-set-card.tsx` | `ViewSetCard` | карточка сета кадров («Ракурсы»): общий план слева, кадры справа |
 | `aspect-picker.tsx` | `AspectPicker` | выбор формата кадров с глифами пропорций — секция панели настроек |
+| `add-tile.tsx` | `AddTile` | плитка «добавить ещё» в галерее результатов: пунктир, плюс, подпись; по клику — выбор файла |
 | `src/lib/use-stored-blob.ts` | `useStoredBlobUrl` | загрузка с fallback-ключами, ограниченный автоповтор и ручная проверка серверного файла |
 | `batch-tools.tsx` | `BatchToolsPanel`, `QualityToggle`, `PopulateToggle` | улучшение качества, пакетные функции и тумблер «Заселить сцену» |
 | `region-editor.tsx` | `RegionEditor` | холст точечной правки поверх сцены (кисть, обводка, рамка) |

@@ -424,6 +424,34 @@ select.field option { background: var(--bg-overlay); color: var(--fg-1); }
   text-overflow: ellipsis;
 }
 
+/* Плитка «добавить ещё» (AddTile): пунктир и плюс в кружке, при наведении
+   светлеет. Размер задаёт страница через aspect-ratio. */
+.add-tile {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  border-radius: var(--r-md);
+  border: 1px dashed var(--line-strong);
+  background: transparent;
+  color: var(--fg-4);
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-std), background-color var(--dur-fast) var(--ease-std), color var(--dur-fast) var(--ease-std);
+}
+.add-tile:hover { border-color: var(--fg-4); background: var(--hover-1); color: var(--fg-1); }
+.add-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.add-tile-plus {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-raised);
+}
+
 /* Опасный вариант второстепенной кнопки: очистка данных и подобное. */
 .btn-secondary.is-danger { color: var(--danger); border-color: var(--danger-soft); }
 .btn-secondary.is-danger:hover:not(:disabled) {

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Camera, Crop, Images, ZoomIn } from "lucide-react"
 
+import { AddTile } from "@/components/tool/add-tile"
 import { AspectPicker } from "@/components/tool/aspect-picker"
 import { RenderStrip, RenderTray } from "@/components/tool/render-tray"
 import { BatchGrid, Stage } from "@/components/tool/stage"
@@ -386,6 +387,15 @@ export default function ViewsPage() {
               onDelete={() => deleteSet(item)}
             />
           ))}
+          {/* Под последним сетом — плитка того же размера, что его общий план:
+              новый рендер и ещё один сет. Дропзоны на этом экране уже нет. */}
+          <AddTile
+            onClick={intake.pickFiles}
+            label="Добавить кадр"
+            hint="ещё один рендер — и новый сет ракурсов"
+            aspectRatio={`${visible[0].sourceWidth || 4} / ${visible[0].sourceHeight || 3}`}
+            className="w-full md:w-[260px]"
+          />
         </ToolGallery>
       )}
     </ToolShell>
