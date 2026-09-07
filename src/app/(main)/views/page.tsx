@@ -1,8 +1,9 @@
 "use client"
 
-import { useCallback, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Camera, Crop, Images, ZoomIn } from "lucide-react"
 
+import { AspectPicker } from "@/components/tool/aspect-picker"
 import { RenderStrip, RenderTray } from "@/components/tool/render-tray"
 import { BatchGrid, Stage } from "@/components/tool/stage"
 import { ToolComposer, type ToolComposerLabels, type ToolOption } from "@/components/tool/tool-composer"
@@ -12,15 +13,18 @@ import { ViewSetCard } from "@/components/tool/view-set-card"
 import { ViewsInvite } from "@/components/tool/views-invite"
 import { getBlob, putBlobDurably, sourceKey } from "@/lib/blob-store"
 import { MAX_BATCH, makeThumb } from "@/lib/enhance-engine"
+import { closestFrameAspect } from "@/lib/frame-aspect"
+import { describeScene, hasMaterialsSection } from "@/lib/scene-analysis"
+import { planViewFrames } from "@/lib/shot-planning"
 import { runGalleryQueue, saveSourceFile } from "@/lib/tool-jobs"
 import { useAttachments } from "@/lib/use-attachments"
 import { useBatchSelection } from "@/lib/use-batch-selection"
 import { usePresence } from "@/lib/use-presence"
 import { fileBaseName, mapWithConcurrency, plural } from "@/lib/utils"
-import { PRESET_LABEL, SHOT_LABEL, framesOf, prepareViewSet, viewKey, viewThumbKey } from "@/lib/view-engine"
+import { PRESET_LABEL, PRESET_SLOTS, describeSlots, framesOf, prepareViewSet, viewKey, viewThumbKey } from "@/lib/view-engine"
 import { ensureActiveProject, useActiveProject } from "@/stores/project-store"
 import { useViewsStore } from "@/stores/views-store"
-import type { ShotKind, ViewFrame, ViewPreset, ViewSet } from "@/types"
+import type { FrameAspect, ViewPreset, ViewSet } from "@/types"
 
 const PRESET_OPTIONS: ToolOption<ViewPreset>[] = [
   { value: "set", label: "Сет", icon: Images },
@@ -33,11 +37,11 @@ const LABELS: ToolComposerLabels = {
   filesTitle: "Общие планы",
   filesQuality: "исходники",
   uploadTitle: "Загрузить рендеры",
-  filesCaption: "по одному сету на каждый рендер · крупные планы 4:5, ракурсы в 2K",
+  filesCaption: "по одному сету на каждый рендер · все кадры в выбранном формате · GPT Image 2 2K → Lanczos 2000 px",
   optionsTitle: "Что снять",
   optionsIcon: Camera,
   footer:
-    "Сцена остаётся той же — меняются кадрирование и точка съёмки. Сет — готовая карусель по одному рендеру: вид сверху и снизу, две детали крупно, фактура и фрагмент.",
+    "Сцена остаётся той же — меняются точка съёмки и кадрирование. Перед построением vision-модель разбирает сцену (материалы и предметы, как в редакторе рендера) и сама решает, что здесь стоит снять: какую вещь крупно, какую фактуру, откуда ракурс. Каждый кадр проходит Lanczos до 2000 px.",
   inputPlaceholder: "Что показать крупно: ваза, кресло, торшер…",
   submitLabel: "Построить",
   batchNoun: ["рендер", "рендера", "рендеров"],
@@ -46,12 +50,7 @@ const LABELS: ToolComposerLabels = {
 /** Сколько кадров сета считается одновременно: быстрее, чем по одному, и без шторма запросов к провайдеру. */
 const FRAME_CONCURRENCY = 3
 
-/** Состав набора одной строкой: «сверху, снизу, деталь ×2, фактура, фрагмент». */
-function describeFrames(frames: ViewFrame[]): string {
-  const counts = new Map<ShotKind, number>()
-  for (const frame of frames) counts.set(frame.kind, (counts.get(frame.kind) ?? 0) + 1)
-  return [...counts].map(([kind, n]) => (n > 1 ? `${SHOT_LABEL[kind]} ×${n}` : SHOT_LABEL[kind])).join(", ")
-}
+const ASPECT_NOTICE = "Выберите формат кадров: сторис, портрет, квадрат, альбом или широкий."
 
 /**
  * «Ракурсы и детали» — из одного общего рендера раскадровка для публикации,
@@ -65,6 +64,12 @@ function describeFrames(frames: ViewFrame[]): string {
  * в режиме «Выбрать» панели — отмеченные; «Построить все» показывает набор
  * гридом вместо сцены. Каждый рендер пачки даёт свой сет; кадры внутри сета
  * считаются по несколько разом, и карточка догоняет их плитка за плиткой.
+ *
+ * Формат кадров (9:16, 3:4, 1:1, 4:3, 16:9) спрашивается до построения:
+ * с первым приложенным рендером панель настроек открывается сама, а кнопка
+ * «Построить» закрыта, пока формат не выбран. Перед генерацией планировщик
+ * (`lib/shot-planning`, vision-модель) составляет список кадров под этот
+ * рендер; без него кадры берутся по составу набора.
  */
 export default function ViewsPage() {
   const activeProject = useActiveProject()
@@ -80,13 +85,33 @@ export default function ViewsPage() {
 
   const [note, setNote] = useState("")
   const [preset, setPreset] = useState<ViewPreset>("set")
+  const [aspect, setAspect] = useState<FrameAspect | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [attention, setAttention] = useState(0)
 
   const visible = activeProject ? sets.filter((item) => item.projectId === activeProject.id) : []
   const hasAttachments = attachments.length > 0
   const showComposer = hasAttachments || visible.length > 0
   const composer = usePresence(showComposer)
   const tray = usePresence(hasAttachments)
+
+  /* Формат спрашивается сразу: с первым рендером пачки панель настроек
+     открывается сама и «волна» подсветки показывает, где выбирать. Панель
+     раскрывается после анимации композера. */
+  const askedRef = useRef(false)
+  useEffect(() => {
+    if (!hasAttachments) {
+      askedRef.current = false
+      return
+    }
+    if (askedRef.current || aspect) return
+    askedRef.current = true
+    const timer = window.setTimeout(() => {
+      setSettingsOpen(true)
+      setAttention((key) => key + 1)
+    }, 420)
+    return () => window.clearTimeout(timer)
+  }, [hasAttachments, aspect])
 
   /* Кадры сета считаются по несколько разом; готовые сразу отмечаются в
      записи, чтобы карточка показывала их, не дожидаясь всего сета. Подготовка
@@ -105,12 +130,40 @@ export default function ViewsPage() {
         const source = await getBlob(sourceKey(meta.id))
         if (!source) throw new Error("Исходник не найден в хранилище браузера.")
 
+        // Планировщик — до первого кадра и только раз: пока ни один кадр не
+        // создан, список кадров можно заменить на подобранный под этот рендер.
+        // «Повторить» после сбоя идёт с уже сохранённым списком. Разбор сцены
+        // (тот же, что в редакторе рендера) идёт параллельно и тоже хранится.
+        let frames = meta.frames
+        let inventory = hasMaterialsSection(meta.sceneInventory) ? meta.sceneInventory?.trim() : undefined
+        const needPlan = !meta.planned && generated.size === 0 && Boolean(meta.aspect)
+        if (needPlan || !inventory) {
+          const [plan, found] = await Promise.all([
+            needPlan && meta.aspect
+              ? planViewFrames(source, { preset: meta.preset, aspect: meta.aspect, note: meta.note })
+              : Promise.resolve(null),
+            inventory ? Promise.resolve(null) : describeScene(source),
+          ])
+          if (found) inventory = found.text
+          const patch: Partial<ViewSet> = {}
+          if (needPlan) {
+            patch.planned = Boolean(plan)
+            if (plan) {
+              frames = plan.frames
+              patch.frames = frames
+              patch.planner = plan.model
+            }
+          }
+          if (found) patch.sceneInventory = found.text
+          if (Object.keys(patch).length > 0) update(meta.id, patch)
+        }
+
         // До ЛЮБОГО нового вызова модели проверяем уже созданные кадры. Если
         // сервер знает, что провайдер закончил кадр, но самого файла в этом
         // браузере ещё нет, останавливаем весь Retry: параллельные воркеры не
         // успеют повторно потратить деньги на остальные ракурсы.
         const recovered = new Map<string, Blob>()
-        for (const frame of meta.frames) {
+        for (const frame of frames) {
           if (!generated.has(frame.key)) continue
           const blob = await getBlob(viewKey(meta.id, frame.key))
           if (!blob) {
@@ -121,8 +174,8 @@ export default function ViewsPage() {
           recovered.set(frame.key, blob)
         }
 
-        const renderer = await prepareViewSet(source, meta.frames, meta.note)
-        await mapWithConcurrency(meta.frames, FRAME_CONCURRENCY, async (frame) => {
+        const renderer = await prepareViewSet(source, frames, meta.note, meta.aspect, inventory)
+        await mapWithConcurrency(frames, FRAME_CONCURRENCY, async (frame) => {
           // После сетевого сбоя готовый кадр уже может лежать локально. В этом
           // случае повтор только дозагружает его и не вызывает модель ещё раз.
           let frameBlob = recovered.get(frame.key) ?? (await getBlob(viewKey(meta.id, frame.key)))
@@ -180,7 +233,7 @@ export default function ViewsPage() {
   )
 
   const startBatch = useCallback(
-    async (files: File[], batchNote: string, batchPreset: ViewPreset) => {
+    async (files: File[], batchNote: string, batchPreset: ViewPreset, batchAspect: FrameAspect) => {
       const project = ensureActiveProject()
       const metas: ViewSet[] = []
       for (const file of files) {
@@ -191,6 +244,7 @@ export default function ViewsPage() {
             projectId: project.id,
             status: "processing",
             preset: batchPreset,
+            aspect: batchAspect,
             frames: framesOf(batchPreset),
             ready: [],
             note: batchNote,
@@ -208,9 +262,16 @@ export default function ViewsPage() {
     [add, runSet]
   )
 
+  const submitBlockedReason = hasAttachments && !aspect ? "Сначала выберите формат кадров" : null
+
   const submit = () => {
     if (attachments.length === 0) {
       intake.pickFiles()
+      return
+    }
+    if (!aspect) {
+      setSettingsOpen(true)
+      setAttention((key) => key + 1)
       return
     }
     if (workingSet.length === 0) return
@@ -218,7 +279,7 @@ export default function ViewsPage() {
     const { files } = batch.takeWorkingSet()
     setNote("")
     setSettingsOpen(false)
-    void startBatch(files, sentNote, preset)
+    void startBatch(files, sentNote, preset, aspect)
   }
 
   const retry = (item: ViewSet) => {
@@ -232,15 +293,16 @@ export default function ViewsPage() {
     remove(item.id)
   }
 
-  /* Подпись под сценой: какие кадры даст выбранный набор и по чему. */
-  const frames = framesOf(preset)
-  const frameCount = `${frames.length} ${plural(frames.length, ["кадр", "кадра", "кадров"])}`
+  /* Подпись под сценой: какие кадры даст выбранный набор, в каком формате и по чему. */
+  const slotCount = PRESET_SLOTS[preset].length
+  const frameCount = `${slotCount} ${plural(slotCount, ["кадр", "кадра", "кадров"])}${aspect ? ` ${aspect}` : ""}`
   const stageCaption =
     workingSet.length === 0
       ? "Ничего не выбрано — отметьте рендеры в панели справа."
-      : workingSet.length === 1
-        ? `${PRESET_LABEL[preset]} — ${frameCount} по рендеру на сцене: ${describeFrames(frames)}.`
-        : `${PRESET_LABEL[preset]} — ${frameCount} на каждый из ${workingSet.length} выбранных ${LABELS.batchNoun[2]}: ${describeFrames(frames)}.`
+      : `${PRESET_LABEL[preset]} — ${frameCount} ${
+          workingSet.length === 1 ? "по рендеру на сцене" : `на каждый из ${workingSet.length} выбранных ${LABELS.batchNoun[2]}`
+        }: ${describeSlots(preset)}. ${aspect ? "Что именно снять, решит vision-модель по этому интерьеру." : "Формат кадров — в настройках композера."}`
+  const suggestedAspect = current ? closestFrameAspect(current.width, current.height) : null
 
   return (
     <ToolShell
@@ -266,6 +328,10 @@ export default function ViewsPage() {
               selectionLabel={batch.selectionLabel}
               settingsOpen={settingsOpen}
               onSettingsOpenChange={setSettingsOpen}
+              submitBlockedReason={submitBlockedReason}
+              notice={hasAttachments && !aspect ? ASPECT_NOTICE : null}
+              attentionKey={attention}
+              extras={<AspectPicker value={aspect} onChange={setAspect} suggested={suggestedAspect} />}
             />
           </ComposerDock>
 
@@ -305,12 +371,12 @@ export default function ViewsPage() {
           label="Добавить рендер"
           visual={<ViewsInvite className="relative w-full max-w-[600px]" />}
           title="Добавить рендер"
-          description={`Один общий план — и из него сет кадров для публикации: детали крупно, фактуры, фрагменты, вид сверху и снизу. Нажмите, перетащите сюда или вставьте из буфера. PNG, JPG или WEBP до 32 МБ, до ${MAX_BATCH} файлов за раз.`}
-          caption="Как карусель дизайнера: общий план и крупные планы предметов — по одному рендеру, без 3D-модели и повторного рендера."
+          description={`Один общий план — и из него сет кадров для публикации: детали крупно, фактуры, фрагменты и неожиданные ракурсы, в формате сторис, квадрата или альбома. Нажмите, перетащите сюда или вставьте из буфера. PNG, JPG или WEBP до 32 МБ, до ${MAX_BATCH} файлов за раз.`}
+          caption="Как карусель дизайнера: vision-модель смотрит на рендер и подбирает кадры под него — по одному рендеру, без 3D-модели и повторного рендера."
           className="max-w-[760px] gap-6 px-6 pb-10 pt-8 sm:pb-12 sm:pt-10"
         />
       ) : (
-        <ToolGallery>
+        <ToolGallery layout="stack">
           {visible.map((item) => (
             <ViewSetCard
               key={item.id}

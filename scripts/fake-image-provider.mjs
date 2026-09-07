@@ -99,6 +99,38 @@ createServer(async (req, res) => {
 
   if (!auth.startsWith("Bearer ")) return json(res, 401, { error: { message: "missing bearer" } })
 
+  // Vision-чат (разбор сцены и планировщик кадров «Ракурсов»): планировщику —
+  // список кадров по строке `REQUIRED SLOTS:` из промпта, остальным — короткий
+  // инвентарь. Слово FAIL_VISION в промпте — ошибка сервера.
+  if (req.method === "POST" && url.pathname.endsWith("/chat/completions")) {
+    const payload = JSON.parse(body.toString("utf8"))
+    const parts = payload.messages?.[0]?.content
+    const text = Array.isArray(parts) ? parts.map((p) => p.text || "").join("\n") : String(parts || "")
+    const slots = (text.match(/REQUIRED SLOTS:\s*([a-z, ]+)/) || [])[1]
+    let content
+    if (slots) {
+      const angles = ["low", "top", "left", "right"]
+      let angle = 0
+      const shots = slots.split(",").map((s) => s.trim()).filter(Boolean).map((slot, i) => {
+        const kind = slot === "angle" ? angles[angle++ % 4] : slot
+        return {
+          kind,
+          label: { angle: "вид из проёма", detail: "ваза на консоли", texture: "шпон дуба крупно", fragment: "угол у окна" }[slot] + ` ${i + 1}`,
+          brief: `Fake ${slot} shot #${i + 1} of the same room, camera ${kind}.`,
+        }
+      })
+      content = JSON.stringify(shots)
+    } else {
+      content = "ROOM: fake room.\nLIGHT: fake light.\nMATERIALS: floor — oak.\nOBJECTS: sofa — centre.\nEASILY MISREAD: none."
+    }
+    console.log(`#${calls} POST ${url.pathname} [vision] model=${payload.model} ${slots ? `shots(${slots})` : "inventory"}`)
+    if (text.includes("FAIL_VISION")) return json(res, 500, { error: { message: "simulated vision failure" } })
+    return json(res, 200, {
+      choices: [{ message: { content }, finish_reason: "stop" }],
+      usage: { prompt_tokens: 1000, completion_tokens: 200 },
+    })
+  }
+
   // Опрос задачи API Models: первый ответ processing, дальше completed.
   if (req.method === "GET" && url.searchParams.has("task_id")) {
     const task = tasks.get(url.searchParams.get("task_id"))

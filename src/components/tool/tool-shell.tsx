@@ -176,7 +176,11 @@ export function ToolAside({
   )
 }
 
-/** Галерея-масонри результатов: карточки инструмента колонками. */
-export function ToolGallery({ children }: { children: ReactNode }) {
+/**
+ * Галерея результатов: по умолчанию масонри колонками; `layout="stack"` —
+ * широкие карточки одна под другой (сеты кадров: исходник слева, кадры справа).
+ */
+export function ToolGallery({ children, layout = "columns" }: { children: ReactNode; layout?: "columns" | "stack" }) {
+  if (layout === "stack") return <div className="flex flex-col gap-4">{children}</div>
   return <div className="columns-1 gap-4 sm:columns-2 xl:columns-3">{children}</div>
 }

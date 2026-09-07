@@ -32,7 +32,9 @@
 | Пустой экран — дропзона с пунктиром, приглашением, заголовком и подписью | `src/components/tool/tool-dropzone.tsx` | `ToolDropzone` |
 | Слой «Отпустите, чтобы приложить…», скрытый `<input type="file">`, отступы под композер и панель, скелет до гидрации | `tool-shell.tsx` | `ToolShell` |
 | Положение композера внизу (отступ под сайдбар и панель, анимация появления) | `tool-shell.tsx` | `ComposerDock` |
-| Галерея-масонри результатов (колонки) | `tool-shell.tsx` | `ToolGallery` |
+| Галерея результатов: масонри колонками или широкие карточки одна под другой (`layout="stack"` у сетов кадров) | `tool-shell.tsx` | `ToolGallery` |
+| Выбор формата кадров (9:16, 3:4, 1:1, 4:3, 16:9) с глифами пропорций в панели настроек | `src/components/tool/aspect-picker.tsx` — секция; `src/lib/frame-aspect.ts` — список и пропорции; `src/styles/ds/surfaces.css` — `.aspect-*` | `AspectPicker`, слот `extras` композера |
+| Планировщик раскадровки: vision-модель смотрит на рендер и составляет список кадров под него (что снять крупно, откуда ракурс, какую фактуру); параллельно — разбор сцены (`describeScene`, `ViewSet.sceneInventory`) в промпт каждого кадра, готовый кадр — Lanczos3 до 2000 px (`VIEW_LONG_SIDE`); без ключа — кадры по составу набора | `src/lib/shot-planning.ts` — клиент; `src/app/api/shots/route.ts` + `src/server/shot-planner.ts` — сервер; `src/lib/view-presets.ts` — состав наборов слотами и сборка кадров | `planViewFrames`; `buildShotListPrompt`, `parseShotList`, `planShotList`; `PRESET_SLOTS`, `assignShots`, `framesOf` |
 | Карточка результата: «до/после», скачать, удалить, статусы | `src/components/tool/tool-card.tsx` | `ToolCard` (у сетов кадров — своя `view-set-card.tsx`) |
 | Правила приёма файлов: форматы, лимит, предупреждения, перенос, вставка из буфера, замена вместо добавления | `src/lib/use-attachments.ts` | `useAttachments`; константы форматов и лимитов — `src/lib/enhance-engine.ts` |
 | Рабочий набор: режим «Выбрать», «Выбрать все», стрелки и Escape, «Редактировать все», что уходит в обработку | `src/lib/use-batch-selection.ts` | `useBatchSelection` |
@@ -177,6 +179,14 @@ refresh. Удаление пары из пачки
   `useServerStatus()` — статус для компонентов (сайдбар, настройки).
 - `mapWithConcurrency(items, limit, run)` (`src/lib/utils.ts`) — несколько
   запросов к провайдеру разом с потолком (кадры сета в «Ракурсах»).
+- `planViewFrames(blob, { preset, aspect, note })` (`src/lib/shot-planning.ts`) —
+  список кадров сета от vision-модели через `/api/shots`; `null`, если
+  планировщик выключен или не ответил — сет строится по составу набора
+  (`framesOf`). Список хранится в записи (`ViewSet.frames`, `planned`), и
+  «Повторить» его не пересчитывает.
+- `FRAME_ASPECTS`, `frameAspectRatio`, `frameAspectCss`, `closestFrameAspect`
+  (`src/lib/frame-aspect.ts`) — форматы кадров и их пропорции для генерации,
+  обрезки и плиток.
 
 ---
 
@@ -299,7 +309,8 @@ refresh. Удаление пары из пачки
 | `stage.tsx` | `Stage`, `StagePlaceholder`, `BatchGrid` | сцена, её состояние восстановления и пакетный грид |
 | `tool-dropzone.tsx` | `ToolDropzone` | пустой экран-дропзона |
 | `tool-card.tsx` | `ToolCard`, `StoredAssetNotice`, `useBlobUrl`, `downloadStoredResult` | карточка результата; стабильное состояние отсутствующего файла; совместимый хук «блоб → object URL»; скачивание полного результата |
-| `view-set-card.tsx` | `ViewSetCard` | карточка сета кадров («Ракурсы») |
+| `view-set-card.tsx` | `ViewSetCard` | карточка сета кадров («Ракурсы»): общий план слева, кадры справа |
+| `aspect-picker.tsx` | `AspectPicker` | выбор формата кадров с глифами пропорций — секция панели настроек |
 | `src/lib/use-stored-blob.ts` | `useStoredBlobUrl` | загрузка с fallback-ключами, ограниченный автоповтор и ручная проверка серверного файла |
 | `batch-tools.tsx` | `BatchToolsPanel`, `QualityToggle`, `PopulateToggle` | улучшение качества, пакетные функции и тумблер «Заселить сцену» |
 | `region-editor.tsx` | `RegionEditor` | холст точечной правки поверх сцены (кисть, обводка, рамка) |
@@ -341,8 +352,8 @@ refresh. Удаление пары из пачки
 | `Stage` | ✓ с `overlay` (RegionEditor) | ✓ | ✓ `aspect-[4/3]` | — | — (своя `ModelStage`) |
 | `BatchGrid` | ✓ | ✓ | ✓ `compact` | — | — |
 | `ToolDropzone` | ✓ RenderReveal | ✓ ViewsInvite | ✓ StyleSwap | — (MaterialPreviewGrid) | ✓ FurnitureMorph, `armed` |
-| `ToolGallery` + карточка | — (результат остаётся на Stage) | ✓ ViewSetCard | ✓ ToolCard | ✓ ToolCard | — (сцена + лента) |
-| Своё на странице | постоянная пара «исходник / новый» в `RenderTray`, результат на Stage, контекст, разбор сцены (инвентарь предметов) + качество GPT Image 2 + Lanczos 2000 px, заселение, пакетные функции, области правки, `notice` | выбор набора кадров, подпись под сценой | стили, док материалов, вторая панель, `notice` | референсы не обязательны | одно фото, `ModelStage`/`ModelChip` |
+| `ToolGallery` + карточка | — (результат остаётся на Stage) | ✓ `layout="stack"`, ViewSetCard | ✓ ToolCard | ✓ ToolCard | — (сцена + лента) |
+| Своё на странице | постоянная пара «исходник / новый» в `RenderTray`, результат на Stage, контекст, разбор сцены (инвентарь предметов) + качество GPT Image 2 + Lanczos 2000 px, заселение, пакетные функции, области правки, `notice` | выбор набора кадров, формат кадров (`AspectPicker` в `extras`, панель открывается сама, `submitBlockedReason` + `notice` до выбора), планировщик кадров перед генерацией, подпись под сценой | стили, док материалов, вторая панель, `notice` | референсы не обязательны | одно фото, `ModelStage`/`ModelChip` |
 
 Страницы после выноса общего: `enhance` ≈ 420 строк, `restyle` ≈ 375, `views` ≈ 275,
 `materials` ≈ 220, `photo-3d` ≈ 330 — в них только конфигурация и логика инструмента.

@@ -1,11 +1,11 @@
 "use client"
 
-import { useState } from "react"
-import { Download, Eye, RefreshCw, Trash2 } from "lucide-react"
+import { Download, RefreshCw, Sparkles, Trash2 } from "lucide-react"
 
 import { ThinkingGlyph } from "@/components/glyphs"
 import { StoredAssetNotice } from "@/components/tool/tool-card"
 import { getBlob, sourceKey, thumbSourceKey } from "@/lib/blob-store"
+import { frameAspectCss, frameAspectRatio } from "@/lib/frame-aspect"
 import { previewCaption } from "@/lib/image-generation"
 import { useStoredBlobUrl, type StoredBlobStatus, type StoredBlobUrlState } from "@/lib/use-stored-blob"
 import { cn, plural } from "@/lib/utils"
@@ -13,11 +13,12 @@ import { PRESET_LABEL, isWideShot, viewKey, viewThumbKey } from "@/lib/view-engi
 import type { ViewFrame, ViewSet } from "@/types"
 
 /**
- * Карточка сета кадров в галерее — контактный лист: плитки по два в ряд,
- * ракурсы в пропорции исходника, крупные планы — 4:5; сеты собраны так, что
- * соседи в ряду одной пропорции. Пока кадр считается, плитка живёт на размытом
- * исходнике со спиннером — сет догоняет по одному кадру. У плитки своё
- * скачивание, у сета — исходник (удерживать), «скачать все» и удаление.
+ * Карточка сета кадров — широкая строка галереи (`ToolGallery layout="stack"`):
+ * слева общий план, который приложил пользователь, с именем, форматом и
+ * действиями; справа — кадры, которые из него получились, плитками в формате
+ * сета (`.view-set*` в surfaces.css). Пока кадр считается, плитка живёт на
+ * размытом исходнике со спиннером — сет догоняет по одному кадру. У плитки
+ * своё скачивание, у сета — «скачать все», удаление и «Повторить» при ошибке.
  */
 export function ViewSetCard({
   item,
@@ -31,11 +32,10 @@ export function ViewSetCard({
   onDelete: () => void
 }) {
   const { id, status } = item
-  const [comparing, setComparing] = useState(false)
   const sourceAsset = useStoredBlobUrl([thumbSourceKey(id), sourceKey(id)])
   const ready = new Set(item.ready ?? [])
   const frames = item.frames ?? []
-  const many = frames.length > 1
+  const tall = item.aspect ? frameAspectRatio(item.aspect) < 1 : true
 
   const download = async (frame: ViewFrame) => {
     const blob = await getBlob(viewKey(id, frame.key))
@@ -60,90 +60,117 @@ export function ViewSetCard({
     }
   }
 
-  const caption =
-    `${item.sourceWidth}×${item.sourceHeight} · ${PRESET_LABEL[item.preset].toLowerCase()} · ` +
-    `${frames.length} ${plural(frames.length, ["кадр", "кадра", "кадров"])}` +
-    (item.note ? ` · ${item.note}` : "") +
-    previewCaption(item)
+  const frameCount = `${frames.length} ${plural(frames.length, ["кадр", "кадра", "кадров"])}`
+  const summary = [
+    `${item.sourceWidth}×${item.sourceHeight}`,
+    PRESET_LABEL[item.preset].toLowerCase(),
+    frameCount,
+    item.aspect ? `формат ${item.aspect}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ")
+  const origin =
+    [
+      item.sceneInventory ? "разбор сцены" : null,
+      item.planned ? "кадры подобрала vision-модель по этому рендеру" : "кадры по составу набора",
+      item.status === "done" && item.engine && item.engine !== "preview" ? "Lanczos 2000 px" : null,
+    ]
+      .filter(Boolean)
+      .join(" · ") + previewCaption(item)
 
   return (
-    <figure
-      className="group card rise-in relative mb-4 break-inside-avoid overflow-hidden"
-      style={{ borderRadius: "var(--r-lg)" }}
-    >
-      <div className={cn("grid gap-[2px]", many && "grid-cols-2")} style={{ background: "var(--line)" }}>
-        {frames.map((frame) => (
-          <ViewTile
-            key={frame.key}
-            item={item}
-            frame={frame}
-            ready={ready.has(frame.key)}
-            sourceAsset={sourceAsset}
-            comparing={comparing}
-            onDownload={() => void download(frame)}
-          />
-        ))}
-      </div>
-
-      {status === "error" && sourceAsset.url ? (
-        <div
-          className="fade-in absolute inset-0 flex flex-col items-center justify-center gap-3 p-4 text-center"
-          style={{ background: "rgba(16,16,18,0.72)" }}
-        >
-          <p className="max-w-[240px] text-[12.5px] leading-snug" style={{ color: "rgba(255,255,255,0.9)" }}>
-            {item.error ?? "Не получилось."}
-          </p>
-          <div className="flex gap-2">
-            <button type="button" onClick={onRetry} className="btn-outline h-9 px-4 text-[13px]">
-              <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.8} />
-              Повторить
-            </button>
-            <button
-              type="button"
-              onClick={onDelete}
-              aria-label="Удалить"
-              className="btn-icon btn-danger h-9 w-9"
-              style={{ background: "rgba(255,255,255,0.07)" }}
-            >
-              <Trash2 className="h-4 w-4" strokeWidth={1.7} />
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      {status === "done" ? (
-        <>
-          <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-            {sourceAsset.url ? (
-              <CardAction
-                label="Показать общий план (удерживайте)"
-                onPointerDown={() => setComparing(true)}
-                onPointerUp={() => setComparing(false)}
-                onPointerLeave={() => setComparing(false)}
-                active={comparing}
-              >
-                <Eye className="h-3.5 w-3.5" strokeWidth={1.8} />
-              </CardAction>
-            ) : null}
-            <CardAction label={many ? "Скачать все кадры" : "Скачать кадр"} onClick={() => void downloadAll()}>
-              <Download className="h-3.5 w-3.5" strokeWidth={1.8} />
-            </CardAction>
-            <CardAction label="Удалить" onClick={onDelete} danger>
-              <Trash2 className="h-3.5 w-3.5" strokeWidth={1.8} />
-            </CardAction>
-          </div>
-
-          <figcaption
-            className="chip absolute bottom-2 left-2 opacity-0 transition-opacity group-hover:opacity-100"
-            style={{ background: "rgba(16,16,18,0.7)", color: "rgba(255,255,255,0.85)", borderColor: "rgba(255,255,255,0.16)" }}
+    <figure className="card rise-in relative overflow-hidden" style={{ borderRadius: "var(--r-lg)" }}>
+      <div className="view-set">
+        {/* Общий план: что приложили, с подписью и действиями. */}
+        <div className="view-set-source flex flex-col gap-3 p-3 md:border-r" style={{ borderColor: "var(--line)" }}>
+          <div
+            className="relative w-full overflow-hidden"
+            style={{
+              aspectRatio: `${item.sourceWidth || 4} / ${item.sourceHeight || 3}`,
+              borderRadius: "var(--r-md)",
+              background: "var(--bg-raised)",
+            }}
           >
-            {caption}
+            {sourceAsset.url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={sourceAsset.url}
+                alt={item.sourceName}
+                draggable={false}
+                onError={sourceAsset.reportImageError}
+                className="absolute inset-0 h-full w-full select-none object-cover"
+              />
+            ) : (
+              <StoredAssetNotice status={sourceAsset.status} onRetry={sourceAsset.retry} compact className="absolute inset-0" />
+            )}
+            <span className="chip absolute left-2 top-2" style={OVERLAY_CHIP}>
+              общий план
+            </span>
+          </div>
+
+          <figcaption className="flex min-w-0 flex-col gap-1 px-1">
+            <span className="truncate text-[13px]" style={{ color: "var(--fg-1)" }} title={item.sourceName}>
+              {item.sourceName}
+            </span>
+            <span className="ds-caption">{summary}</span>
+            {item.note ? <span className="ds-caption">«{item.note}»</span> : null}
+            <span className="ds-caption flex items-center gap-1.5">
+              <Sparkles className="h-3 w-3 shrink-0" strokeWidth={1.7} />
+              {origin}
+            </span>
           </figcaption>
-        </>
-      ) : null}
+
+          {status === "error" ? (
+            <div className="flex flex-col gap-2.5 px-1">
+              <p className="text-[12.5px] leading-snug" style={{ color: "var(--danger)" }}>
+                {item.error ?? "Не получилось."}
+              </p>
+              <div className="flex gap-2">
+                <button type="button" onClick={onRetry} className="btn-outline h-9 px-4 text-[13px]">
+                  <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.8} />
+                  Повторить
+                </button>
+                <button type="button" onClick={onDelete} aria-label="Удалить сет" className="btn-icon btn-danger h-9 w-9">
+                  <Trash2 className="h-4 w-4" strokeWidth={1.7} />
+                </button>
+              </div>
+            </div>
+          ) : status === "done" ? (
+            <div className="flex items-center gap-2 px-1">
+              <button type="button" onClick={() => void downloadAll()} className="btn-ghost h-9 gap-2 px-3 text-[13px]">
+                <Download className="h-3.5 w-3.5" strokeWidth={1.8} />
+                {frames.length > 1 ? "Скачать все" : "Скачать"}
+              </button>
+              <button type="button" onClick={onDelete} aria-label="Удалить сет" className="btn-icon btn-danger h-9 w-9">
+                <Trash2 className="h-4 w-4" strokeWidth={1.7} />
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 px-1 text-[12.5px]" style={{ color: "var(--fg-3)" }} aria-live="polite">
+              <ThinkingGlyph size={16} className="[color:var(--fg-4)]" />
+              {ready.size === 0 && !item.planned
+                ? "разбираем сцену и подбираем кадры…"
+                : `строим кадры: ${ready.size} из ${frames.length}`}
+            </div>
+          )}
+        </div>
+
+        {/* Кадры сета — в формате, выбранном для сета. */}
+        <div className={cn("view-set-frames", tall ? "is-tall" : "is-wide")}>
+          {frames.map((frame) => (
+            <ViewTile key={frame.key} item={item} frame={frame} ready={ready.has(frame.key)} sourceAsset={sourceAsset} onDownload={() => void download(frame)} />
+          ))}
+        </div>
+      </div>
     </figure>
   )
 }
+
+const OVERLAY_CHIP = {
+  background: "rgba(16,16,18,0.7)",
+  color: "rgba(255,255,255,0.85)",
+  borderColor: "rgba(255,255,255,0.16)",
+} as const
 
 /** Плитка одного кадра: миниатюра из IndexedDB, подпись, скачивание по ховеру. */
 function ViewTile({
@@ -151,49 +178,38 @@ function ViewTile({
   frame,
   ready,
   sourceAsset,
-  comparing,
   onDownload,
 }: {
   item: ViewSet
   frame: ViewFrame
   ready: boolean
   sourceAsset: StoredBlobUrlState
-  comparing: boolean
   onDownload: () => void
 }) {
-  const frameAsset = useStoredBlobUrl(
-    ready ? [viewThumbKey(item.id, frame.key), viewKey(item.id, frame.key)] : []
-  )
-  const preferFrame = ready && !comparing
-  const shownAsset = preferFrame
-    ? frameAsset.url
-      ? frameAsset
-      : sourceAsset
-    : sourceAsset.url
-      ? sourceAsset
-      : frameAsset
+  const frameAsset = useStoredBlobUrl(ready ? [viewThumbKey(item.id, frame.key), viewKey(item.id, frame.key)] : [])
+  // Готовый кадр — сам кадр; пока его нет — размытый исходник как подложка.
+  const shownAsset = ready && frameAsset.url ? frameAsset : sourceAsset.url ? sourceAsset : frameAsset
   const shown = shownAsset.url
-  const assetStatus = shown
-    ? "ready"
-    : mergeUnavailableStatus(preferFrame || comparing ? [frameAsset, sourceAsset] : [sourceAsset])
-  const showingSource = Boolean(shown && shownAsset === sourceAsset)
-  const showingSourceFallback = ready && !comparing && showingSource && !frameAsset.url
+  const assetStatus = shown ? "ready" : mergeUnavailableStatus(ready ? [frameAsset, sourceAsset] : [sourceAsset])
+  const showingSourceFallback = ready && Boolean(shown) && shownAsset === sourceAsset && !frameAsset.url
   const pending = item.status === "processing" && !ready
-  const aspect = isWideShot(frame.kind) ? `${item.sourceWidth || 1} / ${item.sourceHeight || 1}` : "4 / 5"
+  const aspect = item.aspect
+    ? frameAspectCss(item.aspect)
+    : isWideShot(frame.kind)
+      ? `${item.sourceWidth || 1} / ${item.sourceHeight || 1}`
+      : "4 / 5"
 
   return (
-    <div
-      className="group/tile relative w-full overflow-hidden"
-      style={{ aspectRatio: aspect, background: "var(--bg-raised)" }}
-    >
+    <div className="group/tile relative w-full overflow-hidden" style={{ aspectRatio: aspect, background: "var(--bg-raised)" }}>
       {shown ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={shown}
           alt={`${item.sourceName} — ${frame.label}`}
+          title={frame.brief}
           draggable={false}
           onError={shownAsset.reportImageError}
-          className={cn("absolute inset-0 h-full w-full select-none object-cover", pending && "blur-[6px]")}
+          className={cn("absolute inset-0 h-full w-full select-none object-cover", (pending || showingSourceFallback) && "blur-[6px]")}
         />
       ) : null}
 
@@ -208,10 +224,7 @@ function ViewTile({
           className="absolute inset-0"
         />
       ) : pending ? (
-        <div
-          className="fade-in absolute inset-0 flex flex-col items-center justify-center gap-2"
-          style={{ background: "rgba(16,16,18,0.45)" }}
-        >
+        <div className="fade-in absolute inset-0 flex flex-col items-center justify-center gap-2" style={{ background: "rgba(16,16,18,0.45)" }}>
           <ThinkingGlyph size={20} className="text-white/80" />
           <span className="text-[11.5px]" style={{ color: "rgba(255,255,255,0.85)" }}>
             строим кадр…
@@ -220,19 +233,11 @@ function ViewTile({
       ) : null}
 
       {showingSourceFallback ? (
-        <StoredAssetNotice
-          status={frameAsset.status}
-          onRetry={frameAsset.retry}
-          compact
-          className="absolute bottom-2 left-2 right-2 rounded-[10px]"
-        />
+        <StoredAssetNotice status={frameAsset.status} onRetry={frameAsset.retry} compact className="absolute bottom-2 left-2 right-2 rounded-[10px]" />
       ) : null}
 
-      <span
-        className="chip absolute left-2 top-2"
-        style={{ background: "rgba(16,16,18,0.7)", color: "rgba(255,255,255,0.85)", borderColor: "rgba(255,255,255,0.16)" }}
-      >
-        {(comparing && ready) || (ready && showingSource) ? "общий план" : frame.label}
+      <span className="chip absolute left-2 top-2 max-w-[calc(100%-16px)]" style={OVERLAY_CHIP} title={frame.brief}>
+        <span className="truncate">{frame.label}</span>
       </span>
 
       {ready && item.status === "done" && frameAsset.url ? (
@@ -255,46 +260,4 @@ function mergeUnavailableStatus(states: StoredBlobUrlState[]): StoredBlobStatus 
   if (states.some((state) => state.status === "loading")) return "loading"
   if (states.some((state) => state.status === "error")) return "error"
   return "missing"
-}
-
-/** Кнопка на карточке: тёмная плашка поверх изображения (как у ToolCard). */
-function CardAction({
-  label,
-  onClick,
-  onPointerDown,
-  onPointerUp,
-  onPointerLeave,
-  active = false,
-  danger = false,
-  children,
-}: {
-  label: string
-  onClick?: () => void
-  onPointerDown?: () => void
-  onPointerUp?: () => void
-  onPointerLeave?: () => void
-  active?: boolean
-  danger?: boolean
-  children: React.ReactNode
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      onPointerDown={onPointerDown}
-      onPointerUp={onPointerUp}
-      onPointerLeave={onPointerLeave}
-      onContextMenu={(event) => event.preventDefault()}
-      className="flex h-8 w-8 items-center justify-center rounded-[8px] transition-colors"
-      style={{
-        background: active ? "rgba(255,255,255,0.92)" : "rgba(16,16,18,0.66)",
-        border: "1px solid rgba(255,255,255,0.18)",
-        color: active ? "#111113" : danger ? "var(--danger)" : "rgba(255,255,255,0.92)",
-      }}
-    >
-      {children}
-    </button>
-  )
 }

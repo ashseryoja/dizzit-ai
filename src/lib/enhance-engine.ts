@@ -115,7 +115,7 @@ export const SMALL_SOURCE_LONG_SIDE = 1200
  * месте телевизора или штор — генератор не распознал предмет и дорисовал
  * форму; этот блок называет типичные случаи и их правильное поведение.
  */
-const OBJECT_IDENTITY_HINT =
+export const OBJECT_IDENTITY_HINT =
   "OBJECT IDENTITY: Before changing a single pixel, recognize what every object in IMAGE 1 is and render it as exactly that real-world object with its true function, scale and material behavior; never let an ambiguous shape drift into a different object. A television or monitor stays a thin flat panel with a flat black glossy screen that is switched off (dark, with only faint dim reflections of the room) unless the source clearly shows content, with a slim bezel and its wall mount or stand — never a window, painting, mirror, niche or glowing rectangle. Curtains stay fabric: sheer voile is translucent and softly transmits daylight, blackout drapes are opaque with heavy vertical folds; both hang from their rod or ceiling track with natural pleats and a gentle break at the floor — never fused into the wall or turned into rigid panels. Light fixtures (pendants, chandeliers, sconces, spots, cove LED strips, floor and table lamps) keep their exact form, count, mounting and on/off state, with believable emissive glow, shades, cords and hardware. Windows and glass doors show a plausible exterior with correct exposure, real glass thickness, mullions and subtle reflections. Mirrors reflect the actual room consistently with the viewpoint. Artwork and photographs keep their exact subject, framing and mount. Plants get botanically believable leaves and stems; rugs and upholstery get true pile, weave and seams; wood keeps species-like grain, stone its veining, metal its brushed or polished finish."
 
 /**
@@ -125,7 +125,7 @@ const OBJECT_IDENTITY_HINT =
  * подмену и объясняет, что фотореализм — это микроструктура ИМЕННО этого
  * материала, а не другой материал.
  */
-const MATERIAL_FIDELITY_HINT =
+export const MATERIAL_FIDELITY_HINT =
   "MATERIAL FIDELITY: Every surface keeps the exact material of IMAGE 1 (and of the MATERIALS section of the inventory when present): the same stone type, wood species and veneer grain direction, tile format with its joints and grout, fabric type and weave, metal finish, paint or plaster type, and the same base color and value. Photorealism here means rendering the true micro-structure of THAT material at correct scale — travertine's pits and fine linear veining, marble's vein color, oak's grain and pores, bouclé's loops, brushed brass's hairline finish — never swapping it for a smoother, plainer or more common lookalike. Travertine or limestone must not become microcement, concrete or plaster; a seamless floor must not gain joints and a slab or plank floor must not lose them; veneer must not become laminate; marble must not lose its veining; painted walls must not become plaster or stone and vice versa. Light may change how a material looks, never what it is."
 
 /**
@@ -139,7 +139,7 @@ const STRUCTURE_LOCK_HINT =
   "STRUCTURE LOCK: Light fixtures keep their exact number, grouping, spacing and positions — count the ceiling spots, downlights, pendants and LED lines in IMAGE 1 and reproduce exactly that many in exactly those places; never merge two fixtures into one, drop one, add one, or turn spots into a strip or a strip into spots. Furniture keeps its exact construction: the same number, thickness and shape of legs, supports, shelves and frames, with the same open space beneath and between them — the floor and wall visible under a table, console, bench or sofa in IMAGE 1 stay visible; thin legs stay thin and separate, never fused into a solid block or a shadow mass. Floors keep the same board or slab format: the same plank or tile width, count across the frame, direction, joint layout, grain scale, finish and color — do not narrow, widen, rotate or re-lay the boards and do not shift the floor's tone. Doors, handles, skirtings, frames, mouldings and ceiling recesses keep their exact profile and position."
 
 /** Инвентарь сцены — авторитетное описание кадра, сильнее любых спорных пикселей. */
-function sceneInventoryBlock(inventory: string | undefined): string {
+export function sceneInventoryBlock(inventory: string | undefined): string {
   const text = inventory?.trim()
   if (!text) return ""
   return [

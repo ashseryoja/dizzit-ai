@@ -348,6 +348,58 @@ select.field option { background: var(--bg-overlay); color: var(--fg-1); }
   color: var(--fg-1);
 }
 
+/* Выбор формата кадров (AspectPicker): кнопка сегмента выше обычной — глиф
+   пропорции слева, значение и подпись столбиком справа. Глиф — пустой
+   прямоугольник с той же пропорцией, что и формат; у активного — акцент. */
+.seg-item.aspect-choice {
+  height: 46px;
+  padding: 0 10px 0 9px;
+  gap: 9px;
+  justify-content: flex-start;
+  min-width: 0;
+}
+.aspect-glyph {
+  display: block;
+  flex: none;
+  height: 22px;
+  max-width: 34px;
+  border-radius: 3px;
+  border: 1.5px solid currentColor;
+  opacity: 0.55;
+  transition: opacity var(--dur-fast) var(--ease-std), border-color var(--dur-fast) var(--ease-std);
+}
+.aspect-glyph[style*="1 / 1"] { width: 22px; }
+.seg-item.aspect-choice:hover .aspect-glyph { opacity: 0.85; }
+.seg-item.aspect-choice.is-active .aspect-glyph { opacity: 1; border-color: var(--accent); }
+.aspect-hint {
+  font-size: 10.5px;
+  color: var(--fg-5);
+  white-space: nowrap;
+}
+.seg-item.aspect-choice.is-active .aspect-hint { color: var(--fg-3); }
+
+/* Карточка сета кадров (ViewSetCard): общий план слева, кадры справа. На
+   узких экранах — столбиком. Левая колонка липнет к верху, пока правая
+   прокручивается. */
+.view-set {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (min-width: 768px) {
+  .view-set { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); }
+  .view-set-source { position: sticky; top: 16px; align-self: start; }
+}
+.view-set-frames {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px;
+  background: var(--line);
+}
+@media (min-width: 1280px) {
+  .view-set-frames.is-wide { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .view-set-frames.is-tall { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
 /* Опасный вариант второстепенной кнопки: очистка данных и подобное. */
 .btn-secondary.is-danger { color: var(--danger); border-color: var(--danger-soft); }
 .btn-secondary.is-danger:hover:not(:disabled) {

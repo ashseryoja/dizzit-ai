@@ -1,5 +1,7 @@
 "use client"
 
+import { MATERIAL_FIDELITY_HINT, OBJECT_IDENTITY_HINT, sceneInventoryBlock } from "@/lib/enhance-engine"
+import { frameAspectRatio, frameAspectSize } from "@/lib/frame-aspect"
 import {
   PREVIEW_ENGINE,
   cropToAspect,
@@ -9,73 +11,43 @@ import {
   requestImage,
   type GeneratedImage,
 } from "@/lib/image-generation"
-import type { ShotKind, ViewFrame, ViewPreset } from "@/types"
+import { isWideShot } from "@/lib/view-presets"
+import type { FrameAspect, ShotKind, ViewFrame } from "@/types"
+
+export {
+  PRESET_LABEL,
+  PRESET_SLOTS,
+  SHOT_LABEL,
+  SLOT_LABEL,
+  assignShots,
+  buildFrames,
+  describeSlots,
+  framesOf,
+  isWideShot,
+} from "@/lib/view-presets"
 
 /**
  * Движок раскадровки.
  *
  * Основной путь — `prepareViewSet` → `render(frame)`: общий план один раз
  * уменьшается до референса, и каждый кадр сета — свой запрос к gpt-image-2
- * (`lib/image-generation` → `/api/images`): ракурсы — та же сцена с другой
- * точки в пропорции исходника, крупные планы — портрет, обрезанный до 4:5.
- * Комментарий «что показать крупно» раздаётся крупным планам по порядку.
+ * (`lib/image-generation` → `/api/images`) в выбранном пользователем формате
+ * (`FrameAspect`: провайдер отдаёт ближайшую свою пропорцию, остаток
+ * обрезается до точного формата). Что именно снимать, кадру говорит `brief`
+ * планировщика (`lib/shot-planning`); без него — типовой сюжет по типу
+ * кадра, а комментарий «что показать крупно» раздаётся крупным планам по
+ * порядку.
  *
  * Без ключа провайдера — ПРЕДПРОСМОТР на canvas (`planShots` +
  * `renderFrameLocally`), результат помечен `engine: "preview"`:
  *
- * - крупные планы (деталь, фактура, фрагмент) — вырезки 4:5 из кадра вокруг
- *   самых «насыщенных» мест: карта градиентов по уменьшенной копии, окно с
- *   максимумом, подавление соседей, чтобы кадры сета не смотрели в одну точку;
+ * - крупные планы (деталь, фактура, фрагмент) — вырезки в формате сета из
+ *   кадра вокруг самых «насыщенных» мест: карта градиентов по уменьшенной
+ *   копии, окно с максимумом, подавление соседей, чтобы кадры сета не
+ *   смотрели в одну точку;
  * - ракурсы (сверху, снизу, слева, справа) — перспективное искажение кадра на
- *   canvas: трапеция и вписанный прямоугольник, размер исходника.
+ *   canvas: трапеция и вписанный прямоугольник, затем обрезка до формата.
  */
-
-const PRESET_SHOTS: Record<ViewPreset, ShotKind[]> = {
-  // Готовая карусель: два ракурса, две детали, фактура и фрагмент.
-  set: ["top", "low", "detail", "detail", "texture", "fragment"],
-  details: ["detail", "detail", "detail", "detail"],
-  angles: ["top", "low", "left", "right"],
-  fragments: ["fragment", "fragment", "fragment", "fragment"],
-}
-
-export const PRESET_LABEL: Record<ViewPreset, string> = {
-  set: "Сет",
-  details: "Детали",
-  angles: "Ракурсы",
-  fragments: "Фрагменты",
-}
-
-export const SHOT_LABEL: Record<ShotKind, string> = {
-  top: "сверху",
-  low: "снизу",
-  left: "слева",
-  right: "справа",
-  detail: "деталь",
-  texture: "фактура",
-  fragment: "фрагмент",
-}
-
-/** Ракурс — вся сцена, размер исходника; остальное — вырезки 4:5. */
-export function isWideShot(kind: ShotKind): boolean {
-  return kind === "top" || kind === "low" || kind === "left" || kind === "right"
-}
-
-/** Кадры сета с уникальными ключами; повторы одного типа нумеруются в подписи. */
-export function framesOf(preset: ViewPreset): ViewFrame[] {
-  const kinds = PRESET_SHOTS[preset]
-  const total: Partial<Record<ShotKind, number>> = {}
-  for (const kind of kinds) total[kind] = (total[kind] ?? 0) + 1
-  const seen: Partial<Record<ShotKind, number>> = {}
-  return kinds.map((kind) => {
-    const n = (seen[kind] ?? 0) + 1
-    seen[kind] = n
-    return {
-      key: `${kind}-${n}`,
-      kind,
-      label: (total[kind] ?? 1) > 1 ? `${SHOT_LABEL[kind]} ${n}` : SHOT_LABEL[kind],
-    }
-  })
-}
 
 /* Ключи кадров в общем хранилище блобов: префикс — id записи, поэтому
    сборка мусора (gcBlobs) видит их живыми, пока жива запись. */
@@ -91,8 +63,11 @@ export type ViewResult = GeneratedImage
 
 /* ── Основной путь: модель ──────────────────────────────────────────── */
 
-/** Пропорция крупных планов: портрет 4:5, как в каруселях. */
-const CLOSEUP_ASPECT = 4 / 5
+/** Формат крупных планов у записей до появления выбора формата: портрет 4:5. */
+export const LEGACY_CLOSEUP_ASPECT = 4 / 5
+
+/** Длинная сторона кадра после серверного Lanczos3 — как у редактора рендера. */
+export const VIEW_LONG_SIDE = 2000
 
 const ANGLE_PROMPT: Record<"top" | "low" | "left" | "right", string> = {
   top: "Photograph the same scene from an elevated camera position looking down at it (high angle, roughly 35–45 degrees above the horizon), so the layout of the space reads clearly.",
@@ -121,6 +96,25 @@ const FRAGMENT_SUBJECTS = [
   "a fourth distinct zone of the space",
 ]
 
+/** Как снимать кадр этого типа — ремесло, общее для задания планировщика и типового сюжета. */
+const CRAFT: Record<ShotKind, string> = {
+  top: "The whole space is in frame from the new camera position; perspective and proportions stay consistent with the room's real geometry.",
+  low: "The whole space is in frame from the new camera position; perspective and proportions stay consistent with the room's real geometry.",
+  left: "The whole space is in frame from the new camera position; perspective and proportions stay consistent with the room's real geometry.",
+  right: "The whole space is in frame from the new camera position; perspective and proportions stay consistent with the room's real geometry.",
+  detail: "A close-up photograph with shallow depth of field, the subject fully in frame with some margin, the rest of the room softly out of focus behind it.",
+  texture: "An extreme close-up (macro) that fills the frame with the material, raking light showing its relief, grain and finish exactly as in the reference.",
+  fragment: "A photograph framed tighter than the reference, a fragment of this same interior with its real light.",
+}
+
+const ORIENTATION: Record<FrameAspect, string> = {
+  "9:16": "tall vertical",
+  "3:4": "vertical portrait",
+  "1:1": "square",
+  "4:3": "horizontal",
+  "16:9": "wide horizontal",
+}
+
 /** «ваза, кресло, торшер» → отдельные сюжеты для крупных планов по порядку. */
 function noteSubjects(note: string): string[] {
   return note
@@ -129,41 +123,57 @@ function noteSubjects(note: string): string[] {
     .filter(Boolean)
 }
 
-/**
- * Промпт кадра. Сюжеты из комментария раздаются крупным планам (деталь,
- * фактура, фрагмент) в порядке сета; кому не хватило — типовой сюжет по номеру.
- */
-export function buildViewPrompt(frame: ViewFrame, frames: ViewFrame[], note: string): string {
-  const shared = [
-    "The attached image is a render of a space. Produce a new photograph of exactly the same space: the same objects, materials, colors, finishes and lighting — nothing added, removed or restyled.",
-  ]
-  if (isWideShot(frame.kind)) {
-    return [
-      ...shared,
-      ANGLE_PROMPT[frame.kind as keyof typeof ANGLE_PROMPT],
-      "Keep the same aspect ratio as the reference. Photorealistic, no text, no watermark.",
-    ].join("\n")
-  }
-
+/** Типовой сюжет кадра без задания планировщика. */
+function templateShot(frame: ViewFrame, frames: ViewFrame[], note: string): string {
+  if (isWideShot(frame.kind)) return ANGLE_PROMPT[frame.kind as keyof typeof ANGLE_PROMPT]
   const closeups = frames.filter((item) => !isWideShot(item.kind))
   const position = closeups.findIndex((item) => item.key === frame.key)
   const subjects = noteSubjects(note)
   const requested = position >= 0 && position < subjects.length ? subjects[position] : null
   const ordinal = closeups.filter((item, index) => item.kind === frame.kind && index < position).length
-
-  let shot: string
   if (frame.kind === "detail") {
-    shot = `A close-up photograph of ${requested ?? DETAIL_SUBJECTS[ordinal % DETAIL_SUBJECTS.length]}, as it exists in this scene, with shallow depth of field and the object fully in frame.`
-  } else if (frame.kind === "texture") {
-    shot = `An extreme close-up (macro) of ${requested ?? TEXTURE_SUBJECTS[ordinal % TEXTURE_SUBJECTS.length]}, showing its texture and the way light falls on it.`
-  } else {
-    shot = `A photograph of ${requested ?? FRAGMENT_SUBJECTS[ordinal % FRAGMENT_SUBJECTS.length]}, framed tighter than the reference, as a fragment of this same interior.`
+    return `A close-up photograph of ${requested ?? DETAIL_SUBJECTS[ordinal % DETAIL_SUBJECTS.length]}, as it exists in this scene.`
   }
+  if (frame.kind === "texture") {
+    return `An extreme close-up (macro) of ${requested ?? TEXTURE_SUBJECTS[ordinal % TEXTURE_SUBJECTS.length]}, showing its texture and the way light falls on it.`
+  }
+  return `A photograph of ${requested ?? FRAGMENT_SUBJECTS[ordinal % FRAGMENT_SUBJECTS.length]}, framed tighter than the reference.`
+}
+
+/**
+ * Промпт кадра. Задание планировщика (`frame.brief`) — главное; без него
+ * сюжеты из комментария раздаются крупным планам (деталь, фактура, фрагмент)
+ * в порядке сета, а кому не хватило — типовой сюжет по номеру. Формат кадра —
+ * выбранный пользователем; у записей без формата ракурсы идут в пропорции
+ * исходника, крупные планы — портретом.
+ */
+export function buildViewPrompt(
+  frame: ViewFrame,
+  frames: ViewFrame[],
+  note: string,
+  aspect?: FrameAspect,
+  inventory?: string
+): string {
+  const format = aspect
+    ? `Format: ${aspect}, ${ORIENTATION[aspect]} — compose the shot for this frame, no letterboxing, no borders.`
+    : isWideShot(frame.kind)
+      ? "Keep the same aspect ratio as the reference."
+      : "Portrait orientation, the subject centered with some margin around it."
   return [
-    ...shared,
-    shot,
-    "Portrait orientation, the subject centered with some margin around it. Photorealistic, same lighting as the reference, no text, no watermark.",
-  ].join("\n")
+    "IMAGE 1 (the attached image) is a render of a space. Produce a new photograph of exactly the same space: the same objects, materials, colors, finishes and lighting — nothing added, removed or restyled. Only the camera moves.",
+    frame.brief ? `Shot: ${frame.brief}` : templateShot(frame, frames, note),
+    CRAFT[frame.kind],
+    format,
+    // Разбор сцены и правила «предмет остаётся предметом, материал — материалом»,
+    // те же, что в редакторе рендера: на крупном плане подмена материала
+    // заметнее всего, а инвентарь называет его точно.
+    sceneInventoryBlock(inventory),
+    OBJECT_IDENTITY_HINT,
+    MATERIAL_FIDELITY_HINT,
+    "Ultra-realistic photograph, same lighting as the reference, no text, no watermark.",
+  ]
+    .filter(Boolean)
+    .join("\n")
 }
 
 export interface ViewSetRenderer {
@@ -174,29 +184,41 @@ export interface ViewSetRenderer {
 /**
  * Подготовка сета: провайдер настроен — референс уменьшается один раз на все
  * кадры; нет — план вырезок для предпросмотра считается один раз на сет.
+ * `aspect` — формат всех кадров; без него (старые записи) ракурсы в
+ * пропорции исходника, крупные планы 4:5. `inventory` — разбор сцены, он
+ * уходит в промпт каждого кадра. Готовый кадр сервер проходит Lanczos3 до
+ * `VIEW_LONG_SIDE` по длинной стороне, как в редакторе рендера.
  */
-export async function prepareViewSet(source: Blob, frames: ViewFrame[], note: string): Promise<ViewSetRenderer> {
+export async function prepareViewSet(
+  source: Blob,
+  frames: ViewFrame[],
+  note: string,
+  aspect?: FrameAspect,
+  inventory?: string
+): Promise<ViewSetRenderer> {
   const status = await imageProviderStatus()
+  const { width, height } = await readBlobSize(source)
+  const ratioFor = (frame: ViewFrame): number =>
+    aspect ? frameAspectRatio(aspect) : isWideShot(frame.kind) ? width / height : LEGACY_CLOSEUP_ASPECT
   if (status.configured) {
-    const { width, height } = await readBlobSize(source)
     const reference = await prepareReference(source)
     return {
       async render(frame) {
-        const wide = isWideShot(frame.kind)
-        // Ракурс — пропорция исходника; крупный план — 4:5 (провайдер подберёт
-        // ближайшую свою, при необходимости результат обрежется до 4:5).
+        // Провайдер подберёт ближайшую свою пропорцию; остаток обрежется до точного формата.
+        const wanted = aspect ? frameAspectSize(aspect) : isWideShot(frame.kind) ? { width, height } : { width: 4, height: 5 }
         const image = await requestImage({
-          prompt: buildViewPrompt(frame, frames, note),
-          aspect: wide ? { width, height } : { width: 4, height: 5 },
+          prompt: buildViewPrompt(frame, frames, note, aspect, inventory),
+          aspect: wanted,
           references: [reference],
+          finalLongSide: VIEW_LONG_SIDE,
         })
-        return wide ? image : cropToAspect(image, CLOSEUP_ASPECT)
+        return cropToAspect(image, ratioFor(frame))
       },
     }
   }
-  const plan = await planShots(source, frames)
+  const plan = await planShots(source, frames, ratioFor)
   return {
-    render: (frame) => renderFrameLocally(source, frame, plan),
+    render: (frame) => renderFrameLocally(source, frame, plan, ratioFor(frame)),
   }
 }
 
@@ -249,9 +271,6 @@ const CROP_WIDTH: Record<"detail" | "texture" | "fragment", number> = {
   detail: 0.34,
   texture: 0.2,
 }
-
-/** Пропорция вырезок предпросмотра — та же 4:5. */
-const CROP_ASPECT = CLOSEUP_ASPECT
 
 interface Saliency {
   aw: number
@@ -340,8 +359,11 @@ function pickWindow(
   return best
 }
 
-/** План крупных планов сета: крупные окна выбираются первыми, мелкие — в остатке. */
-export async function planShots(source: Blob, frames: ViewFrame[]): Promise<ShotPlan> {
+/**
+ * План крупных планов сета: крупные окна выбираются первыми, мелкие — в
+ * остатке. `ratioFor` — формат вырезки каждого кадра (ширина / высота).
+ */
+export async function planShots(source: Blob, frames: ViewFrame[], ratioFor: (frame: ViewFrame) => number): Promise<ShotPlan> {
   const crops = frames.filter((frame) => !isWideShot(frame.kind))
   if (crops.length === 0) return { regions: {} }
 
@@ -356,11 +378,16 @@ export async function planShots(source: Blob, frames: ViewFrame[]): Promise<Shot
         CROP_WIDTH[b.kind as keyof typeof CROP_WIDTH] - CROP_WIDTH[a.kind as keyof typeof CROP_WIDTH]
     )
     for (const frame of order) {
+      const ratio = ratioFor(frame)
       let w = Math.max(4, Math.round(map.aw * CROP_WIDTH[frame.kind as keyof typeof CROP_WIDTH]))
-      let h = Math.round(w / CROP_ASPECT)
+      let h = Math.max(4, Math.round(w / ratio))
       if (h > map.ah) {
         h = map.ah
-        w = Math.max(4, Math.round(h * CROP_ASPECT))
+        w = Math.max(4, Math.round(h * ratio))
+      }
+      if (w > map.aw) {
+        w = map.aw
+        h = Math.max(4, Math.round(w / ratio))
       }
       const { x, y } = pickWindow(map, w, h, taken)
       taken.push({ cx: x + w / 2, cy: y + h / 2, r: Math.max(w, h) / 2 })
@@ -377,10 +404,11 @@ export async function planShots(source: Blob, frames: ViewFrame[]): Promise<Shot
   }
 }
 
-/** Вырезка 4:5 по плану, растянутая до высоты исходника (в разумных пределах). */
-function cropShot(source: ImageBitmap, region: Region): HTMLCanvasElement {
-  const outH = Math.min(source.height, 2000)
-  const outW = Math.round(outH * CROP_ASPECT)
+/** Вырезка по плану в формате кадра, растянутая до размера исходника (в разумных пределах). */
+function cropShot(source: ImageBitmap, region: Region, ratio: number): HTMLCanvasElement {
+  const longest = Math.min(Math.max(source.width, source.height), 2000)
+  const outW = ratio >= 1 ? longest : Math.round(longest * ratio)
+  const outH = ratio >= 1 ? Math.round(longest / ratio) : longest
   const x = Math.min(Math.max(0, region.x), source.width - 1)
   const y = Math.min(Math.max(0, region.y), source.height - 1)
   const w = Math.max(1, Math.min(region.w, source.width - x))
@@ -453,28 +481,41 @@ function tiltCamera(source: ImageBitmap, width: number, height: number, nearBott
   return out
 }
 
-export async function renderFrameLocally(source: Blob, frame: ViewFrame, plan: ShotPlan): Promise<ViewResult> {
+/** Центральная обрезка canvas до формата (ширина / высота); совпадает — как есть. */
+function cropCanvasToAspect(canvas: HTMLCanvasElement, ratio: number): HTMLCanvasElement {
+  const current = canvas.width / canvas.height
+  if (Math.abs(current - ratio) < 0.01) return canvas
+  let w = canvas.width
+  let h = canvas.height
+  if (current > ratio) w = Math.round(h * ratio)
+  else h = Math.round(w / ratio)
+  const [out, ctx] = makeCanvas(w, h)
+  ctx.drawImage(canvas, Math.round((canvas.width - w) / 2), Math.round((canvas.height - h) / 2), w, h, 0, 0, w, h)
+  return out
+}
+
+export async function renderFrameLocally(source: Blob, frame: ViewFrame, plan: ShotPlan, ratio: number): Promise<ViewResult> {
   const bitmap = await createImageBitmap(source)
   try {
     const { width, height } = bitmap
     let canvas: HTMLCanvasElement
     switch (frame.kind) {
       case "left":
-        canvas = turnSideways(bitmap, width, height, true)
+        canvas = cropCanvasToAspect(turnSideways(bitmap, width, height, true), ratio)
         break
       case "right":
-        canvas = turnSideways(bitmap, width, height, false)
+        canvas = cropCanvasToAspect(turnSideways(bitmap, width, height, false), ratio)
         break
       case "top":
-        canvas = tiltCamera(bitmap, width, height, true)
+        canvas = cropCanvasToAspect(tiltCamera(bitmap, width, height, true), ratio)
         break
       case "low":
-        canvas = tiltCamera(bitmap, width, height, false)
+        canvas = cropCanvasToAspect(tiltCamera(bitmap, width, height, false), ratio)
         break
       default: {
         const region = plan.regions[frame.key]
         if (!region) throw new Error("Для кадра нет плана вырезки — постройте сет заново.")
-        canvas = cropShot(bitmap, region)
+        canvas = cropShot(bitmap, region, ratio)
       }
     }
     const type = source.type === "image/png" ? "image/png" : "image/jpeg"
