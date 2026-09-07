@@ -31,7 +31,17 @@ import { ToolDropzone } from "@/components/tool/tool-dropzone"
 import { ComposerDock, ToolAside, ToolGallery, ToolShell } from "@/components/tool/tool-shell"
 import { getBlob, sourceKey } from "@/lib/blob-store"
 import { MAX_BATCH } from "@/lib/enhance-engine"
-import { STYLES, STYLE_LABEL, describeStyle, resolveStyle, restyleRender, type RestyleFamily } from "@/lib/restyle-engine"
+import {
+  STYLES,
+  STYLE_LABEL,
+  describeStyle,
+  describeVariant,
+  matchStyle,
+  resolveStyle,
+  restyleRender,
+  type RestyleFamily,
+} from "@/lib/restyle-engine"
+import { pickVariant } from "@/lib/restyle-variants"
 import { runGalleryQueue, saveSourceFile } from "@/lib/tool-jobs"
 import { persistResultDurably, repairPersistedResult } from "@/lib/result-storage"
 import { useAttachments } from "@/lib/use-attachments"
@@ -59,6 +69,9 @@ const STYLE_ICON: Record<RestyleFamily, LucideIcon> = {
   contemporary: Building2,
 }
 
+/** Сколько последних направлений стиля в проекте не повторять при новом переносе. */
+const RECENT_VARIANTS = 2
+
 const STYLE_OPTIONS: ToolOption<RestyleStyle>[] = [
   { value: "auto", label: STYLE_LABEL.auto, icon: Sparkles },
   ...STYLES.map((style) => ({ value: style.value, label: style.label, icon: STYLE_ICON[style.value] })),
@@ -72,7 +85,7 @@ const LABELS: ToolComposerLabels = {
   optionsTitle: "Стиль",
   optionsIcon: SwatchBook,
   footer:
-    "Геометрия помещения остаётся вашей: стены, окна и расстановка на месте — меняются отделка, цвета и дизайн мебели. Комментарий уточняет: «без кирпича», «светлее пол».",
+    "Геометрия помещения остаётся вашей: стены, окна и расстановка на месте — меняются отделка, цвета и дизайн мебели. Каждый перенос получает своё направление внутри стиля — другую палитру и материалы, чтобы результаты не повторялись; направление видно в подписи карточки. Комментарий уточняет: «без кирпича», «светлее пол».",
   inputPlaceholder: "В какой стиль перевести…",
   submitLabel: "Перенести",
   batchNoun: ["интерьер", "интерьера", "интерьеров"],
@@ -90,6 +103,11 @@ const LABELS: ToolComposerLabels = {
  * в обычном режиме это интерьер на сцене, в режиме «Выбрать» панели —
  * отмеченные; «Перенести все» показывает набор гридом вместо сцены. Остальная
  * пачка остаётся в панели.
+ *
+ * Внутри стиля у каждого переноса своё направление (`lib/restyle-variants`):
+ * выбирается при запуске так, чтобы не повторять последние переносы этого
+ * стиля в проекте и не опираться на снятые галочкой материалы; хранится в
+ * записи, показывается в подписи карточки и переиспользуется «Повторить».
  *
  * Отправленный набор уходит со сцены в галерею результатов. Следующий
  * исходник добавляется оттуда же: полоса «Добавить интерьер» над карточками,
@@ -149,7 +167,13 @@ export default function RestylePage() {
       try {
         const source = await getBlob(sourceKey(meta.id))
         if (!source) throw new Error("Исходник не найден в хранилище браузера.")
-        const result = await restyleRender(source, { style: meta.style, note: meta.note, excluded: meta.excluded })
+        const result = await restyleRender(source, {
+          style: meta.style,
+          note: meta.note,
+          excluded: meta.excluded,
+          variant: meta.variant,
+          seed: meta.id,
+        })
         // Ответ провайдера уже оплачен: сохраняем маркер до ожидания asset PUT,
         // чтобы reload/Retry мог только дозагрузить этот же результат.
         update(meta.id, {
@@ -194,15 +218,32 @@ export default function RestylePage() {
     async (files: File[], batchNote: string, batchStyle: RestyleStyle, batchExcluded: string[]) => {
       const project = ensureActiveProject()
       const metas: Restyle[] = []
+      // Направление — не то, что было у последних переносов этого стиля в
+      // проекте, и внутри пачки тоже разное: так один стиль выходит по-разному.
+      const family = batchStyle === "auto" ? matchStyle(batchNote) : batchStyle
+      const recent = family
+        ? useRestyleStore
+            .getState()
+            .restyles.filter(
+              (item) => item.projectId === project.id && item.variant && (item.style === "auto" ? matchStyle(item.note) : item.style) === family
+            )
+            .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+            .slice(0, RECENT_VARIANTS)
+            .map((item) => item.variant as string)
+        : []
+      const used: string[] = []
       for (const file of files) {
         try {
           const { id, width, height } = await saveSourceFile(file, { durable: true })
+          const variant = family ? pickVariant(family, { avoid: [...recent, ...used], excluded: batchExcluded }) : undefined
+          if (variant) used.push(variant.id)
           metas.push({
             id,
             projectId: project.id,
             status: "processing",
             style: batchStyle,
             excluded: batchExcluded.length > 0 ? batchExcluded : undefined,
+            variant: variant?.id,
             note: batchNote,
             sourceName: file.name,
             sourceWidth: width,
@@ -410,6 +451,8 @@ export default function RestylePage() {
               caption={`${(item.status === "done" && item.resultWidth) || item.sourceWidth}×${
                 (item.status === "done" && item.resultHeight) || item.sourceHeight
               } · ${describeStyle(item.style, item.note)}${
+                describeVariant(item.style, item.note, item.variant) ? ` · ${describeVariant(item.style, item.note, item.variant)}` : ""
+              }${
                 item.excluded && item.excluded.length > 0 ? ` · без: ${item.excluded.join(", ")}` : ""
               }${item.note ? ` · ${item.note}` : ""}`}
               processingLabel="переносим стиль…"

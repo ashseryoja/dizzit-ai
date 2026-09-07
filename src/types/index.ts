@@ -231,6 +231,12 @@ export interface Restyle extends GalleryItemMeta {
   style: RestyleStyle
   /** Материалы стиля, которые пользователь снял галочкой: их в рендере быть не должно. */
   excluded?: string[]
+  /**
+   * Направление внутри стиля (id из `lib/restyle-variants`), выбранное при
+   * запуске: «Повторить» и подпись карточки работают с ним же. У записей до
+   * появления направлений поля нет — промпт общий по каталогу стиля.
+   */
+  variant?: string
   sourceName: string
   sourceWidth: number
   sourceHeight: number

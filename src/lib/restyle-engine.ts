@@ -8,6 +8,7 @@ import {
   withImageProvider,
   type GeneratedImage,
 } from "@/lib/image-generation"
+import { materialEn, pickSome, seededRandom, variantOf } from "@/lib/restyle-variants"
 import type { RestyleStyle } from "@/types"
 
 /**
@@ -17,6 +18,12 @@ import type { RestyleStyle } from "@/types"
  * комментарий собираются в промпт, исходник уходит референсом в gpt-image-2
  * (`lib/image-generation` → `/api/images`). Геометрия помещения остаётся,
  * меняются отделка, цвета и дизайн мебели.
+ *
+ * Чтобы один стиль не выходил каждый раз одинаковым, у каждого стиля есть
+ * направления (`lib/restyle-variants`): конкретный бриф — стены, пол, мебель,
+ * обивка, свет — и ядро материалов. Направление выбирается на странице при
+ * запуске (`pickVariant`), хранится в записи и уходит в промпт вместо полного
+ * списка материалов; материалы модели называются по-английски (`materialEn`).
  *
  * Без ключа провайдера — `restyleLocally`, ПРЕДПРОСМОТР на canvas: тональная
  * «палитра» стиля фильтрами, тонировка и виньетка в размере исходника;
@@ -138,6 +145,7 @@ export const STYLES: StyleInfo[] = [
       sw("rattan", "#cdb58a", "плетение"),
       sw("ceramic", "#cfc9bd", "матовая керамика"),
       sw("moss", "#6f8f6a", "зелень"),
+      sw("linen", "#a9b7bf", "пыльно-голубой лён"),
     ],
     keywords: /сканди|скандинав|scandi|nordic|хюгге|hygge/i,
   },
@@ -161,6 +169,8 @@ export const STYLES: StyleInfo[] = [
       sw("silk", "#d9cdb8", "шёлк"),
       sw("rug", "#8a5e56", "ковёр с медальоном"),
       sw("leather", "#d9c9ae", "кремовая кожа"),
+      sw("herringbone", "#d5bd95", "светлый дуб ёлочкой"),
+      sw("velvet", "#b98a8a", "пыльно-розовый бархат"),
     ],
     keywords: /неокласс|классик|classic|ампир|барокко|лепнин|молдинг/i,
   },
@@ -227,6 +237,7 @@ export const STYLES: StyleInfo[] = [
       sw("metal", "#c9ccd0", "хром"),
       sw("plain", "#2b2b2d", "матовый чёрный металл"),
       sw("neon", "#ffffff", "скрытая подсветка"),
+      sw("linen", "#cfc4b4", "бежевая ткань"),
     ],
     keywords: /минимал|minimal|лаконич/i,
   },
@@ -250,6 +261,9 @@ export const STYLES: StyleInfo[] = [
       sw("wallpaper", "#e9dcc4", "геометрические обои"),
       sw("rug", "#d9c6a0", "ковёр с ромбами"),
       sw("ceramic", "#3b7a83", "глазурованная керамика"),
+      sw("linen", "#7d8a5a", "оливковый лён"),
+      sw("velvet", "#c99a94", "пыльная роза"),
+      sw("planks", "#5a3a2e", "палисандр"),
     ],
     keywords: /мид[- ]?сенчури|mid[- ]?century|60-?х|шестидесят|ретро|retro/i,
   },
@@ -274,6 +288,7 @@ export const STYLES: StyleInfo[] = [
       sw("planks", "#a87b52", "дерево манго"),
       sw("macrame", "#d6c1a3", "бахрома, кисточки"),
       sw("metal", "#c9a55e", "латунь"),
+      sw("jute", "#d8c9a6", "сухие травы"),
     ],
     keywords: /бохо|boho|богем|ротанг|макраме/i,
   },
@@ -297,6 +312,7 @@ export const STYLES: StyleInfo[] = [
       sw("silk", "#cfb98a", "шёлк"),
       sw("rug", "#1a1c20", "ковёр с геометрией"),
       sw("leather", "#26262a", "чёрная кожа"),
+      sw("mirror", "#8a8378", "дымчатое зеркало"),
     ],
     keywords: /ар[- ]?деко|art[- ]?deco|гэтсби|gatsby/i,
   },
@@ -343,6 +359,7 @@ export const STYLES: StyleInfo[] = [
       sw("planks", "#cbb89a", "состаренное дерево"),
       sw("terracotta", "#cfa07a", "терракота"),
       sw("floral", "#efe4d4", "ситец"),
+      sw("plain", "#b8c4a8", "шалфейная краска"),
     ],
     keywords: /прованс|provence|шебби|shabby|кантри|country|францу/i,
   },
@@ -450,26 +467,75 @@ export interface RestyleJob {
   note: string
   /** Материалы стиля, снятые галочкой — их в рендере быть не должно. */
   excluded?: string[]
+  /** Направление внутри стиля (id из `STYLE_VARIANTS`); без него — общий промпт стиля. */
+  variant?: string
+  /** Зерно записи: вспомогательные материалы направления одни и те же при «Повторить». */
+  seed?: string
 }
 
+const KEEP_ROOM =
+  "Keep the room exactly as it is: the same geometry, walls, windows, doors, ceiling, camera angle, framing, perspective and placement of furniture. Change only finishes, wall and floor materials, colors, textiles, lighting fixtures, decor and the design of the furniture, so that the space reads unmistakably as this style."
+const PHOTOREAL = "Photorealistic, natural lighting, no text, no watermark."
+
+/** Сколько материалов каталога добавляется к ядру направления — для разнообразия внутри него. */
+const SUPPORTING_MATERIALS = 2
+
+/**
+ * Промпт переноса. С направлением модели уходит его бриф и ядро материалов
+ * плюс пара вспомогательных из каталога (по зерну записи), а не весь список —
+ * иначе она собирает штамп стиля. Без направления (старые записи, свой стиль
+ * без узнаваемого семейства) — общий промпт по всему каталогу.
+ */
 export function buildRestylePrompt(job: RestyleJob): string {
   const note = job.note.trim()
   const family = job.style === "auto" ? matchStyle(note) : job.style
   const info = family ? STYLES.find((style) => style.value === family) : undefined
   const excluded = job.excluded ?? []
-  const materials = info ? info.swatches.map((swatch) => swatch.name).filter((name) => !excluded.includes(name)) : []
+  const allowed = info ? info.swatches.map((swatch) => swatch.name).filter((name) => !excluded.includes(name)) : []
+  const variant = info ? variantOf(info.value, job.variant) : undefined
+  const list = (names: string[]) => names.map(materialEn).join(", ")
 
-  const lines: string[] = [
+  if (info && variant) {
+    const core = variant.materials.filter((name) => !excluded.includes(name))
+    const supporting = pickSome(
+      allowed.filter((name) => !core.includes(name) && !variant.avoid.includes(name)),
+      SUPPORTING_MATERIALS,
+      seededRandom(job.seed ?? variant.id)
+    )
+    return [
+      `Redesign this interior in the ${STYLE_ENGLISH[info.value]} style.`,
+      `Design direction for this version: ${variant.brief}`,
+      KEEP_ROOM,
+      core.length > 0 ? `Key materials and finishes: ${list(core)}.` : "",
+      supporting.length > 0 ? `Supporting materials to add sparingly: ${list(supporting)}.` : "",
+      excluded.length > 0 ? `Do not use: ${list(excluded)}.` : "",
+      "Follow this direction faithfully: the palette and materials above define this version of the style. Do not fall back on the most common stock look of the style.",
+      note ? `Designer's notes: ${note}` : "",
+      PHOTOREAL,
+    ]
+      .filter(Boolean)
+      .join("\n")
+  }
+
+  return [
     info
       ? `Redesign this interior in the ${STYLE_ENGLISH[info.value]} style (${info.hint}).`
       : `Redesign this interior in the style described by the designer: ${note}`,
-    "Keep the room exactly as it is: the same geometry, walls, windows, doors, ceiling, camera angle, framing, perspective and placement of furniture. Change only finishes, wall and floor materials, colors, textiles, lighting fixtures, decor and the design of the furniture, so that the space reads unmistakably as this style.",
-    materials.length > 0 ? `Characteristic materials and finishes to use: ${materials.join(", ")}.` : "",
-    excluded.length > 0 ? `Do not use: ${excluded.join(", ")}.` : "",
+    KEEP_ROOM,
+    allowed.length > 0 ? `Characteristic materials and finishes to use: ${list(allowed)}.` : "",
+    excluded.length > 0 ? `Do not use: ${list(excluded)}.` : "",
     info && note ? `Designer's notes: ${note}` : "",
-    "Photorealistic, natural lighting, no text, no watermark.",
+    PHOTOREAL,
   ]
-  return lines.filter(Boolean).join("\n")
+    .filter(Boolean)
+    .join("\n")
+}
+
+/** Подпись направления для карточки: «тик и олива»; пусто, если направления нет. */
+export function describeVariant(style: RestyleStyle, note: string, variant: string | undefined): string {
+  const family = style === "auto" ? matchStyle(note) : style
+  if (!family || !variant) return ""
+  return variantOf(family, variant)?.label ?? ""
 }
 
 /* ── Основной путь ──────────────────────────────────────────────────── */
