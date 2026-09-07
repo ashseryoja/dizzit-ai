@@ -33,7 +33,9 @@
 | Слой «Отпустите, чтобы приложить…», скрытый `<input type="file">`, отступы под композер и панель, скелет до гидрации | `tool-shell.tsx` | `ToolShell` |
 | Положение композера внизу (отступ под сайдбар и панель, анимация появления) | `tool-shell.tsx` | `ComposerDock` |
 | Галерея результатов: масонри колонками или широкие карточки одна под другой (`layout="stack"` у сетов кадров) | `tool-shell.tsx` | `ToolGallery` |
-| «Добавить кадр», когда дропзоны уже нет: узкая полоса над галереей (`variant="bar"`, без прокрутки к концу списка) или плитка под последним результатом (`variant="tile"`) | `src/components/tool/add-tile.tsx`; `.add-bar`, `.add-tile*` в `surfaces.css` | `AddTile`, `onClick={intake.pickFiles}` |
+| «Добавить кадр» / «Добавить интерьер», когда дропзоны уже нет: узкая полоса над галереей (`variant="bar"`, без прокрутки к концу списка; в галерее-масонри занимает всю ширину над колонками) или плитка под последним результатом (`variant="tile"`) | `src/components/tool/add-tile.tsx`; `.add-bar`, `.add-tile*` в `surfaces.css` | `AddTile`, `onClick={intake.pickFiles}` |
+| Слот «Загрузить…» в панели настроек, когда пачка пуста, а композер остался (после отправки — над галереей результатов) | `tool-composer.tsx` | блок «Панель настроек», условие `selectionMode && attachments.length > 0` |
+| Прокрутка наверх при смене режима экрана: сцена ↔ галерея результатов | `src/lib/use-scroll-top.ts` | `useScrollTopOnChange(hasAttachments)` |
 | Выбор формата кадров (9:16, 3:4, 1:1, 4:3, 16:9) с глифами пропорций в панели настроек | `src/components/tool/aspect-picker.tsx` — секция; `src/lib/frame-aspect.ts` — список и пропорции; `src/styles/ds/surfaces.css` — `.aspect-*` | `AspectPicker`, слот `extras` композера |
 | Планировщик раскадровки: vision-модель смотрит на рендер и составляет список кадров под него с областями кропа (`ViewFrame.region`); кадр — кроп исходника (`cropRegion` → единственный референс), а не новая точка съёмки, кроме кадров «с другой точки» (`vantage`, `ViewFrame.side`: референс шире области, промпт переснимает предмет с камеры выше и сбоку, результат без сдвига камеры переснимается с прямым указанием; в сете два таких, набор «Ракурсы» — целиком); параллельно — разбор сцены (`describeScene`, `ViewSet.sceneInventory`) в промпт каждого кадра, готовый кадр — Lanczos3 до 2000 px (`VIEW_LONG_SIDE`); без ключа — кадры по составу набора | `src/lib/shot-planning.ts` — клиент; `src/app/api/shots/route.ts` + `src/server/shot-planner.ts` — сервер; `src/lib/view-presets.ts` — состав наборов слотами и сборка кадров | `planViewFrames`; `buildShotListPrompt`, `parseShotList`, `planShotList`; `PRESET_SLOTS`, `assignShots`, `framesOf` |
 | Карточка результата: «до/после», скачать, удалить, статусы | `src/components/tool/tool-card.tsx` | `ToolCard` (у сетов кадров — своя `view-set-card.tsx`) |
@@ -188,6 +190,10 @@ refresh. Удаление пары из пачки
 - `FRAME_ASPECTS`, `frameAspectRatio`, `frameAspectCss`, `closestFrameAspect`
   (`src/lib/frame-aspect.ts`) — форматы кадров и их пропорции для генерации,
   обрезки и плиток.
+- `useScrollTopOnChange(key)` (`src/lib/use-scroll-top.ts`) — страница наверх
+  при каждой смене `key`: инструменты со сценой передают `hasAttachments`,
+  чтобы после отправки была видна новая карточка в голове галереи, а после
+  добавления исходника из глубины галереи — сцена.
 
 ---
 
@@ -228,7 +234,11 @@ refresh. Удаление пары из пачки
 Ключевые режимы:
 
 - `selectionLabel` задан — **режим выбора**: пачкой управляет панель-галерея, а
-  композер показывает «выбрано N» и не рисует чип и секцию файлов.
+  композер показывает «выбрано N» и не рисует чип и секцию файлов. При пустой
+  пачке (`null`) секция файлов возвращается слотом «Загрузить…»: панели в этот
+  момент нет, а новый исходник после отправки нужен не только переносом и
+  вставкой из буфера. Главная кнопка при пустой пачке открывает выбор файла
+  (страницы делают это в `submit`).
 - `tools` задан — панель настроек показывает **только** его (пакетные функции).
 - `extras` — дополнительные секции обычной панели (тумблер заселения).
 - `dock` — постоянная секция над композером (материалы стиля).
@@ -339,8 +349,8 @@ refresh. Удаление пары из пачки
 | `page-header.tsx` | `PageHeader` | шапка обычной страницы (настройки) |
 | `page-loader.tsx` | `PageLoader` | скелет до гидрации сторов |
 
-Хуки общего слоя: `useAttachments`, `useBatchSelection` (`src/lib/`), помощники
-`saveSourceFile`, `runGalleryQueue` (`src/lib/tool-jobs.ts`).
+Хуки общего слоя: `useAttachments`, `useBatchSelection`, `useScrollTopOnChange`
+(`src/lib/`), помощники `saveSourceFile`, `runGalleryQueue` (`src/lib/tool-jobs.ts`).
 
 ---
 
@@ -355,6 +365,7 @@ refresh. Удаление пары из пачки
 | `BatchGrid` | ✓ | ✓ | ✓ `compact` | — | — |
 | `ToolDropzone` | ✓ RenderReveal | ✓ ViewsInvite | ✓ StyleSwap | — (MaterialPreviewGrid) | ✓ FurnitureMorph, `armed` |
 | `ToolGallery` + карточка | — (результат остаётся на Stage) | ✓ `layout="stack"`, ViewSetCard | ✓ ToolCard | ✓ ToolCard | — (сцена + лента) |
+| `AddTile` («добавить ещё» в галерее результатов) | — (пачка остаётся в панели) | ✓ полоса «Добавить кадр» над сетами | ✓ полоса «Добавить интерьер» над результатами | — (композер всегда) | — |
 | Своё на странице | постоянная пара «исходник / новый» в `RenderTray`, результат на Stage, контекст, разбор сцены (инвентарь предметов) + качество GPT Image 2 + Lanczos 2000 px, заселение, пакетные функции, области правки, `notice` | выбор набора кадров, формат кадров (`AspectPicker` в `extras`, панель открывается сама, `submitBlockedReason` + `notice` до выбора), планировщик кадров перед генерацией, подпись под сценой | стили, док материалов, вторая панель, `notice` | референсы не обязательны | одно фото, `ModelStage`/`ModelChip` |
 
 Страницы после выноса общего: `enhance` ≈ 420 строк, `restyle` ≈ 375, `views` ≈ 275,

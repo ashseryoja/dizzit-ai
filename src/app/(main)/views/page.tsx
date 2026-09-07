@@ -21,6 +21,7 @@ import { runGalleryQueue, saveSourceFile } from "@/lib/tool-jobs"
 import { useAttachments } from "@/lib/use-attachments"
 import { useBatchSelection } from "@/lib/use-batch-selection"
 import { usePresence } from "@/lib/use-presence"
+import { useScrollTopOnChange } from "@/lib/use-scroll-top"
 import { createId, fileBaseName, mapWithConcurrency, plural } from "@/lib/utils"
 import { PRESET_LABEL, PRESET_SLOTS, describeSlots, framesOf, prepareViewSet, viewKey, viewThumbKey } from "@/lib/view-engine"
 import { ensureActiveProject, useActiveProject } from "@/stores/project-store"
@@ -312,14 +313,8 @@ export default function ViewsPage() {
     void runSet(item)
   }
 
-  /* Смена режима — новая сцена или готовая очередь карточек — всегда наверху
-     страницы: иначе после «Построить» новая карточка встаёт в голову списка,
-     а экран остаётся прокрученным к плитке «Добавить кадр», и кажется, что
-     ничего не произошло. */
-  useEffect(() => {
-    // Мгновенно, не плавно: плавную прокрутку обрывает перестройка страницы.
-    window.scrollTo(0, 0)
-  }, [hasAttachments])
+  // Смена режима — сцена или галерея сетов — всегда наверху страницы.
+  useScrollTopOnChange(hasAttachments)
 
   /* Строка состояния в композере, пока идёт хотя бы один сет: композер всегда
      на экране, значит и ответ «работает ли» — тоже. */

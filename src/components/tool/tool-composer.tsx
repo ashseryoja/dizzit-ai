@@ -96,8 +96,10 @@ export function ToolComposer<T extends string>({
    * Режим выбора: пачкой управляет внешняя панель-галерея, а композер
    * лишь показывает, над чем идёт работа («выбрано 5 рендеров»). Чипа
    * с файлами и секции файлов в настройках при этом нет — там только
-   * инструменты обработки. null — режим тот же, но показывать нечего
-   * (пачка пуста).
+   * инструменты обработки. null — режим тот же, но пачка пуста: панели
+   * в этот момент нет, поэтому в настройках снова есть слот «Загрузить…» —
+   * иначе после отправки пачки новый исходник неоткуда взять, кроме
+   * переноса и вставки из буфера.
    */
   selectionLabel?: string | null
   /**
@@ -215,7 +217,7 @@ export function ToolComposer<T extends string>({
             tools
           ) : (
           <>
-          {selectionMode ? null : (
+          {selectionMode && attachments.length > 0 ? null : (
           <section>
             <div className="mb-2.5 flex items-center justify-between gap-3">
               <SectionLabel icon={ImageIcon}>{labels.filesTitle}</SectionLabel>

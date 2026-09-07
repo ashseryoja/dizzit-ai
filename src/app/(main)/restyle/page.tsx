@@ -19,6 +19,7 @@ import {
   type LucideIcon,
 } from "lucide-react"
 
+import { AddTile } from "@/components/tool/add-tile"
 import { RenderStrip, RenderTray } from "@/components/tool/render-tray"
 import { BatchGrid, Stage } from "@/components/tool/stage"
 import { StyleDock } from "@/components/tool/style-dock"
@@ -36,6 +37,7 @@ import { persistResultDurably, repairPersistedResult } from "@/lib/result-storag
 import { useAttachments } from "@/lib/use-attachments"
 import { useBatchSelection } from "@/lib/use-batch-selection"
 import { usePresence } from "@/lib/use-presence"
+import { useScrollTopOnChange } from "@/lib/use-scroll-top"
 import { fileBaseName, plural } from "@/lib/utils"
 import { ensureActiveProject, useActiveProject } from "@/stores/project-store"
 import { useRestyleStore } from "@/stores/restyle-store"
@@ -88,6 +90,12 @@ const LABELS: ToolComposerLabels = {
  * в обычном режиме это интерьер на сцене, в режиме «Выбрать» панели —
  * отмеченные; «Перенести все» показывает набор гридом вместо сцены. Остальная
  * пачка остаётся в панели.
+ *
+ * Отправленный набор уходит со сцены в галерею результатов. Следующий
+ * исходник добавляется оттуда же: полоса «Добавить интерьер» над карточками,
+ * кнопка «Перенести» при пустой пачке (открывает выбор файла), слот в
+ * настройках композера, перенос на страницу или вставка из буфера — и экран
+ * снова становится сценой с панелью стилей.
  */
 export default function RestylePage() {
   const activeProject = useActiveProject()
@@ -133,6 +141,8 @@ export default function RestylePage() {
   const showComposer = hasAttachments || visible.length > 0
   const composer = usePresence(showComposer)
   const tray = usePresence(hasAttachments)
+  // Смена режима — сцена или галерея результатов — всегда наверху страницы.
+  useScrollTopOnChange(hasAttachments)
 
   const runRestyle = useCallback(
     async (meta: Restyle) => {
@@ -291,7 +301,11 @@ export default function RestylePage() {
               onSettingsOpenChange={setSettingsOpen}
               notice={notice}
               attentionKey={attention}
-              placeholder={hasAttachments ? placeholder : undefined}
+              placeholder={
+                hasAttachments
+                  ? placeholder
+                  : "Добавьте интерьер: полоса «Добавить интерьер» над результатами, перенос или вставка из буфера"
+              }
               dock={
                 hasAttachments && style !== "auto" ? (
                   <StyleDock
@@ -379,6 +393,16 @@ export default function RestylePage() {
         />
       ) : (
         <ToolGallery>
+          {/* Над результатами — полоса «Добавить интерьер»: новый исходник и ещё
+              один перенос, когда дропзоны на экране уже нет. В масонри полоса
+              занимает всю ширину над колонками (column-span у .add-bar). */}
+          <AddTile
+            variant="bar"
+            onClick={intake.pickFiles}
+            label="Добавить интерьер"
+            hint="ещё один рендер или фото — и новый перенос стиля"
+            className="mb-4"
+          />
           {visible.map((item) => (
             <ToolCard
               key={item.id}
