@@ -30,14 +30,28 @@ const ORIENTATION: Record<FrameAspect, string> = {
 
 const SLOT_BRIEF: Record<ShotSlot, string> = {
   angle:
-    "angle (kind top / low / left / right): the WHOLE space from a new, interesting camera position — from the doorway looking in, from floor level along the floor toward the light, from a high corner looking down, from behind a piece of furniture, through an opening, a reflection in a mirror or glass, a strict frontal symmetry. Choose the kind by where the camera goes: top = raised camera looking down, low = camera near the floor, left / right = camera moved to that side of the space.",
+    "angle (kind top / low / left / right): a ZONE of the space seen from an unexpected viewpoint, but close — never the whole room. top = camera raised 40–60° looking down onto a surface and what stands on it (a nightstand with its lamp and a book, a bench top with a planter); low = camera at the height of the bed, sofa or table top, looking across it so the near edge fills the foreground; left / right = a three-quarter view of one zone from that side (the corner where the headboard meets the nightstand, the armchair with its side table). The subject fills most of the frame; walls, floor and ceiling are only background.",
   detail:
-    "detail: ONE specific object exactly as it appears in the image — name it and its place (\"the black ceramic vase on the oak console, right of centre\"), what stands behind it, how the light falls on it, shallow depth of field.",
+    "detail: ONE hero object exactly as it appears in the image, with one or two neighbours for context — name it and its place (\"the bonsai in the black bowl on the marble bench top, right of the bed\"), what is beside and behind it, how the light falls on it; camera close, shallow depth of field.",
   texture:
-    "texture: a macro of ONE specific material visible in the image — the grain of the oak veneer panels, the pits of the travertine floor, the bouclé weave, the brushed brass of a handle — with raking light that shows relief.",
+    "texture: a material IN CONTEXT, on its object — where the weave, grain or veining meets an edge, a seam, a piping, a joint or a second material, with raking light that shows relief (the fabric panel joint with the sconce's light pool on it, the marble top edge over the concrete drawer front, the blanket fringe over the bed edge). Never a flat swatch of a bare wall, floor or ceiling with nothing else in frame.",
   fragment:
-    "fragment: a compositional slice of the space tighter than the reference — a corner, a junction of two materials, an alignment of lines, a niche with its light — not a whole-room view.",
+    "fragment: a compositional slice of one zone with a foreground layer — the corner of the bed with the nightstand behind, the curtain edge with the bench and window light, the doorway with the planter — framed tight, with a real sense of depth: something near, something behind.",
 }
+
+/**
+ * Редакторские правила — по каруселям дизайнеров: каждый кадр «виньетка» из
+ * одного-трёх предметов крупно, камера близко и часто сверху под углом; вся
+ * комната целиком и голые поверхности — брак.
+ */
+const EDITORIAL_RULES = [
+  "Editorial rules, like a designer's carousel of AI close-ups:",
+  "- every shot is a VIGNETTE: one to three objects, the subject fills roughly half to four fifths of the frame, camera 0.5–2 m away;",
+  "- favourite viewpoints: raised 40–60° looking down onto a surface; camera at the height of the bed or table looking across it; a three-quarter view into a corner; a low view along a rug or floor with furniture legs and a foreground edge;",
+  "- every shot needs light doing something: a sconce's pool on fabric, an LED cove line on a marble top, window light across a blanket, a shadow from a lamp shade;",
+  "- FORBIDDEN: any view where a whole bed, sofa or room fits in the frame; a bare wall, floor, ceiling or curtain as the subject; a flat frontal patch of one material with nothing else; two shots of the same subject; the same framing as the reference;",
+  "- shots must differ from each other in subject, distance and viewpoint.",
+].join("\n")
 
 /** Строка состава набора для промпта и для фальшивого провайдера в тестах: `REQUIRED SLOTS: angle, angle, detail…`. */
 export const REQUIRED_SLOTS_PREFIX = "REQUIRED SLOTS:"
@@ -55,7 +69,8 @@ export function buildShotListPrompt(preset: ViewPreset, aspect: FrameAspect, not
     `Plan exactly ${slots.length} shots. ${REQUIRED_SLOTS_PREFIX} ${slots.join(", ")} (in Russian: ${composition}). Every shot will be generated in ${aspect} format — ${ORIENTATION[aspect]} — so compose each shot for that frame.`,
     "Shot kinds:",
     ...kinds.map((slot) => `- ${SLOT_BRIEF[slot]}`),
-    "Be creative but honest: each shot must be visibly different from the others and from the reference framing — a different subject, a different part of the room, a different distance. Prefer what a good photographer would notice: the play of light on a surface, a junction of two materials, a silhouette against the window, a reflection, a repeated rhythm of legs or slats, the one object that gives the room its character. Never invent objects that are not in the image; name subjects concretely so the generator can find them in the reference.",
+    EDITORIAL_RULES,
+    "Be creative but honest: prefer what a good photographer would notice — the play of light on a surface, a junction of two materials, a repeated rhythm of legs or slats, the one object that gives the room its character. Never invent objects that are not in the image; name subjects concretely so the generator can find them in the reference.",
     wishes.length > 0
       ? `The designer asked to show these subjects close up, in this order, giving them the first detail shots: ${wishes.map((item) => `"${item}"`).join(", ")}.`
       : "",

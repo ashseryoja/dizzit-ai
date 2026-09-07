@@ -69,43 +69,49 @@ export const LEGACY_CLOSEUP_ASPECT = 4 / 5
 /** Длинная сторона кадра после серверного Lanczos3 — как у редактора рендера. */
 export const VIEW_LONG_SIDE = 2000
 
+/* Типовые кадры без задания планировщика. Ракурсы — не вся комната с другой
+   точки, а зона крупно с неожиданной точки: как в каруселях дизайнеров. */
 const ANGLE_PROMPT: Record<"top" | "low" | "left" | "right", string> = {
-  top: "Photograph the same scene from an elevated camera position looking down at it (high angle, roughly 35–45 degrees above the horizon), so the layout of the space reads clearly.",
-  low: "Photograph the same scene from a low camera position close to the floor, looking slightly upward (low angle), keeping the scene grounded and natural.",
-  left: "Photograph the same scene with the camera moved to the left side of the space and turned toward it, so the scene is seen from that side and its right-hand part opens up.",
-  right: "Photograph the same scene with the camera moved to the right side of the space and turned toward it, so the scene is seen from that side and its left-hand part opens up.",
+  top: "A vignette of the main surface and what stands on it (a nightstand, bench top, table or console with its objects), camera raised 40–60° and looking down onto it, close, the surface and objects filling the frame.",
+  low: "A vignette shot with the camera at the height of the bed, sofa or table top, looking across it: the near edge and its fabric or material fill the foreground, the objects behind it are the subject.",
+  left: "A three-quarter view into one zone from the left side, close: the corner where the main piece of furniture meets its neighbour, walls only as background.",
+  right: "A three-quarter view into one zone from the right side, close: the corner where the main piece of furniture meets its neighbour, walls only as background.",
 }
 
 /** Крупные планы без подсказки: чтобы кадры одного типа смотрели на разное. */
 const DETAIL_SUBJECTS = [
-  "the most prominent piece of furniture in the scene",
-  "a secondary object: a lamp, a vase, an armchair or a piece of decor",
-  "a decor item or accessory visible in the scene",
-  "a functional element: a handle, a fixture, a shelf or a joint between materials",
+  "the one object that gives the room its character (a plant, a lamp, a vase, a chair), with its neighbours for context",
+  "a secondary object: a lamp, a vase, a bowl on a stack of books, a cushion",
+  "a decor item or accessory visible in the scene, with what stands next to it",
+  "a functional element: a handle, a switch plate, a fixture, a shelf, with the material around it",
 ]
 const TEXTURE_SUBJECTS = [
-  "the most characteristic material surface of the scene (wood grain, stone, plaster or fabric weave)",
-  "a second, different material surface of the scene",
-  "a third, different material surface of the scene",
-  "a fourth, different material surface of the scene",
+  "the most characteristic material of the scene on its object, where it meets an edge, seam or a second material",
+  "a second material of the scene at an edge or joint, with a neighbouring surface in frame",
+  "a third material at a seam, piping or hardware detail",
+  "a fourth material where light rakes across it and a second surface is visible",
 ]
 const FRAGMENT_SUBJECTS = [
-  "the main functional zone of the space",
-  "a different corner or zone of the same space",
-  "another part of the space not shown in the previous fragments",
-  "a fourth distinct zone of the space",
+  "the main zone of the space with a foreground layer (the edge of the bed, sofa or table nearest the camera)",
+  "a different corner of the same space, framed with something near and something behind",
+  "another zone not shown in the previous fragments, with depth from a foreground edge",
+  "a fourth distinct zone of the space, framed tight",
 ]
 
 /** Как снимать кадр этого типа — ремесло, общее для задания планировщика и типового сюжета. */
 const CRAFT: Record<ShotKind, string> = {
-  top: "The whole space is in frame from the new camera position; perspective and proportions stay consistent with the room's real geometry.",
-  low: "The whole space is in frame from the new camera position; perspective and proportions stay consistent with the room's real geometry.",
-  left: "The whole space is in frame from the new camera position; perspective and proportions stay consistent with the room's real geometry.",
-  right: "The whole space is in frame from the new camera position; perspective and proportions stay consistent with the room's real geometry.",
-  detail: "A close-up photograph with shallow depth of field, the subject fully in frame with some margin, the rest of the room softly out of focus behind it.",
-  texture: "An extreme close-up (macro) that fills the frame with the material, raking light showing its relief, grain and finish exactly as in the reference.",
-  fragment: "A photograph framed tighter than the reference, a fragment of this same interior with its real light.",
+  top: "Close vignette from above: the surface and its objects fill the frame; perspective consistent with the room's real geometry; the rest of the room stays outside the frame or softly behind.",
+  low: "Close vignette across a surface: the foreground edge is sharp and textured, the subject behind it in focus, the room beyond softly out of frame.",
+  left: "Close three-quarter vignette of one zone; perspective consistent with the room's real geometry; walls and floor only as background.",
+  right: "Close three-quarter vignette of one zone; perspective consistent with the room's real geometry; walls and floor only as background.",
+  detail: "A close-up photograph with shallow depth of field, the subject fully in frame with a little margin, its neighbours softly out of focus behind it.",
+  texture: "A close-up that fills the frame with the material on its object, at an edge, seam or joint, raking light showing relief, grain and finish exactly as in the reference; a second surface visible so the material reads in context.",
+  fragment: "A tight photograph of one zone with a foreground layer and depth, a fragment of this same interior with its real light.",
 }
+
+/** Что не должно попасть в кадр ни при каком задании. */
+const VIGNETTE_RULE =
+  "Framing rule: this is a close editorial vignette, not a room view — the subject fills most of the frame, the camera is within about two metres of it; never show a whole bed, sofa or room, never make a bare wall, floor, ceiling or curtain the subject, never a flat swatch of one material with nothing else in frame."
 
 const ORIENTATION: Record<FrameAspect, string> = {
   "9:16": "tall vertical",
@@ -163,6 +169,7 @@ export function buildViewPrompt(
     "IMAGE 1 (the attached image) is a render of a space. Produce a new photograph of exactly the same space: the same objects, materials, colors, finishes and lighting — nothing added, removed or restyled. Only the camera moves.",
     frame.brief ? `Shot: ${frame.brief}` : templateShot(frame, frames, note),
     CRAFT[frame.kind],
+    VIGNETTE_RULE,
     format,
     // Разбор сцены и правила «предмет остаётся предметом, материал — материалом»,
     // те же, что в редакторе рендера: на крупном плане подмена материала
