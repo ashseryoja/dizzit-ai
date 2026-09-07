@@ -45,9 +45,15 @@ export const PRESET_LABEL: Record<ViewPreset, string> = {
  */
 export const REGION_BOUNDS: Record<ShotSlot, { min: number; max: number }> = {
   angle: { min: 0.3, max: 0.45 },
-  detail: { min: 0.22, max: 0.42 },
+  detail: { min: 0.2, max: 0.4 },
   texture: { min: 0.14, max: 0.3 },
-  fragment: { min: 0.28, max: 0.45 },
+  // Фрагмент в маленькой комнате при 45 % — это вся комната; 36 % — угол.
+  fragment: { min: 0.22, max: 0.36 },
+}
+
+/** Потолок доли кадра для ГОТОВОГО кропа после расширения до формата — по роду кадра. */
+export function maxCropFraction(kind: ShotKind): number {
+  return REGION_BOUNDS[slotOf(kind)].max
 }
 
 /** Область в границах своего рода: сжимается или растёт вокруг центра, не выходя за кадр. */

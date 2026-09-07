@@ -36,7 +36,7 @@ const SLOT_BRIEF: Record<ShotSlot, string> = {
   texture:
     "texture: a tight crop where a material sits on its object and meets an edge, a seam, a piping, a joint or a second material — the fabric panel joint with the sconce's light pool, the marble top edge over the drawer front, the blanket fringe over the bed edge. Never a flat patch of bare wall, floor or ceiling with nothing else in the crop.",
   fragment:
-    "fragment: a tight crop of one corner that keeps a foreground layer and depth — the corner of the bed with the nightstand behind, the curtain edge with the bench and window light, the doorway with the planter — never more than 45% of the image on any side.",
+    "fragment: a TIGHT crop of one corner with a foreground layer and depth — the corner of the bed with the edge of the nightstand behind it, the curtain edge with the bench and window light, the doorway edge with the planter — the corner fills the crop; never more than about a third of the image on any side, never the bed or sofa as a whole.",
 }
 
 /**
@@ -74,7 +74,7 @@ export function buildShotListPrompt(preset: ViewPreset, aspect: FrameAspect, not
     wishes.length > 0
       ? `The designer asked to show these subjects close up, in this order, giving them the first detail shots: ${wishes.map((item) => `"${item}"`).join(", ")}.`
       : "",
-    'Answer with a JSON array only, no prose, no markdown: [{"kind": "top|low|left|right|detail|texture|fragment", "label": "<2–4 Russian words, lowercase, naming the subject: \\"ваза на консоли\\", \\"тумба с лампой\\", \\"шпон дуба крупно\\">", "brief": "<English, 1–3 sentences for the image generator: the subject exactly as it appears in the image, what else is in the crop, where the light falls>", "region": [x, y, w, h]}, …] where region is the crop rectangle as fractions of the image width and height from 0 to 1 (x, y — top-left corner; w, h — size), chosen as the best composition around the subject. HARD LIMITS: no side of any region larger than 0.45 of the image (a bigger crop comes out as the whole picture again); texture 0.14–0.3, detail 0.22–0.42, fragment 0.28–0.45. Put the crop where the subject actually is in the image.',
+    'Answer with a JSON array only, no prose, no markdown: [{"kind": "top|low|left|right|detail|texture|fragment", "label": "<2–4 Russian words, lowercase, naming the subject: \\"ваза на консоли\\", \\"тумба с лампой\\", \\"шпон дуба крупно\\">", "brief": "<English, 1–3 sentences for the image generator: the subject exactly as it appears in the image, what else is in the crop, where the light falls>", "region": [x, y, w, h]}, …] where region is the crop rectangle as fractions of the image width and height from 0 to 1 (x, y — top-left corner; w, h — size), chosen as the best composition around the subject. HARD LIMITS: no side of any region larger than 0.45 of the image (a bigger crop comes out as the whole picture again); texture 0.14–0.3, detail 0.2–0.4, fragment 0.22–0.36. Put the crop where the subject actually is in the image.',
   ]
     .filter(Boolean)
     .join("\n")

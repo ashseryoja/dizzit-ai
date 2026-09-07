@@ -12,7 +12,7 @@ import {
   requestImage,
   type GeneratedImage,
 } from "@/lib/image-generation"
-import { isWideShot } from "@/lib/view-presets"
+import { isWideShot, maxCropFraction } from "@/lib/view-presets"
 import type { FrameAspect, ShotKind, ViewFrame } from "@/types"
 
 export {
@@ -219,9 +219,9 @@ export async function cropRegion(
   source: Blob,
   region: [number, number, number, number],
   ratio: number,
-  maxSide = REFERENCE_MAX_SIDE,
-  minSide = CROP_MIN_SIDE
+  options: { maxFraction?: number; maxSide?: number; minSide?: number } = {}
 ): Promise<Blob> {
+  const { maxFraction = 1, maxSide = REFERENCE_MAX_SIDE, minSide = CROP_MIN_SIDE } = options
   const bitmap = await createImageBitmap(source)
   try {
     const W = bitmap.width
@@ -233,13 +233,17 @@ export async function cropRegion(
     let h = Math.max(8, fh * H)
     if (w / h < ratio) w = h * ratio
     else h = w / ratio
-    if (w > W) {
-      w = W
-      h = W / ratio
+    // Расширение до формата не должно превратить кроп в общий план: готовый
+    // кроп не больше доли кадра своего рода по любой стороне.
+    const limitW = Math.min(W, maxFraction * W)
+    const limitH = Math.min(H, maxFraction * H)
+    if (w > limitW) {
+      w = limitW
+      h = w / ratio
     }
-    if (h > H) {
-      h = H
-      w = H * ratio
+    if (h > limitH) {
+      h = limitH
+      w = h * ratio
     }
     const x = Math.min(Math.max(0, cx - w / 2), W - w)
     const y = Math.min(Math.max(0, cy - h / 2), H - h)
@@ -251,6 +255,70 @@ export async function cropRegion(
   } finally {
     bitmap.close()
   }
+}
+
+/**
+ * Похож ли готовый кадр на общий план исходника: обе картинки сводятся к
+ * маленькой серой сетке (исходник — центральной вырезкой в пропорции кадра),
+ * и считается корреляция. Кроп настоящего угла с общим планом не совпадает;
+ * повтор исходника даёт корреляцию около единицы.
+ */
+export async function resemblesSource(result: Blob, source: Blob, threshold = 0.8): Promise<boolean> {
+  const size = 24
+  const gray = async (blob: Blob, ratio?: number): Promise<Float32Array> => {
+    const bitmap = await createImageBitmap(blob)
+    try {
+      let sx = 0
+      let sy = 0
+      let sw = bitmap.width
+      let sh = bitmap.height
+      if (ratio) {
+        if (sw / sh > ratio) {
+          sw = sh * ratio
+          sx = (bitmap.width - sw) / 2
+        } else {
+          sh = sw / ratio
+          sy = (bitmap.height - sh) / 2
+        }
+      }
+      const canvas = document.createElement("canvas")
+      canvas.width = size
+      canvas.height = size
+      const ctx = canvas.getContext("2d", { willReadFrequently: true })
+      if (!ctx) throw new Error("Canvas 2D недоступен")
+      ctx.drawImage(bitmap, sx, sy, sw, sh, 0, 0, size, size)
+      const { data } = ctx.getImageData(0, 0, size, size)
+      const out = new Float32Array(size * size)
+      for (let i = 0; i < out.length; i += 1) out[i] = 0.299 * data[i * 4] + 0.587 * data[i * 4 + 1] + 0.114 * data[i * 4 + 2]
+      return out
+    } finally {
+      bitmap.close()
+    }
+  }
+  const { width, height } = await readBlobSize(result)
+  const a = await gray(result)
+  const b = await gray(source, width / height)
+  const mean = (v: Float32Array) => v.reduce((sum, x) => sum + x, 0) / v.length
+  const ma = mean(a)
+  const mb = mean(b)
+  let num = 0
+  let da = 0
+  let db = 0
+  for (let i = 0; i < a.length; i += 1) {
+    num += (a[i] - ma) * (b[i] - mb)
+    da += (a[i] - ma) ** 2
+    db += (b[i] - mb) ** 2
+  }
+  const corr = da > 0 && db > 0 ? num / Math.sqrt(da * db) : 0
+  return corr >= threshold
+}
+
+/** Область на треть меньше вокруг своего центра — для повтора кадра, вышедшего общим планом. */
+function shrinkRegion(region: [number, number, number, number], factor = 0.7): [number, number, number, number] {
+  const [x, y, w, h] = region
+  const nw = w * factor
+  const nh = h * factor
+  return [x + (w - nw) / 2, y + (h - nh) / 2, nw, nh]
 }
 
 export interface ViewSetRenderer {
@@ -292,18 +360,27 @@ export async function prepareViewSet(
     const reference = frames.every((frame) => regionOf(frame)) ? null : await prepareReference(source)
     return {
       async render(frame) {
-        const region = regionOf(frame)
-        const crop = region ? await cropRegion(source, region, ratioFor(frame)) : null
-        const base = crop ?? reference ?? (await prepareReference(source))
         // Провайдер подберёт ближайшую свою пропорцию; остаток обрежется до точного формата.
         const wanted = aspect ? frameAspectSize(aspect) : isWideShot(frame.kind) ? { width, height } : { width: 4, height: 5 }
-        const image = await requestImage({
-          prompt: buildViewPrompt(frame, frames, note, aspect, inventory, { cropped: Boolean(crop) }),
-          aspect: wanted,
-          references: [base],
-          finalLongSide: VIEW_LONG_SIDE,
-        })
-        return cropToAspect(image, ratioFor(frame))
+        const generate = async (region: [number, number, number, number] | null) => {
+          const crop = region ? await cropRegion(source, region, ratioFor(frame), { maxFraction: maxCropFraction(frame.kind) }) : null
+          const base = crop ?? reference ?? (await prepareReference(source))
+          const image = await requestImage({
+            prompt: buildViewPrompt(frame, frames, note, aspect, inventory, { cropped: Boolean(crop) }),
+            aspect: wanted,
+            references: [base],
+            finalLongSide: VIEW_LONG_SIDE,
+          })
+          return cropToAspect(image, ratioFor(frame))
+        }
+        const region = regionOf(frame)
+        const first = await generate(region)
+        // Модель всё же вернула общий план — один повтор с областью на треть меньше.
+        if (region && (await resemblesSource(first.blob, source))) {
+          console.warn(`[view-engine] кадр «${frame.label}» повторяет исходник — повтор с меньшей областью`)
+          return generate(shrinkRegion(region))
+        }
+        return first
       },
     }
   }
