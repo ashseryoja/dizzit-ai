@@ -33,7 +33,7 @@ import {
   type GeneratedImage,
 } from "@/lib/image-generation"
 import { BRUSH_HALF_WIDTH, type RegionPayload } from "@/lib/render-regions"
-import { describeScene, type SceneInventory } from "@/lib/scene-analysis"
+import { describeScene, hasMaterialsSection, type SceneInventory } from "@/lib/scene-analysis"
 import { populateScene } from "@/lib/scene-population"
 import type { BatchFilter, BatchTime, BatchTools, EnhanceContext } from "@/types"
 
@@ -118,6 +118,16 @@ export const SMALL_SOURCE_LONG_SIDE = 1200
 const OBJECT_IDENTITY_HINT =
   "OBJECT IDENTITY: Before changing a single pixel, recognize what every object in IMAGE 1 is and render it as exactly that real-world object with its true function, scale and material behavior; never let an ambiguous shape drift into a different object. A television or monitor stays a thin flat panel with a flat black glossy screen that is switched off (dark, with only faint dim reflections of the room) unless the source clearly shows content, with a slim bezel and its wall mount or stand — never a window, painting, mirror, niche or glowing rectangle. Curtains stay fabric: sheer voile is translucent and softly transmits daylight, blackout drapes are opaque with heavy vertical folds; both hang from their rod or ceiling track with natural pleats and a gentle break at the floor — never fused into the wall or turned into rigid panels. Light fixtures (pendants, chandeliers, sconces, spots, cove LED strips, floor and table lamps) keep their exact form, count, mounting and on/off state, with believable emissive glow, shades, cords and hardware. Windows and glass doors show a plausible exterior with correct exposure, real glass thickness, mullions and subtle reflections. Mirrors reflect the actual room consistently with the viewpoint. Artwork and photographs keep their exact subject, framing and mount. Plants get botanically believable leaves and stems; rugs and upholstery get true pile, weave and seams; wood keeps species-like grain, stone its veining, metal its brushed or polished finish."
 
+/**
+ * Материалы — как выбрал дизайнер. Вторая причина брака после «не тот предмет»:
+ * генератор заменяет материал похожим, но более простым — травертин становится
+ * микроцементом, шпон дуба — ламинатом, плитка теряет швы. Этот блок запрещает
+ * подмену и объясняет, что фотореализм — это микроструктура ИМЕННО этого
+ * материала, а не другой материал.
+ */
+const MATERIAL_FIDELITY_HINT =
+  "MATERIAL FIDELITY: Every surface keeps the exact material of IMAGE 1 (and of the MATERIALS section of the inventory when present): the same stone type, wood species and veneer grain direction, tile format with its joints and grout, fabric type and weave, metal finish, paint or plaster type, and the same base color and value. Photorealism here means rendering the true micro-structure of THAT material at correct scale — travertine's pits and fine linear veining, marble's vein color, oak's grain and pores, bouclé's loops, brushed brass's hairline finish — never swapping it for a smoother, plainer or more common lookalike. Travertine or limestone must not become microcement, concrete or plaster; a seamless floor must not gain joints and a slab or plank floor must not lose them; veneer must not become laminate; marble must not lose its veining; painted walls must not become plaster or stone and vice versa. Light may change how a material looks, never what it is."
+
 /** Инвентарь сцены — авторитетное описание кадра, сильнее любых спорных пикселей. */
 function sceneInventoryBlock(inventory: string | undefined): string {
   const text = inventory?.trim()
@@ -125,7 +135,7 @@ function sceneInventoryBlock(inventory: string | undefined): string {
   return [
     "SCENE INVENTORY (authoritative visual analysis of IMAGE 1 — trust it over any ambiguous pixels):",
     text,
-    "Render every listed object as exactly that object, in its listed position, material and state, and resolve each EASILY MISREAD item as described. The inventory never authorizes adding, removing or moving anything.",
+    "Render every listed object as exactly that object, in its listed position, material and state; give every surface in MATERIALS exactly the named material, pattern, layout and finish (and never the material it is marked NOT to be); resolve each EASILY MISREAD item as described. The inventory never authorizes adding, removing or moving anything.",
   ].join("\n")
 }
 
@@ -197,6 +207,7 @@ export function buildEnhanceNegativePrompt(job: EnhanceJob): string {
     "unnatural colors, neon color cast, orange wash, excessive saturation, excessive contrast, oversharpening, crunchy edges, waxy denoising, blur, low resolution, pixelation, JPEG artifacts, banding, moire, coarse noise",
     "cartoon, illustration, concept art, painterly image, surrealism, fantasy styling, miniature or dollhouse look",
     "misidentified objects, objects changed into different objects, TV screen turned into a window or painting, screen showing a landscape or glowing content, curtains merged into the wall, curtains turned into solid panels, melted or malformed light fixtures, lamps turned into blobs, missing fixtures, mirror without reflection, replaced artwork subject",
+    "substituted materials, changed floor material, travertine or limestone turned into microcement or concrete or plaster, stone veining removed, marble veins repainted, tile joints or grout lines removed, seamless floor where the source has slabs or planks, added joints on a seamless floor, changed wood species, changed veneer grain direction, veneer turned into laminate, changed fabric type, changed metal finish, recolored materials",
     "fisheye distortion, warped perspective, leaning verticals, changed camera angle, changed crop, changed room geometry, moved walls, moved doors or windows, redesigned ceiling or floor, altered furniture, added furniture, removed objects, duplicated objects, floating objects, malformed decor, text, logo, watermark",
     time === "night" ? "sunlight, daylight, sunbeams, morning light, visible god rays" : "night-time exposure, black windows",
   ].join(", ")
@@ -220,6 +231,7 @@ export function buildEnhancePrompt(job: EnhanceJob): string {
     sceneInventoryBlock(job.inventory),
     "NON-NEGOTIABLE PRESERVATION: Keep the exact camera position, lens/focal-length feel, perspective, vertical lines, crop, aspect ratio, framing and composition. Preserve every wall, opening, ceiling, floor boundary, built-in element, piece of furniture, fixture and decor item in exactly the same shape, scale, count and position. Preserve the design, material identities, patterns and base colors. Do not redesign, restyle, invent, remove, move or replace anything unless the designer explicitly requests it below.",
     improveQuality ? OBJECT_IDENTITY_HINT : "",
+    improveQuality ? MATERIAL_FIDELITY_HINT : "",
     improveQuality ? sourceQualityHint(job.sourceSize) : "",
     improveQuality
       ? "RENDER-TO-PHOTO PASS: Do not merely upscale, sharpen or polish the existing CGI pixels. Re-light and re-render every visible surface as real material under real light while keeping the locked design unchanged. Use physically plausible global illumination, indirect bounce, ambient occlusion, ray tracing and consistent light direction/color temperature. Replace flat procedural shading with scale-accurate photographic material response: natural wood grain and pores, individual textile fibers and weave, subtle plaster variation, realistic glass thickness/refraction, metal roughness, joints, seams, tiny edge bevels and grounded surface contact. Add restrained micro-imperfections and non-uniform roughness so surfaces feel manufactured and touched, never sterile or synthetic."
@@ -367,7 +379,8 @@ export async function enhanceRender(source: Blob, job: EnhanceJob, hooks: Enhanc
       const references = [await prepareReference(source)]
       if (job.regions && job.regions.length > 0) references.push(await renderRegionMap(source, job.regions))
 
-      let inventory = job.inventory?.trim() || undefined
+      // Инвентарь без секции MATERIALS — из записи прошлых версий: разбираем заново.
+      let inventory = hasMaterialsSection(job.inventory) ? job.inventory?.trim() : undefined
       let found: SceneInventory | undefined
       if (improveQuality && !inventory) {
         found = (await describeScene(source, { context: job.context })) ?? undefined

@@ -66,19 +66,20 @@ export interface OpenAiCompatibleVisionConfig {
 const REQUEST_TIMEOUT_MS = 90_000
 /**
  * Модели с внутренним рассуждением (Gemini 3, GPT-5, DeepSeek V4, «thinking»)
- * тратят ~1000 токенов ответа на невидимое рассуждение, причём через шлюзы
+ * тратят ~1000–1500 токенов ответа на невидимое рассуждение, причём через шлюзы
  * `reasoning_effort` и другие ручки не доходят (проверено на API Models и
- * LaoZhang). Поэтому им — бюджет с запасом, остальным — короткий: инвентарь
- * не длиннее ~1800 символов.
+ * LaoZhang). Поэтому им — бюджет с запасом, остальным — короче. Инвентарь с
+ * секцией MATERIALS — до ~2600 символов, это ~700 токенов текста; Claude Sonnet 5
+ * на пробе не уложился в 1100 (`finish_reason: length`), отсюда 1400.
  */
 const REASONING_MODEL = /gemini-3|gpt-5|deepseek-v4|glm-5|thinking|reason/i
-const REASONING_OUTPUT_BUDGET = 2_500
-const PLAIN_OUTPUT_BUDGET = 800
+const REASONING_OUTPUT_BUDGET = 4_000
+const PLAIN_OUTPUT_BUDGET = 1_400
 /**
  * Если лимит всё же ушёл на рассуждение и модель вернула `content: null` с
  * `finish_reason: "length"` — один повтор с удвоенным лимитом, не выше потолка.
  */
-const EMPTY_ANSWER_RETRY_MAX_TOKENS = 5_000
+const EMPTY_ANSWER_RETRY_MAX_TOKENS = 6_000
 
 /** Бюджет ответа по имени модели — для `analyzeScene` и статуса. */
 export function outputBudgetFor(model: string): number {

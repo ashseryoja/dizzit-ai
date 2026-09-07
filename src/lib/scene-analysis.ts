@@ -21,6 +21,16 @@ export const SCENE_REFERENCE_MAX_SIDE = 1280
 const STATUS_TTL_MS = 60_000
 const REQUEST_TIMEOUT_MS = 110_000
 
+/**
+ * Инвентарь составлен уже с секцией MATERIALS (точные материалы поверхностей:
+ * «travertine, NOT microcement»). Записи, разобранные до её появления, движок
+ * разбирает заново — иначе «Повторить» унесёт в генератор инвентарь без
+ * материалов, и пол снова может сменить травертин на микроцемент.
+ */
+export function hasMaterialsSection(inventory: string | undefined): boolean {
+  return Boolean(inventory && /^MATERIALS:/im.test(inventory))
+}
+
 export interface SceneInventory {
   text: string
   provider: string

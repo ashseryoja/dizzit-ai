@@ -68,7 +68,7 @@ export async function POST(request: Request) {
   try {
     const result = await analyzeScene(providers, { bytes, mimeType }, context, request.signal)
     console.info(
-      `[api/scene] ${result.provider} ${result.model} ${result.durationMs} ms, tokens in=${result.inputTokens ?? "?"} out=${result.outputTokens ?? "?"}, ${result.inventory.length} chars${result.fallbacks ? `, после ${result.fallbacks} отказов` : ""}`
+      `[api/scene] ${result.provider} ${result.model} ${result.durationMs} ms, tokens in=${result.inputTokens ?? "?"} out=${result.outputTokens ?? "?"}, ${result.inventory.length} chars${result.truncated ? ", ОБРЕЗАН по max_tokens" : ""}${result.fallbacks ? `, после ${result.fallbacks} отказов` : ""}`
     )
     return NextResponse.json(
       { inventory: result.inventory, provider: result.provider, model: result.model, durationMs: result.durationMs },

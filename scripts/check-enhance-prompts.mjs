@@ -16,6 +16,9 @@ const positiveTerms = [
   "flat black glossy screen",
   "sheer voile",
   "SOURCE QUALITY",
+  // Материалы — как выбрал дизайнер: травертин не становится микроцементом.
+  "MATERIAL FIDELITY",
+  "never swapping it for a smoother, plainer or more common lookalike",
   "volumetric lighting",
   "god rays",
   "cinematic lighting",
@@ -43,6 +46,8 @@ const negativeTerms = [
   "fake lens-flare overlay",
   "TV screen turned into a window or painting",
   "curtains merged into the wall",
+  "substituted materials",
+  "travertine or limestone turned into microcement",
 ]
 
 const missing = [...positiveTerms, ...negativeTerms].filter((term) => !engine.includes(term))
@@ -55,7 +60,9 @@ if (!engine.includes("inventory: meta.sceneInventory") && !engine.includes("job.
 }
 if (!sceneClient.includes('fetch("/api/scene"')) throw new Error("scene-analysis не ходит в /api/scene")
 if (!sceneRoute.includes("analyzeScene(")) throw new Error("/api/scene не вызывает analyzeScene")
-for (const section of ["ROOM:", "LIGHT:", "OBJECTS:", "EASILY MISREAD:"]) {
+if (!sceneInventory.includes("NOT microcement")) throw new Error("Промпт разбора сцены не требует называть материал-двойник (NOT …)")
+if (!engine.includes("hasMaterialsSection(job.inventory)")) throw new Error("enhance-engine не отбрасывает инвентарь без секции MATERIALS")
+for (const section of ["ROOM:", "LIGHT:", "MATERIALS:", "OBJECTS:", "EASILY MISREAD:"]) {
   if (!sceneInventory.includes(section)) throw new Error(`Промпт разбора сцены без секции ${section}`)
 }
 

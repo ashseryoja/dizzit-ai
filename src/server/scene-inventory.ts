@@ -19,14 +19,19 @@ import type { EnhanceContext } from "@/types"
  * HTTP — `app/api/scene/route.ts`.
  */
 
-/** Длинная сторона картинки для vision-модели: детали видны, токены дёшевы. */
-export const SCENE_ANALYSIS_MAX_SIDE = 1280
+/**
+ * Длинная сторона картинки для vision-модели. 1600, а не 1280: поры травертина
+ * и швы плит на полу при 1280 px сливаются в ровный тон, и модель видит
+ * «микроцемент». Картинка режется на тайлы по 768 px — это +2–4 тайла,
+ * около +$0,001 за разбор.
+ */
+export const SCENE_ANALYSIS_MAX_SIDE = 1600
 /** Потолок инвентаря в промпте: длиннее — генератор начинает терять начало. */
-export const SCENE_INVENTORY_MAX_CHARS = 1800
+export const SCENE_INVENTORY_MAX_CHARS = 2600
 /** Сколько просим у модели: с запасом меньше потолка, чтобы хвост не резать. */
-const SCENE_INVENTORY_TARGET_CHARS = 1400
+const SCENE_INVENTORY_TARGET_CHARS = 2000
 /** Строк в секции OBJECTS: главное — крупные и «опасные» предметы, а не всё подряд. */
-const SCENE_OBJECT_LINES = 12
+const SCENE_OBJECT_LINES = 10
 
 const CONTEXT_FOCUS: Record<EnhanceContext, string> = {
   auto: "",
@@ -39,14 +44,15 @@ const CONTEXT_FOCUS: Record<EnhanceContext, string> = {
 
 export function buildSceneInventoryPrompt(context: EnhanceContext = "auto"): string {
   return [
-    "You are the scene analyst in an architectural visualization pipeline. A generative image model will re-light and re-texture THIS EXACT IMAGE into a photograph. That model often misreads objects: a switched-off TV becomes a window or a painting, curtains melt into walls, lamps and chandeliers turn into blobs, mirrors lose their reflections. Your inventory is what stops that.",
+    "You are the scene analyst in an architectural visualization pipeline. A generative image model will re-light and re-texture THIS EXACT IMAGE into a photograph. That model often misreads objects and swaps materials: a switched-off TV becomes a window or a painting, curtains melt into walls, lamps and chandeliers turn into blobs, mirrors lose their reflections, a travertine floor is repainted as microcement, oak veneer turns into laminate. The designer chose every material deliberately; a substituted material ruins the result. Your inventory is what stops that.",
     CONTEXT_FOCUS[context],
-    `Look carefully at the image and return PLAIN TEXT in English, at most ${SCENE_INVENTORY_TARGET_CHARS} characters in total, with exactly these four sections:`,
+    `Look carefully at the image and return PLAIN TEXT in English, at most ${SCENE_INVENTORY_TARGET_CHARS} characters in total, with exactly these five sections:`,
     "ROOM: room type or subject; camera height and angle; lens feel (wide, normal, telephoto).",
     "LIGHT: every light source and its state — windows or openings with daylight direction and time-of-day feel; every fixture (pendant, chandelier, sconce, spot, LED strip or cove, floor or table lamp) and whether it is ON or OFF.",
-    `OBJECTS: at most ${SCENE_OBJECT_LINES} lines, one per notable object, largest and most easily confused first, in the form "name — where in frame — material and color — state or details". Always cover: screens (TV, monitor: flat black glossy screen switched off, or what it shows; bezel; wall-mounted or on a stand), curtains (sheer or blackout, open or closed, rod or track, how the fabric falls), lamps and fixtures, mirrors and glass, artwork and photos (their subject), plants (real or artificial), rugs and textiles (weave, pile), wood, stone and metal finishes, built-ins and niches, doors and windows.`,
-    "EASILY MISREAD: 2–5 short lines — shapes a generative model is likely to confuse, and what they truly are.",
-    "Rules: describe only what is visible; never invent objects that are not there; keep every line short; no markdown, no bullets, no headings other than the four section labels.",
+    `MATERIALS: one line per major surface and finish, in this order — floor, walls, ceiling, worktops and tabletops, cabinet fronts and doors, large upholstery, curtains, then every other prominent finish. Form: "surface — ONE exact material — visible evidence (pits, pores, veining, flecks, speckle, grain, joints, weave) — pattern and layout — finish — color — NOT <the lookalike>". Look at the surface up close before naming it and commit to a single material: never write "X or Y", never hedge, never write just "stone", "wood", "tile" or "fabric". Name materials with an interior designer's precision: travertine, limestone, marble (with vein color), terrazzo, microcement, concrete, porcelain tile, oak / walnut / ash veneer, lacquer, lime plaster, bouclé, linen, velvet, leather, brushed brass, blackened steel, chrome. Lookalike guide: a warm beige or grey stone with a fine speckle of small pits and pores, soft mottling and thin straight joints between large slabs is travertine or limestone — NOT microcement (microcement is seamless with cloudy trowel marks and no pits) and NOT terrazzo (terrazzo has sharp-edged multicolor chips); a soft beige stone with cloudy, diffuse veining is honed marble or onyx — NOT quartz or plaster; a wood front with continuous natural grain and pores is veneer — NOT laminate; a textured grey stone wall with speckle is stone cladding — NOT painted plaster. State the layout: large-format slabs with thin joints, herringbone or straight planks, seamless. Then write the evidence you actually see so the generator can reproduce that exact texture even at a glance.`,
+    `OBJECTS: at most ${SCENE_OBJECT_LINES} lines, one per notable object, largest and most easily confused first, in the form "name — where in frame — material and color — state or details". Always cover: screens (TV, monitor: flat black glossy screen switched off, or what it shows; bezel; wall-mounted or on a stand), curtains (sheer or blackout, open or closed, rod or track, how the fabric falls), lamps and fixtures, mirrors and glass, artwork and photos (their subject), plants (real or artificial), rugs and textiles (weave, pile), built-ins and niches, doors and windows.`,
+    "EASILY MISREAD: 2–6 short lines — shapes and surfaces a generative model is likely to confuse, and what they truly are; always include the floor and the largest stone or wood surface if either could be mistaken for a plainer or smoother material (e.g. \"floor: fine-pored travertine slabs, NOT seamless microcement\").",
+    "Rules: describe only what is visible; never invent objects or materials that are not there; keep every line short; no markdown, no bullets, no headings other than the five section labels.",
   ]
     .filter(Boolean)
     .join("\n")
@@ -73,8 +79,8 @@ const OBJECTS_HEADER = /^OBJECTS:/i
  * хвост отбрасывается — недописанная строка хуже отсутствующей.
  *
  * Если текст длиннее потолка, укорачивается секция OBJECTS с конца (модель
- * ставит крупное и спорное первым), а секция EASILY MISREAD — самая ценная для
- * генератора — остаётся целиком.
+ * ставит крупное и спорное первым), а секции MATERIALS (идёт перед OBJECTS) и
+ * EASILY MISREAD — самые ценные для генератора — остаются целиком.
  */
 export function tidyInventory(text: string, truncated = false): string {
   const lines = text
@@ -120,6 +126,8 @@ export interface SceneInventoryResult {
   outputTokens?: number
   /** Сколько провайдеров цепочки отказали до удачного. */
   fallbacks: number
+  /** Модель упёрлась в `max_tokens` — последняя строка отброшена. */
+  truncated: boolean
 }
 
 /**
@@ -164,6 +172,7 @@ export async function analyzeScene(
         inputTokens: answer.inputTokens,
         outputTokens: answer.outputTokens,
         fallbacks: index,
+        truncated: answer.truncated,
       }
     } catch (error) {
       lastError = error
