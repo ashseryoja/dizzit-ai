@@ -383,7 +383,7 @@ export default function ViewsPage() {
               onSettingsOpenChange={setSettingsOpen}
               submitBlockedReason={submitBlockedReason}
               notice={hasAttachments ? (aspect ? null : ASPECT_NOTICE) : processingNotice}
-              placeholder={hasAttachments ? undefined : "Добавьте рендер: плитка «Добавить кадр», перенос или вставка из буфера"}
+              placeholder={hasAttachments ? undefined : "Добавьте рендер: кнопка «Добавить кадр» над сетами, перенос или вставка из буфера"}
               attentionKey={attention}
               extras={<AspectPicker value={aspect} onChange={setAspect} suggested={suggestedAspect} />}
             />
@@ -431,6 +431,9 @@ export default function ViewsPage() {
         />
       ) : (
         <ToolGallery layout="stack">
+          {/* Над первым сетом — узкая полоса «Добавить кадр»: новый рендер и ещё
+              один сет без прокрутки к концу списка. Дропзоны на этом экране уже нет. */}
+          <AddTile variant="bar" onClick={intake.pickFiles} label="Добавить кадр" hint="ещё один рендер — и новый сет" />
           {visible.map((item) => (
             <ViewSetCard
               key={item.id}
@@ -440,15 +443,6 @@ export default function ViewsPage() {
               onDelete={() => deleteSet(item)}
             />
           ))}
-          {/* Под последним сетом — плитка того же размера, что его общий план:
-              новый рендер и ещё один сет. Дропзоны на этом экране уже нет. */}
-          <AddTile
-            onClick={intake.pickFiles}
-            label="Добавить кадр"
-            hint="ещё один рендер — и новый сет ракурсов"
-            aspectRatio={`${visible[0].sourceWidth || 4} / ${visible[0].sourceHeight || 3}`}
-            className="w-full md:w-[260px]"
-          />
         </ToolGallery>
       )}
     </ToolShell>
