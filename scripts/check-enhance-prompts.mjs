@@ -27,6 +27,8 @@ const positiveTerms = [
   "global illumination",
   "ambient occlusion",
   "ray tracing",
+  "ultra-realistic",
+  "hyperrealistic",
   "architectural photography",
   "interior design magazine",
   "photorealistic",

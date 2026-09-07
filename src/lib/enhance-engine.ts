@@ -191,9 +191,14 @@ function naturalLightHint(time: BatchTime): string {
   ].join("\n")
 }
 
-/** Термины обязательного журнального фотореализма для дневных интерьеров. */
+/**
+ * Термины обязательного журнального фотореализма. «Ultra-realistic» первым:
+ * на пробе пользователя ChatGPT с запросом «ультрареалистичный рендер» дал
+ * заметно более живую картинку (фактура штукатурки, ковра, дерева), чем наш
+ * промпт без этого слова.
+ */
 const PHOTOREALISM_HINT =
-  "EDITORIAL PHOTOREALISM: architectural photography, interior design magazine, photorealistic, 8k resolution, highly detailed, shot on Sony A7R IV, 35mm lens, depth of field (DoF). Treat camera and resolution phrases as a visual-quality brief: keep the actual requested output size, exact source viewpoint, perspective and focal-length feel."
+  "ULTRA-REALISTIC EDITORIAL PHOTOREALISM: ultra-realistic, hyperrealistic, ultra-detailed, architectural photography, interior design magazine, photorealistic, 8k resolution, highly detailed, shot on Sony A7R IV, 35mm lens, depth of field (DoF). Treat camera and resolution phrases as a visual-quality brief: keep the actual requested output size, exact source viewpoint, perspective and focal-length feel."
 
 /**
  * GPT Image 2 не имеет отдельного weighted negative prompt, но наш API держит
@@ -226,7 +231,7 @@ export function buildEnhancePrompt(job: EnhanceJob): string {
   const hasRegions = Boolean(job.regions && job.regions.length > 0)
 
   const lines: string[] = [
-    "TASK: Transform IMAGE 1 from a computer-generated render into a convincing real professional photograph. IMAGE 1 is the authoritative design reference. The result must be immediately believable as a photograph of a real, physically built subject, not a cleaner CGI render.",
+    "TASK: Transform IMAGE 1 from a computer-generated render into an ultra-realistic real professional photograph. IMAGE 1 is the authoritative design reference. The result must be immediately believable as an ultra-realistic photograph of a real, physically built subject — hyper-detailed, true-to-life materials and light — not a cleaner CGI render.",
     CONTEXT_HINT[job.context ?? "auto"],
     sceneInventoryBlock(job.inventory),
     "NON-NEGOTIABLE PRESERVATION: Keep the exact camera position, lens/focal-length feel, perspective, vertical lines, crop, aspect ratio, framing and composition. Preserve every wall, opening, ceiling, floor boundary, built-in element, piece of furniture, fixture and decor item in exactly the same shape, scale, count and position. Preserve the design, material identities, patterns and base colors. Do not redesign, restyle, invent, remove, move or replace anything unless the designer explicitly requests it below.",
