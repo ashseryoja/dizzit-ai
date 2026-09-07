@@ -30,27 +30,27 @@ const ORIENTATION: Record<FrameAspect, string> = {
 
 const SLOT_BRIEF: Record<ShotSlot, string> = {
   angle:
-    "angle (kind top / low / left / right): a ZONE of the space seen from an unexpected viewpoint, but close — never the whole room. top = camera raised 40–60° looking down onto a surface and what stands on it (a nightstand with its lamp and a book, a bench top with a planter); low = camera at the height of the bed, sofa or table top, looking across it so the near edge fills the foreground; left / right = a three-quarter view of one zone from that side (the corner where the headboard meets the nightstand, the armchair with its side table). The subject fills most of the frame; walls, floor and ceiling are only background.",
+    "zone (kind top / low / left / right — which part of the image the crop takes): a wider crop of ONE zone of the image, roughly a quarter to a half of its width — the nightstand with the lamp and the corner of the headboard, the bench with the planter and the door edge, the armchair with its side table. The zone reads as a small composed still life, walls and floor only as background.",
   detail:
-    "detail: ONE hero object exactly as it appears in the image, with one or two neighbours for context — name it and its place (\"the bonsai in the black bowl on the marble bench top, right of the bed\"), what is beside and behind it, how the light falls on it; camera close, shallow depth of field.",
+    "detail: a medium close-up crop around ONE clearly visible object with a little of its surroundings — name it and its place (\"the bonsai in the black bowl on the marble bench top, right of the bed\"), what is beside and behind it, how the light falls on it. Medium close-up, not extreme macro.",
   texture:
-    "texture: a material IN CONTEXT, on its object — where the weave, grain or veining meets an edge, a seam, a piping, a joint or a second material, with raking light that shows relief (the fabric panel joint with the sconce's light pool on it, the marble top edge over the concrete drawer front, the blanket fringe over the bed edge). Never a flat swatch of a bare wall, floor or ceiling with nothing else in frame.",
+    "texture: a tight crop where a material sits on its object and meets an edge, a seam, a piping, a joint or a second material — the fabric panel joint with the sconce's light pool, the marble top edge over the drawer front, the blanket fringe over the bed edge. Never a flat patch of bare wall, floor or ceiling with nothing else in the crop.",
   fragment:
-    "fragment: a compositional slice of one zone with a foreground layer — the corner of the bed with the nightstand behind, the curtain edge with the bench and window light, the doorway with the planter — framed tight, with a real sense of depth: something near, something behind.",
+    "fragment: a crop of one zone that keeps a foreground layer and depth — the corner of the bed with the nightstand behind, the curtain edge with the bench and window light, the doorway with the planter — framed tight.",
 }
 
 /**
- * Редакторские правила — по каруселям дизайнеров: каждый кадр «виньетка» из
- * одного-трёх предметов крупно, камера близко и часто сверху под углом; вся
+ * Редакторские правила — по каруселям дизайнеров с AI close-ups: каждый кадр —
+ * кроп исходника, а не новая точка съёмки; один-три предмета крупно; вся
  * комната целиком и голые поверхности — брак.
  */
 const EDITORIAL_RULES = [
   "Editorial rules, like a designer's carousel of AI close-ups:",
-  "- every shot is a VIGNETTE: one to three objects, the subject fills roughly half to four fifths of the frame, camera 0.5–2 m away;",
-  "- favourite viewpoints: raised 40–60° looking down onto a surface; camera at the height of the bed or table looking across it; a three-quarter view into a corner; a low view along a rug or floor with furniture legs and a foreground edge;",
-  "- every shot needs light doing something: a sconce's pool on fabric, an LED cove line on a marble top, window light across a blanket, a shadow from a lamp shade;",
-  "- FORBIDDEN: any view where a whole bed, sofa or room fits in the frame; a bare wall, floor, ceiling or curtain as the subject; a flat frontal patch of one material with nothing else; two shots of the same subject; the same framing as the reference;",
-  "- shots must differ from each other in subject, distance and viewpoint.",
+  "- every shot is a CROP of the input image: the camera does not move, geometry and perspective stay exactly as in the image; the shots differ by which part of the image they take and how tight;",
+  "- every crop is a VIGNETTE: one to three objects, a clear focal point, rule of thirds, some surrounding context kept;",
+  "- every crop should contain light doing something: a sconce's pool on fabric, an LED cove line on a marble top, window light across a blanket, a lamp shade's glow;",
+  "- FORBIDDEN: a crop where a whole bed, sofa or the whole room fits; a crop that is mostly bare wall, floor, ceiling or curtain; a flat patch of one material with nothing else; two crops of the same subject; the full image as a crop;",
+  "- crops must differ from each other in subject, position in the image and size.",
 ].join("\n")
 
 /** Строка состава набора для промпта и для фальшивого провайдера в тестах: `REQUIRED SLOTS: angle, angle, detail…`. */
@@ -65,8 +65,8 @@ export function buildShotListPrompt(preset: ViewPreset, aspect: FrameAspect, not
     .map((part) => part.trim())
     .filter(Boolean)
   return [
-    "You are the art director of an interior and architecture photo shoot. The attached image is a render of a space. Plan a shot list for a designer's publication carousel: new photographs of EXACTLY this space — the same objects, materials, colors, finishes and lighting, nothing added, removed or restyled. Only the camera moves.",
-    `Plan exactly ${slots.length} shots. ${REQUIRED_SLOTS_PREFIX} ${slots.join(", ")} (in Russian: ${composition}). Every shot will be generated in ${aspect} format — ${ORIENTATION[aspect]} — so compose each shot for that frame.`,
+    "You are the art director of an interior and architecture photo shoot. The attached image is a render of a space. Plan a shot list for a designer's publication carousel of close-ups: each shot is a CROP of this exact image — the same objects, materials, colors, finishes, lighting and perspective, nothing added, removed or restyled, the camera does not move — which an image model will then re-render at full resolution with photographic micro-detail.",
+    `Plan exactly ${slots.length} shots. ${REQUIRED_SLOTS_PREFIX} ${slots.join(", ")} (in Russian: ${composition}). Every shot will be produced in ${aspect} format — ${ORIENTATION[aspect]} — so choose crop regions that work in that frame (the region you give will be adjusted to that proportion around its centre).`,
     "Shot kinds:",
     ...kinds.map((slot) => `- ${SLOT_BRIEF[slot]}`),
     EDITORIAL_RULES,
@@ -74,10 +74,26 @@ export function buildShotListPrompt(preset: ViewPreset, aspect: FrameAspect, not
     wishes.length > 0
       ? `The designer asked to show these subjects close up, in this order, giving them the first detail shots: ${wishes.map((item) => `"${item}"`).join(", ")}.`
       : "",
-    'Answer with a JSON array only, no prose, no markdown: [{"kind": "top|low|left|right|detail|texture|fragment", "label": "<2–4 Russian words, lowercase, naming the subject: \\"ваза на консоли\\", \\"вид из проёма\\", \\"шпон дуба крупно\\">", "brief": "<English, 1–3 sentences for the image generator: the subject exactly as it appears in the image and where it is in the reference frame, camera position and height, distance, framing for the format, light>"}, …]',
+    'Answer with a JSON array only, no prose, no markdown: [{"kind": "top|low|left|right|detail|texture|fragment", "label": "<2–4 Russian words, lowercase, naming the subject: \\"ваза на консоли\\", \\"тумба с лампой\\", \\"шпон дуба крупно\\">", "brief": "<English, 1–3 sentences for the image generator: the subject exactly as it appears in the image, what else is in the crop, where the light falls>", "region": [x, y, w, h]}, …] where region is the crop rectangle as fractions of the image width and height from 0 to 1 (x, y — top-left corner; w, h — size), chosen as the best composition around the subject: about 0.15–0.35 of the width for a texture, 0.25–0.5 for a detail, 0.35–0.6 for a zone or fragment.',
   ]
     .filter(Boolean)
     .join("\n")
+}
+
+/** Область кропа [x, y, w, h] в долях кадра: числа от 0 до 1, не меньше 8 % стороны, внутри кадра. */
+function parseRegion(value: unknown): [number, number, number, number] | undefined {
+  if (!Array.isArray(value) || value.length !== 4) return undefined
+  const nums = value.map((n) => (typeof n === "number" ? n : typeof n === "string" ? Number(n) : NaN))
+  if (nums.some((n) => !Number.isFinite(n))) return undefined
+  // Модель иногда отдаёт проценты или пиксели тысячной сетки — нормализуем.
+  const scale = nums.some((n) => n > 1.5) ? (nums.some((n) => n > 100) ? 1000 : 100) : 1
+  let [x, y, w, h] = nums.map((n) => n / scale)
+  x = Math.min(Math.max(0, x), 0.99)
+  y = Math.min(Math.max(0, y), 0.99)
+  w = Math.min(Math.max(0.08, w), 1 - x)
+  h = Math.min(Math.max(0.08, h), 1 - y)
+  if (w >= 0.98 && h >= 0.98) return undefined
+  return [x, y, w, h].map((n) => Math.round(n * 1000) / 1000) as [number, number, number, number]
 }
 
 /** Первый JSON-массив из ответа модели — заготовки кадров; мусор и лишние поля отбрасываются. */
@@ -95,13 +111,13 @@ export function parseShotList(text: string): ShotDraft[] {
   const drafts: ShotDraft[] = []
   for (const item of raw) {
     if (!item || typeof item !== "object") continue
-    const { kind, label, brief } = item as Record<string, unknown>
+    const { kind, label, brief, region } = item as Record<string, unknown>
     const cleanKind = typeof kind === "string" ? kind.trim().toLowerCase() : ""
     if (!isShotKind(cleanKind)) continue
     const cleanBrief = typeof brief === "string" ? brief.replace(/\s+/g, " ").trim().slice(0, 600) : ""
     if (!cleanBrief) continue
     const cleanLabel = typeof label === "string" ? label.replace(/\s+/g, " ").trim().slice(0, 48) : ""
-    drafts.push({ kind: cleanKind, label: cleanLabel || undefined, brief: cleanBrief })
+    drafts.push({ kind: cleanKind, label: cleanLabel || undefined, brief: cleanBrief, region: parseRegion(region) })
   }
   return drafts
 }

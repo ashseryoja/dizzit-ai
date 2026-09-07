@@ -3,11 +3,13 @@
  * (без canvas и «use client»): состав набора слотами, типовые кадры по
  * шаблону и сборка списка кадров из ответа планировщика.
  *
- * Все кадры — «виньетки» крупно, как в каруселях дизайнеров: ракурс — зона
- * с неожиданной точки (сверху под углом, с высоты кровати, в угол сбоку),
- * а не вся комната; фактура — материал на предмете, у края или шва, а не
- * голая стена. Правила — `server/shot-planner` (планировщик) и `CRAFT` /
- * `VIGNETTE_RULE` в `lib/view-engine` (генерация).
+ * Все кадры — КРОПЫ исходника, как в каруселях дизайнеров с AI close-ups:
+ * камера не двигается, геометрия и перспектива исходника остаются, меняется
+ * только кадрирование, а модель лишь дорисовывает детали в полном размере.
+ * «Зона» — более широкий кроп одной части кадра (верх, низ, левая, правая
+ * часть), деталь — предмет крупно, фактура — материал у края или шва,
+ * фрагмент — срез с передним планом. Правила — `server/shot-planner`
+ * (планировщик) и `buildViewPrompt` в `lib/view-engine` (генерация).
  *
  * Слот — это «какого рода кадр нужен» (ракурс, деталь, фактура, фрагмент);
  * какой именно ракурс (сверху, снизу, слева, справа) и что именно снять,
@@ -34,17 +36,17 @@ export const PRESET_LABEL: Record<ViewPreset, string> = {
 }
 
 export const SHOT_LABEL: Record<ShotKind, string> = {
-  top: "сверху",
-  low: "снизу",
-  left: "слева",
-  right: "справа",
+  top: "верхняя зона",
+  low: "нижняя зона",
+  left: "левая зона",
+  right: "правая зона",
   detail: "деталь",
   texture: "фактура",
   fragment: "фрагмент",
 }
 
 export const SLOT_LABEL: Record<ShotSlot, string> = {
-  angle: "ракурс",
+  angle: "зона",
   detail: "деталь",
   texture: "фактура",
   fragment: "фрагмент",
@@ -57,7 +59,7 @@ export function isShotKind(value: unknown): value is ShotKind {
   return typeof value === "string" && (SHOT_KINDS as readonly string[]).includes(value)
 }
 
-/** Ракурс — вся сцена с другой точки; остальное — крупные планы. */
+/** «Зона» — широкий кроп части кадра; остальное — крупные планы. */
 export function isWideShot(kind: ShotKind): boolean {
   return (ANGLE_KINDS as readonly string[]).includes(kind)
 }
@@ -71,6 +73,7 @@ export interface ShotDraft {
   kind: ShotKind
   label?: string
   brief?: string
+  region?: [number, number, number, number]
 }
 
 /**
@@ -85,8 +88,9 @@ export function buildFrames(drafts: ShotDraft[]): ViewFrame[] {
     const n = (seen[draft.kind] ?? 0) + 1
     seen[draft.kind] = n
     const fallback = (total[draft.kind] ?? 1) > 1 ? `${SHOT_LABEL[draft.kind]} ${n}` : SHOT_LABEL[draft.kind]
-    const frame: ViewFrame = { key: `${draft.kind}-${n}`, kind: draft.kind, label: draft.label?.trim() || fallback }
+      const frame: ViewFrame = { key: `${draft.kind}-${n}`, kind: draft.kind, label: draft.label?.trim() || fallback }
     if (draft.brief?.trim()) frame.brief = draft.brief.trim()
+    if (draft.region) frame.region = draft.region
     return frame
   })
 }

@@ -153,6 +153,12 @@ export interface ViewFrame {
   kind: ShotKind
   label: string
   brief?: string
+  /**
+   * Область исходника для кадра — доли ширины и высоты [x, y, w, h] от 0 до 1.
+   * Кадр — это кроп исходника, а не новая точка съёмки: клиент вырезает область
+   * в формате сета и отдаёт модели как основу (см. lib/view-engine).
+   */
+  region?: [number, number, number, number]
 }
 
 /**

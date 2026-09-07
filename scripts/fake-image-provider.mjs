@@ -116,7 +116,8 @@ createServer(async (req, res) => {
         return {
           kind,
           label: { angle: "вид из проёма", detail: "ваза на консоли", texture: "шпон дуба крупно", fragment: "угол у окна" }[slot] + ` ${i + 1}`,
-          brief: `Fake ${slot} shot #${i + 1} of the same room, camera ${kind}.`,
+          brief: `Fake ${slot} shot #${i + 1} of the same room, crop ${kind}.`,
+          region: [Math.min(0.6, 0.05 + i * 0.12), 0.2, slot === "texture" ? 0.2 : 0.35, 0.4],
         }
       })
       content = JSON.stringify(shots)
