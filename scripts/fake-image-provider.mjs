@@ -113,12 +113,14 @@ createServer(async (req, res) => {
       let angle = 0
       const shots = slots.split(",").map((s) => s.trim()).filter(Boolean).map((slot, i) => {
         const kind = slot === "angle" ? angles[angle++ % 4] : slot
-        return {
+        const shot = {
           kind,
-          label: { angle: "вид из проёма", detail: "ваза на консоли", texture: "шпон дуба крупно", fragment: "угол у окна" }[slot] + ` ${i + 1}`,
+          label: { angle: "вид из проёма", detail: "ваза на консоли", texture: "шпон дуба крупно", fragment: "угол у окна", vantage: "стол сверху" }[slot] + ` ${i + 1}`,
           brief: `Fake ${slot} shot #${i + 1} of the same room, crop ${kind}.`,
           region: [Math.min(0.6, 0.05 + i * 0.12), 0.2, slot === "texture" ? 0.2 : 0.35, 0.4],
         }
+        if (slot === "vantage") shot.side = i % 2 ? "right" : "left"
+        return shot
       })
       content = JSON.stringify(shots)
     } else {

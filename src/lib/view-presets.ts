@@ -3,12 +3,15 @@
  * (без canvas и «use client»): состав набора слотами, типовые кадры по
  * шаблону и сборка списка кадров из ответа планировщика.
  *
- * Все кадры — КРОПЫ исходника, как в каруселях дизайнеров с AI close-ups:
+ * Крупные планы — КРОПЫ исходника, как в каруселях дизайнеров с AI close-ups:
  * камера не двигается, геометрия и перспектива исходника остаются, меняется
  * только кадрирование, а модель лишь дорисовывает детали в полном размере.
  * «Зона» — более широкий кроп одной части кадра (верх, низ, левая, правая
- * часть), деталь — предмет крупно, фактура — материал у края или шва,
- * фрагмент — срез с передним планом. Правила — `server/shot-planner`
+ * часть), деталь — предмет крупно, фактура — материал на предмете у края или
+ * шва, фрагмент — срез с передним планом. Единственное исключение — кадр
+ * «с другой точки» (`vantage`): камера поднята выше и сдвинута вбок, предмет
+ * крупно сверху и чуть сбоку; область — где предмет стоит в исходнике, а
+ * `side` — в какую сторону ушла камера. Правила — `server/shot-planner`
  * (планировщик) и `buildViewPrompt` в `lib/view-engine` (генерация).
  *
  * Слот — это «какого рода кадр нужен» (ракурс, деталь, фактура, фрагмент);
@@ -18,16 +21,17 @@
  */
 import type { ShotKind, ViewFrame, ViewPreset } from "@/types"
 
-export type ShotSlot = "angle" | "detail" | "texture" | "fragment"
+export type ShotSlot = "angle" | "detail" | "texture" | "fragment" | "vantage"
 
 export const PRESET_SLOTS: Record<ViewPreset, ShotSlot[]> = {
-  // Готовая карусель: три предмета крупно, две фактуры и фрагмент. Широких
-  // «зон» в наборах больше нет: из них выходил почти исходник.
-  set: ["detail", "detail", "detail", "texture", "texture", "fragment"],
+  // Готовая карусель: три предмета крупно, два кадра с другой точки, фактура
+  // и фрагмент. Широких «зон» в наборах больше нет: из них выходил почти
+  // исходник; второй фактуры тоже — из неё выходила скучная голая стена.
+  set: ["detail", "detail", "detail", "vantage", "vantage", "texture", "fragment"],
   details: ["detail", "detail", "detail", "detail"],
   textures: ["texture", "texture", "texture", "texture"],
   fragments: ["fragment", "fragment", "fragment", "fragment"],
-  angles: ["fragment", "fragment", "fragment", "fragment"],
+  angles: ["vantage", "vantage", "vantage", "vantage"],
 }
 
 export const PRESET_LABEL: Record<ViewPreset, string> = {
@@ -49,6 +53,8 @@ export const REGION_BOUNDS: Record<ShotSlot, { min: number; max: number }> = {
   texture: { min: 0.14, max: 0.3 },
   // Фрагмент в маленькой комнате при 45 % — это вся комната; 36 % — угол.
   fragment: { min: 0.22, max: 0.36 },
+  // Кадр с другой точки: область — группа предметов, референс движок берёт шире.
+  vantage: { min: 0.2, max: 0.45 },
 }
 
 /** Потолок доли кадра для ГОТОВОГО кропа после расширения до формата — по роду кадра. */
@@ -77,6 +83,7 @@ export const SHOT_LABEL: Record<ShotKind, string> = {
   detail: "деталь",
   texture: "фактура",
   fragment: "фрагмент",
+  vantage: "с другой точки",
 }
 
 export const SLOT_LABEL: Record<ShotSlot, string> = {
@@ -84,10 +91,11 @@ export const SLOT_LABEL: Record<ShotSlot, string> = {
   detail: "деталь",
   texture: "фактура",
   fragment: "фрагмент",
+  vantage: "новый ракурс",
 }
 
 export const ANGLE_KINDS: readonly ShotKind[] = ["top", "low", "left", "right"]
-export const SHOT_KINDS: readonly ShotKind[] = [...ANGLE_KINDS, "detail", "texture", "fragment"]
+export const SHOT_KINDS: readonly ShotKind[] = [...ANGLE_KINDS, "detail", "texture", "fragment", "vantage"]
 
 export function isShotKind(value: unknown): value is ShotKind {
   return typeof value === "string" && (SHOT_KINDS as readonly string[]).includes(value)
@@ -108,16 +116,21 @@ export interface ShotDraft {
   label?: string
   brief?: string
   region?: [number, number, number, number]
+  side?: "left" | "right"
 }
 
 /**
  * Список кадров из заготовок: ключи уникальны в сете (`detail-2`), у кадров
  * без своей подписи повторы одного типа нумеруются («деталь 1», «деталь 2»).
+ * Кадр с другой точки без стороны от планировщика берёт сторону, противоположную
+ * предыдущему такому кадру (первый — слева), чтобы два таких кадра не смотрели
+ * с одной стороны.
  */
 export function buildFrames(drafts: ShotDraft[]): ViewFrame[] {
   const total: Partial<Record<ShotKind, number>> = {}
   for (const draft of drafts) total[draft.kind] = (total[draft.kind] ?? 0) + 1
   const seen: Partial<Record<ShotKind, number>> = {}
+  let lastSide: "left" | "right" | undefined
   return drafts.map((draft) => {
     const n = (seen[draft.kind] ?? 0) + 1
     seen[draft.kind] = n
@@ -125,6 +138,10 @@ export function buildFrames(drafts: ShotDraft[]): ViewFrame[] {
       const frame: ViewFrame = { key: `${draft.kind}-${n}`, kind: draft.kind, label: draft.label?.trim() || fallback }
     if (draft.brief?.trim()) frame.brief = draft.brief.trim()
     if (draft.region) frame.region = boundRegion(draft.region, draft.kind)
+    if (draft.kind === "vantage") {
+      frame.side = draft.side ?? (lastSide === "left" ? "right" : "left")
+      lastSide = frame.side
+    }
     return frame
   })
 }
@@ -142,11 +159,13 @@ export function framesOf(preset: ViewPreset): ViewFrame[] {
 }
 
 /**
- * Раскладывает кадры планировщика по слотам набора в порядке шаблона: для
- * каждого слота — первый неиспользованный кадр подходящего рода; если модель
- * дала кадров другого рода — берётся любой и тип подгоняется под слот; если
- * кадров не хватило — слот заполняется типовым. Результат всегда ровно по
- * составу набора, что бы ни ответила модель.
+ * Раскладывает кадры планировщика по слотам набора в порядке шаблона в два
+ * прохода: сначала каждый слот получает первый неиспользованный кадр своего
+ * рода (чтобы слот «деталь» не забрал кадр «с другой точки» раньше, чем до
+ * него дойдёт очередь); затем пустые слоты добираются любыми оставшимися
+ * кадрами с типом, подогнанным под слот; если кадров не хватило — слот
+ * заполняется типовым. Результат всегда ровно по составу набора, что бы ни
+ * ответила модель.
  */
 export function assignShots(shots: ShotDraft[], preset: ViewPreset): ViewFrame[] {
   const unused = shots.filter((shot) => isShotKind(shot.kind))
@@ -161,12 +180,14 @@ export function assignShots(shots: ShotDraft[], preset: ViewPreset): ViewFrame[]
     const free = ANGLE_KINDS.find((kind) => !usedAngles.has(kind)) ?? ANGLE_KINDS[usedAngles.size % ANGLE_KINDS.length]
     return free
   }
-  const drafts: ShotDraft[] = PRESET_SLOTS[preset].map((slot) => {
-    const exact = take((shot) => slotOf(shot.kind) === slot)
-    if (exact) {
-      if (slot === "angle") usedAngles.add(exact.kind)
-      return exact
-    }
+  const slots = PRESET_SLOTS[preset]
+  const exact = slots.map((slot) => {
+    const shot = take((candidate) => slotOf(candidate.kind) === slot)
+    if (shot && slot === "angle") usedAngles.add(shot.kind)
+    return shot
+  })
+  const drafts: ShotDraft[] = slots.map((slot, index) => {
+    if (exact[index]) return exact[index]
     const any = take(() => true)
     const kind = slot === "angle" ? nextAngle() : slot
     if (slot === "angle") usedAngles.add(kind)

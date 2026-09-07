@@ -46,8 +46,10 @@ export {
  *   кадра вокруг самых «насыщенных» мест: карта градиентов по уменьшенной
  *   копии, окно с максимумом, подавление соседей, чтобы кадры сета не
  *   смотрели в одну точку;
- * - ракурсы (сверху, снизу, слева, справа) — перспективное искажение кадра на
- *   canvas: трапеция и вписанный прямоугольник, затем обрезка до формата.
+ * - зоны (сверху, снизу, слева, справа) — перспективное искажение кадра на
+ *   canvas: трапеция и вписанный прямоугольник, затем обрезка до формата;
+ * - кадры с другой точки — вырезка шире области с теми же трапециями:
+ *   «камера выше» и лёгкий поворот в сторону `frame.side`.
  */
 
 /* Ключи кадров в общем хранилище блобов: префикс — id записи, поэтому
@@ -80,7 +82,22 @@ export const VIEW_LONG_SIDE = 2000
  * в формате сета и уходит модели единственным референсом: полного кадра
  * модель не видит и не может «отъехать» обратно к общему плану; что за
  * предметы и материалы в кропе, ей говорит инвентарь сцены в промпте.
+ *
+ * Исключение — кадр С ДРУГОЙ ТОЧКИ (`vantage`): модель получает кроп шире
+ * области и задание переснять предмет с камеры, поднятой выше и сдвинутой
+ * в сторону `frame.side`. Результат, почти совпадающий с референсом (камера
+ * не сдвинулась) или с общим планом, переснимается один раз с прямым
+ * указанием в промпте.
  */
+
+/**
+ * Референс кадра с другой точки — область планировщика в полтора раза шире
+ * (модель достраивает окружение, когда камера уходит вверх и вбок), но не
+ * больше 0,6 кадра; результат с корреляцией к референсу от 0,9 — камера не
+ * сдвинулась.
+ */
+const VANTAGE_REFERENCE = { widen: 1.5, maxFraction: 0.6 }
+const VANTAGE_SAME_THRESHOLD = 0.9
 
 /** Типовые области зон в долях кадра: [x, y, w, h]. */
 const ZONE_REGION: Record<"top" | "low" | "left" | "right", [number, number, number, number]> = {
@@ -116,6 +133,12 @@ const FRAGMENT_SUBJECTS = [
   "another zone not shown in the previous fragments, with depth from a foreground edge",
   "a fourth distinct zone of the space, framed tight",
 ]
+const VANTAGE_SUBJECTS = [
+  "the main object group on a horizontal surface (a table with what stands on it, a console with its objects, a nightstand with the lamp) seen from above and beside",
+  "a second object group in another part of the space (an armchair with its side table, a shelf with its objects, a bench with a planter) seen from above and beside",
+  "a third group not shown yet, with its top surface in view",
+  "a fourth group in a different corner, from above and beside",
+]
 
 /** Насколько тесно кадрировать — по типу кадра. */
 const FRAMING: Record<ShotKind, string> = {
@@ -126,6 +149,8 @@ const FRAMING: Record<ShotKind, string> = {
   detail: "FRAMING: medium close-up around the object with a little surrounding context — not extreme macro, the object fully in frame.",
   texture: "FRAMING: tight crop on the material where it meets an edge, seam or a second surface; the material fills most of the frame, but the edge keeps it readable as an object, not a flat swatch.",
   fragment: "FRAMING: a crop of one zone that keeps a foreground layer and depth — something near, something behind.",
+  vantage:
+    "FRAMING: a close-up from the new viewpoint — the subject group fills most of the frame, with a little of the surface below it and of the surroundings beside it; a different photograph of the same corner, not an enhancement of IMAGE 1.",
 }
 
 const ORIENTATION: Record<FrameAspect, string> = {
@@ -154,20 +179,25 @@ function templateShot(frame: ViewFrame, frames: ViewFrame[], note: string): stri
   const ordinal = closeups.filter((item, index) => item.kind === frame.kind && index < position).length
   if (frame.kind === "detail") return requested ?? DETAIL_SUBJECTS[ordinal % DETAIL_SUBJECTS.length]
   if (frame.kind === "texture") return requested ?? TEXTURE_SUBJECTS[ordinal % TEXTURE_SUBJECTS.length]
+  if (frame.kind === "vantage") return requested ?? VANTAGE_SUBJECTS[ordinal % VANTAGE_SUBJECTS.length]
   return requested ?? FRAGMENT_SUBJECTS[ordinal % FRAGMENT_SUBJECTS.length]
 }
 
 export interface ViewPromptOptions {
   /** IMAGE 1 — уже вырезанная область, IMAGE 2 — весь кадр для контекста. */
   cropped?: boolean
+  /** Повтор кадра с другой точки: прошлая попытка вернула референс без сдвига камеры — сказать модели об этом прямо. */
+  insist?: boolean
 }
 
 /**
  * Промпт кадра — по образцу промптов для AI close-ups: исходник — единственная
- * основа, камера не двигается, кадр — кроп с лёгким улучшением. Сюжет — задание
- * планировщика (`frame.brief`) или типовой по типу кадра; сюжеты из
- * комментария раздаются крупным планам по порядку. Формат — выбранный
- * пользователем; у записей без формата — портрет для крупных планов.
+ * основа, камера не двигается, кадр — кроп с лёгким улучшением. Кадр с другой
+ * точки — свой промпт: референс фиксирует предметы и свет, а камера поднята
+ * выше и сдвинута в сторону `frame.side`. Сюжет — задание планировщика
+ * (`frame.brief`) или типовой по типу кадра; сюжеты из комментария раздаются
+ * крупным планам по порядку. Формат — выбранный пользователем; у записей без
+ * формата — портрет для крупных планов.
  */
 export function buildViewPrompt(
   frame: ViewFrame,
@@ -182,6 +212,27 @@ export function buildViewPrompt(
     : isWideShot(frame.kind)
       ? "FORMAT: keep the aspect ratio of the base image."
       : "FORMAT: portrait orientation, the subject centered with some margin around it."
+  if (frame.kind === "vantage") {
+    const side = frame.side ?? "left"
+    return [
+      "IMAGE 1 IS THE REFERENCE — a crop of the scene around the subject. It fixes what exists: the objects, their arrangement and sizes, materials, colours, finishes and the light. Nothing is added, removed, moved or restyled.",
+      `GOAL: photograph the SAME subject from a NEW CAMERA POSITION — here the camera does move: it is raised well above the original eye level (about a metre higher) and shifted to the ${side} by roughly 30–40 degrees, looking down at the subject in a three-quarter high-angle close-up. Verticals converge slightly downward; the top surfaces — table tops, shelf tops, the tops of the objects — come into view and continue the same materials; what lies beyond the edges of IMAGE 1 continues the scene plausibly, in the same materials and style, without inventing decor.`,
+      options.insist
+        ? `IMPORTANT: a previous attempt returned IMAGE 1 almost unchanged — that is wrong. The viewpoint MUST be visibly different: clearly from above and from the ${side}, with the top surfaces in view and the geometry seen from the new position; the result must not be a crop or an enhancement of IMAGE 1.`
+        : "",
+      `SUBJECT: ${frame.brief ?? templateShot(frame, frames, note)}`,
+      FRAMING.vantage,
+      "COMPOSITION: rule of thirds, balanced framing, a clear focal point. DEPTH OF FIELD: subtle, the subject sharp, the background only slightly softer.",
+      "TEXTURE: photographic material realism with subtle micro-details (dust, tiny imperfections), do not exaggerate. LIGHT: the same light sources and the same direction of light as in the scene, shadows consistent with the new viewpoint, no new light sources. FILM & OPTICS: subtle film grain, very light chromatic aberration, minimal lens softness, no heavy effects.",
+      sceneInventoryBlock(inventory),
+      OBJECT_IDENTITY_HINT,
+      MATERIAL_FIDELITY_HINT,
+      format,
+      `STRICT RULES: only the camera moves — the objects, their arrangement, materials, colours and light stay exactly as in IMAGE 1; no new objects, no restyling, no hallucinated decor; the perspective changes only because of the new camera position. RESULT: a single realistic photograph of the same subject from above and from the ${side}, clean, natural, believable; no collage, no grid, no text, no watermark.`,
+    ]
+      .filter(Boolean)
+      .join("\n")
+  }
   const base = options.cropped
     ? [
         "IMAGE 1 IS THE BASE — it is already the exact crop of the scene to produce: keep its framing, geometry, perspective, objects, materials and light exactly; the output shows precisely what IMAGE 1 shows, nothing beyond its edges.",
@@ -313,12 +364,18 @@ export async function resemblesSource(result: Blob, source: Blob, threshold = 0.
   return corr >= threshold
 }
 
-/** Область на треть меньше вокруг своего центра — для повтора кадра, вышедшего общим планом. */
-function shrinkRegion(region: [number, number, number, number], factor = 0.7): [number, number, number, number] {
+/**
+ * Область в `factor` раз больше или меньше вокруг своего центра, не выходя за
+ * кадр: 0,7 — повтор кадра, вышедшего общим планом; 1,5 — референс кадра с
+ * другой точки.
+ */
+function scaleRegion(region: [number, number, number, number], factor: number): [number, number, number, number] {
   const [x, y, w, h] = region
-  const nw = w * factor
-  const nh = h * factor
-  return [x + (w - nw) / 2, y + (h - nh) / 2, nw, nh]
+  const nw = Math.min(1, w * factor)
+  const nh = Math.min(1, h * factor)
+  const nx = Math.min(Math.max(0, x + (w - nw) / 2), 1 - nw)
+  const ny = Math.min(Math.max(0, y + (h - nh) / 2), 1 - nh)
+  return [nx, ny, nw, nh]
 }
 
 export interface ViewSetRenderer {
@@ -362,25 +419,44 @@ export async function prepareViewSet(
       async render(frame) {
         // Провайдер подберёт ближайшую свою пропорцию; остаток обрежется до точного формата.
         const wanted = aspect ? frameAspectSize(aspect) : isWideShot(frame.kind) ? { width, height } : { width: 4, height: 5 }
-        const generate = async (region: [number, number, number, number] | null) => {
-          const crop = region ? await cropRegion(source, region, ratioFor(frame), { maxFraction: maxCropFraction(frame.kind) }) : null
+        const vantage = frame.kind === "vantage"
+        const generate = async (region: [number, number, number, number] | null, insist = false) => {
+          // Кадру с другой точки референс нужен шире области: модель достраивает
+          // окружение, когда камера уходит вверх и вбок.
+          const crop = region
+            ? await cropRegion(source, vantage ? scaleRegion(region, VANTAGE_REFERENCE.widen) : region, ratioFor(frame), {
+                maxFraction: vantage ? VANTAGE_REFERENCE.maxFraction : maxCropFraction(frame.kind),
+              })
+            : null
           const base = crop ?? reference ?? (await prepareReference(source))
           const image = await requestImage({
-            prompt: buildViewPrompt(frame, frames, note, aspect, inventory, { cropped: Boolean(crop) }),
+            prompt: buildViewPrompt(frame, frames, note, aspect, inventory, { cropped: Boolean(crop), insist }),
             aspect: wanted,
             references: [base],
             finalLongSide: VIEW_LONG_SIDE,
           })
-          return cropToAspect(image, ratioFor(frame))
+          return { image: await cropToAspect(image, ratioFor(frame)), base }
         }
         const region = regionOf(frame)
         const first = await generate(region)
-        // Модель всё же вернула общий план — один повтор с областью на треть меньше.
-        if (region && (await resemblesSource(first.blob, source))) {
-          console.warn(`[view-engine] кадр «${frame.label}» повторяет исходник — повтор с меньшей областью`)
-          return generate(shrinkRegion(region))
+        if (vantage) {
+          // Камера не сдвинулась: кадр повторяет референс или общий план —
+          // один повтор с прямым указанием в промпте.
+          const stuck =
+            (await resemblesSource(first.image.blob, first.base, VANTAGE_SAME_THRESHOLD)) ||
+            (region !== null && (await resemblesSource(first.image.blob, source)))
+          if (stuck) {
+            console.warn(`[view-engine] кадр «${frame.label}» не сдвинул камеру — повтор с прямым указанием`)
+            return (await generate(region, true)).image
+          }
+          return first.image
         }
-        return first
+        // Модель всё же вернула общий план — один повтор с областью на треть меньше.
+        if (region && (await resemblesSource(first.image.blob, source))) {
+          console.warn(`[view-engine] кадр «${frame.label}» повторяет исходник — повтор с меньшей областью`)
+          return (await generate(scaleRegion(region, 0.7))).image
+        }
+        return first.image
       },
     }
   }
@@ -434,8 +510,9 @@ function toBlob(canvas: HTMLCanvasElement, type: string, quality?: number): Prom
 const ANALYSIS_WIDTH = 128
 
 /** Ширина окна вырезки в долях ширины кадра — по типу крупного плана. */
-const CROP_WIDTH: Record<"detail" | "texture" | "fragment", number> = {
+const CROP_WIDTH: Record<"detail" | "texture" | "fragment" | "vantage", number> = {
   fragment: 0.55,
+  vantage: 0.4,
   detail: 0.34,
   texture: 0.2,
 }
@@ -590,13 +667,18 @@ function cropShot(source: ImageBitmap, region: Region, ratio: number): HTMLCanva
 
 /** Дальний край трапеции относительно ближнего: чем меньше, тем сильнее поворот. */
 const FAR = 0.8
+/** Кадр с другой точки в предпросмотре: камера выше — как у зоны «сверху», вбок — вдвое мягче. */
+const VANTAGE_TILT = FAR
+const VANTAGE_TURN = 0.9
+
+type Drawable = ImageBitmap | HTMLCanvasElement
 
 /**
  * Поворот камеры вбок: кадр режется на вертикальные полосы, ближний край
  * во всю высоту, дальний — ниже; полосы у дальнего края уже. Затем берётся
  * вписанный прямоугольник и растягивается обратно в размер исходника.
  */
-function turnSideways(source: ImageBitmap, width: number, height: number, nearLeft: boolean): HTMLCanvasElement {
+function turnSideways(source: Drawable, width: number, height: number, nearLeft: boolean, far = FAR): HTMLCanvasElement {
   const [warp, ctx] = makeCanvas(width, height)
   const slices = Math.min(width, 720)
   const sliceW = width / slices
@@ -604,7 +686,7 @@ function turnSideways(source: ImageBitmap, width: number, height: number, nearLe
   let total = 0
   for (let i = 0; i < slices; i += 1) {
     const t = (i + 0.5) / slices
-    const s = nearLeft ? 1 - (1 - FAR) * t : FAR + (1 - FAR) * t
+    const s = nearLeft ? 1 - (1 - far) * t : far + (1 - far) * t
     scales.push(s)
     total += s
   }
@@ -617,13 +699,13 @@ function turnSideways(source: ImageBitmap, width: number, height: number, nearLe
     x += w
   }
   const [out, outCtx] = makeCanvas(width, height)
-  const cropH = height * FAR
+  const cropH = height * far
   outCtx.drawImage(warp, 0, (height - cropH) / 2, width, cropH, 0, 0, width, height)
   return out
 }
 
 /** Камера выше или ниже: горизонтальные полосы, ближний край шире дальнего. */
-function tiltCamera(source: ImageBitmap, width: number, height: number, nearBottom: boolean): HTMLCanvasElement {
+function tiltCamera(source: Drawable, width: number, height: number, nearBottom: boolean, far = FAR): HTMLCanvasElement {
   const [warp, ctx] = makeCanvas(width, height)
   const slices = Math.min(height, 720)
   const sliceH = height / slices
@@ -631,7 +713,7 @@ function tiltCamera(source: ImageBitmap, width: number, height: number, nearBott
   let total = 0
   for (let i = 0; i < slices; i += 1) {
     const t = (i + 0.5) / slices
-    const s = nearBottom ? FAR + (1 - FAR) * t : 1 - (1 - FAR) * t
+    const s = nearBottom ? far + (1 - far) * t : 1 - (1 - far) * t
     scales.push(s)
     total += s
   }
@@ -644,7 +726,7 @@ function tiltCamera(source: ImageBitmap, width: number, height: number, nearBott
     y += h
   }
   const [out, outCtx] = makeCanvas(width, height)
-  const cropW = width * FAR
+  const cropW = width * far
   outCtx.drawImage(warp, (width - cropW) / 2, 0, cropW, height, 0, 0, width, height)
   return out
 }
@@ -666,6 +748,13 @@ export async function renderFrameLocally(source: Blob, frame: ViewFrame, plan: S
   const bitmap = await createImageBitmap(source)
   try {
     const { width, height } = bitmap
+    const regionOf = (): Region => {
+      const region = frame.region
+        ? { x: frame.region[0] * width, y: frame.region[1] * height, w: frame.region[2] * width, h: frame.region[3] * height }
+        : plan.regions[frame.key]
+      if (!region) throw new Error("Для кадра нет плана вырезки — постройте сет заново.")
+      return region
+    }
     let canvas: HTMLCanvasElement
     switch (frame.kind) {
       case "left":
@@ -680,13 +769,21 @@ export async function renderFrameLocally(source: Blob, frame: ViewFrame, plan: S
       case "low":
         canvas = cropCanvasToAspect(tiltCamera(bitmap, width, height, false), ratio)
         break
-      default: {
-        const region = frame.region
-          ? { x: frame.region[0] * width, y: frame.region[1] * height, w: frame.region[2] * width, h: frame.region[3] * height }
-          : plan.regions[frame.key]
-        if (!region) throw new Error("Для кадра нет плана вырезки — постройте сет заново.")
-        canvas = cropShot(bitmap, region, ratio)
+      case "vantage": {
+        // Вырезка шире области, затем «камера выше» и лёгкий поворот в сторону
+        // камеры — те же трапеции, что у зон, на самой вырезке.
+        const region = regionOf()
+        const [fx, fy, fw, fh] = scaleRegion(
+          [region.x / width, region.y / height, region.w / width, region.h / height],
+          VANTAGE_REFERENCE.widen
+        )
+        const crop = cropShot(bitmap, { x: fx * width, y: fy * height, w: fw * width, h: fh * height }, ratio)
+        const raised = tiltCamera(crop, crop.width, crop.height, true, VANTAGE_TILT)
+        canvas = cropCanvasToAspect(turnSideways(raised, crop.width, crop.height, frame.side !== "right", VANTAGE_TURN), ratio)
+        break
       }
+      default:
+        canvas = cropShot(bitmap, regionOf(), ratio)
     }
     const type = source.type === "image/png" ? "image/png" : "image/jpeg"
     const blob = await toBlob(canvas, type, type === "image/jpeg" ? 0.95 : undefined)
