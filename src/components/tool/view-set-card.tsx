@@ -35,6 +35,17 @@ export function ViewSetCard({
   const sourceAsset = useStoredBlobUrl([thumbSourceKey(id), sourceKey(id)])
   const ready = new Set(item.ready ?? [])
   const frames = item.frames ?? []
+  // Записи до появления флага считаются сохранёнными.
+  const sourceReady = item.sourceReady !== false
+  /* Шаги работы: исходник, план кадров, каждый кадр. Доля — для полоски прогресса. */
+  const steps = frames.length + 2
+  const doneSteps = (sourceReady ? 1 : 0) + (item.planned !== undefined || ready.size > 0 ? 1 : 0) + ready.size
+  const progress = status === "done" ? 1 : Math.min(0.96, doneSteps / steps)
+  const stage = !sourceReady
+    ? "сохраняем исходник…"
+    : ready.size === 0 && item.planned === undefined
+      ? "разбираем сцену и подбираем кадры…"
+      : `строим кадры: ${ready.size} из ${frames.length}`
   const tall = item.aspect ? frameAspectRatio(item.aspect) < 1 : true
 
   const download = async (frame: ViewFrame) => {
@@ -72,7 +83,11 @@ export function ViewSetCard({
   const origin =
     [
       item.sceneInventory ? "разбор сцены" : null,
-      item.planned ? "кадры подобрала vision-модель по этому рендеру" : "кадры по составу набора",
+      item.planned
+        ? "кадры подобрала vision-модель по этому рендеру"
+        : item.planned === false || status !== "processing"
+          ? "кадры по составу набора"
+          : null,
       item.status === "done" && item.engine && item.engine !== "preview" ? "Lanczos 2000 px" : null,
     ]
       .filter(Boolean)
@@ -100,6 +115,10 @@ export function ViewSetCard({
                 onError={sourceAsset.reportImageError}
                 className="absolute inset-0 h-full w-full select-none object-cover"
               />
+            ) : !sourceReady || sourceAsset.status === "loading" ? (
+              <div className="fade-in absolute inset-0 flex items-center justify-center">
+                <ThinkingGlyph size={20} className="[color:var(--fg-4)]" />
+              </div>
             ) : (
               <StoredAssetNotice status={sourceAsset.status} onRetry={sourceAsset.retry} compact className="absolute inset-0" />
             )}
@@ -144,11 +163,15 @@ export function ViewSetCard({
               </button>
             </div>
           ) : (
-            <div className="flex items-center gap-2 px-0.5 text-[12.5px]" style={{ color: "var(--fg-3)" }} aria-live="polite">
-              <ThinkingGlyph size={16} className="[color:var(--fg-4)]" />
-              {ready.size === 0 && !item.planned
-                ? "разбираем сцену и подбираем кадры…"
-                : `строим кадры: ${ready.size} из ${frames.length}`}
+            <div className="flex flex-col gap-2 px-0.5" aria-live="polite">
+              <div className="flex items-center gap-2 text-[12.5px]" style={{ color: "var(--fg-2)" }}>
+                <ThinkingGlyph size={16} className="[color:var(--fg-4)]" />
+                {stage}
+              </div>
+              <div className="view-set-progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}>
+                <span style={{ width: `${Math.round(progress * 100)}%` }} />
+              </div>
+              <span className="ds-caption">обычно около минуты: разбор сцены ≈ 15 с, затем по 20–40 с на кадр, по три разом</span>
             </div>
           )}
         </div>

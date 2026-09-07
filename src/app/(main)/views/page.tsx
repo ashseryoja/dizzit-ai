@@ -13,7 +13,7 @@ import { ComposerDock, ToolAside, ToolGallery, ToolShell } from "@/components/to
 import { ViewSetCard } from "@/components/tool/view-set-card"
 import { ViewsInvite } from "@/components/tool/views-invite"
 import { getBlob, putBlobDurably, sourceKey } from "@/lib/blob-store"
-import { MAX_BATCH, makeThumb } from "@/lib/enhance-engine"
+import { MAX_BATCH, makeThumb, readImageSize } from "@/lib/enhance-engine"
 import { closestFrameAspect } from "@/lib/frame-aspect"
 import { describeScene, hasMaterialsSection } from "@/lib/scene-analysis"
 import { planViewFrames } from "@/lib/shot-planning"
@@ -21,7 +21,7 @@ import { runGalleryQueue, saveSourceFile } from "@/lib/tool-jobs"
 import { useAttachments } from "@/lib/use-attachments"
 import { useBatchSelection } from "@/lib/use-batch-selection"
 import { usePresence } from "@/lib/use-presence"
-import { fileBaseName, mapWithConcurrency, plural } from "@/lib/utils"
+import { createId, fileBaseName, mapWithConcurrency, plural } from "@/lib/utils"
 import { PRESET_LABEL, PRESET_SLOTS, describeSlots, framesOf, prepareViewSet, viewKey, viewThumbKey } from "@/lib/view-engine"
 import { ensureActiveProject, useActiveProject } from "@/stores/project-store"
 import { useViewsStore } from "@/stores/views-store"
@@ -233,19 +233,28 @@ export default function ViewsPage() {
     [update]
   )
 
+  /* Карточки появляются СРАЗУ после нажатия — ещё до сохранения исходника:
+     человек должен увидеть, что работа пошла. Сохранение (с ожиданием
+     серверной копии) идёт уже внутри очереди, под статусом «сохраняем
+     исходник…»; пока оно не закончилось, исходник берётся из памяти
+     (pendingBlobWrites в blob-store), так что превью есть с первой секунды. */
   const startBatch = useCallback(
     async (files: File[], batchNote: string, batchPreset: ViewPreset, batchAspect: FrameAspect) => {
       const project = ensureActiveProject()
       const metas: ViewSet[] = []
+      const sources = new Map<string, File>()
       for (const file of files) {
         try {
-          const { id, width, height } = await saveSourceFile(file, { durable: true })
+          const { width, height } = await readImageSize(file)
+          const id = createId()
+          sources.set(id, file)
           metas.push({
             id,
             projectId: project.id,
             status: "processing",
             preset: batchPreset,
             aspect: batchAspect,
+            sourceReady: false,
             frames: framesOf(batchPreset),
             ready: [],
             note: batchNote,
@@ -255,12 +264,26 @@ export default function ViewsPage() {
             createdAt: new Date().toISOString(),
           })
         } catch {
-          window.alert(`«${file.name}» не удалось сохранить в хранилище браузера.`)
+          window.alert(`«${file.name}» не читается как изображение.`)
         }
       }
-      await runGalleryQueue(metas, add, runSet)
+      await runGalleryQueue(metas, add, async (meta) => {
+        const file = sources.get(meta.id)
+        try {
+          if (!file) throw new Error("Файл исходника потерян.")
+          await saveSourceFile(file, { id: meta.id, durable: true })
+          update(meta.id, { sourceReady: true })
+        } catch (error) {
+          update(meta.id, {
+            status: "error",
+            error: `Исходник не удалось сохранить: ${error instanceof Error ? error.message : "хранилище недоступно"}.`,
+          })
+          return
+        }
+        await runSet({ ...meta, sourceReady: true })
+      })
     },
-    [add, runSet]
+    [add, runSet, update]
   )
 
   const submitBlockedReason = hasAttachments && !aspect ? "Сначала выберите формат кадров" : null
@@ -287,6 +310,34 @@ export default function ViewsPage() {
     update(item.id, { status: "processing", error: undefined })
     void runSet(item)
   }
+
+  /* Смена режима — новая сцена или готовая очередь карточек — всегда наверху
+     страницы: иначе после «Построить» новая карточка встаёт в голову списка,
+     а экран остаётся прокрученным к плитке «Добавить кадр», и кажется, что
+     ничего не произошло. */
+  useEffect(() => {
+    // Мгновенно, не плавно: плавную прокрутку обрывает перестройка страницы.
+    window.scrollTo(0, 0)
+  }, [hasAttachments])
+
+  /* Строка состояния в композере, пока идёт хотя бы один сет: композер всегда
+     на экране, значит и ответ «работает ли» — тоже. */
+  const processing = visible.filter((item) => item.status === "processing")
+  const processingNotice = (() => {
+    if (processing.length === 0) return null
+    const done = processing.reduce((sum, item) => sum + (item.ready?.length ?? 0), 0)
+    const total = processing.reduce((sum, item) => sum + (item.frames?.length ?? 0), 0)
+    if (processing.length === 1) {
+      const item = processing[0]
+      const stage = !item.sourceReady
+        ? "сохраняем исходник…"
+        : (item.ready?.length ?? 0) === 0 && !item.planned
+          ? "разбираем сцену и подбираем кадры…"
+          : `кадры ${done} из ${total}…`
+      return `Строим сет по «${item.sourceName}»: ${stage}`
+    }
+    return `Строим ${processing.length} ${plural(processing.length, ["сет", "сета", "сетов"])}: готово ${done} из ${total} кадров…`
+  })()
 
   const deleteSet = (item: ViewSet) => {
     const confirmed = window.confirm("Удалить сет кадров вместе с результатами? Действие необратимо.")
@@ -330,7 +381,8 @@ export default function ViewsPage() {
               settingsOpen={settingsOpen}
               onSettingsOpenChange={setSettingsOpen}
               submitBlockedReason={submitBlockedReason}
-              notice={hasAttachments && !aspect ? ASPECT_NOTICE : null}
+              notice={hasAttachments ? (aspect ? null : ASPECT_NOTICE) : processingNotice}
+              placeholder={hasAttachments ? undefined : "Добавьте рендер: плитка «Добавить кадр», перенос или вставка из буфера"}
               attentionKey={attention}
               extras={<AspectPicker value={aspect} onChange={setAspect} suggested={suggestedAspect} />}
             />

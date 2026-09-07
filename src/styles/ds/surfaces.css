@@ -424,6 +424,22 @@ select.field option { background: var(--bg-overlay); color: var(--fg-1); }
   text-overflow: ellipsis;
 }
 
+/* Полоска прогресса сета: шаги — исходник, план, кадры. */
+.view-set-progress {
+  height: 3px;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--line-strong);
+}
+.view-set-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 400ms var(--ease-out);
+}
+
 /* Плитка «добавить ещё» (AddTile): пунктир и плюс в кружке, при наведении
    светлеет. Размер задаёт страница через aspect-ratio. */
 .add-tile {
