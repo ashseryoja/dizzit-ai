@@ -36,7 +36,7 @@ const SLOT_BRIEF: Record<ShotSlot, string> = {
   texture:
     "texture: a tight crop where a material sits on its object and meets an edge, a seam, a piping, a joint or a second material — the fabric panel joint with the sconce's light pool, the marble top edge over the drawer front, the blanket fringe over the bed edge. Never a flat patch of bare wall, floor or ceiling with nothing else in the crop.",
   fragment:
-    "fragment: a crop of one zone that keeps a foreground layer and depth — the corner of the bed with the nightstand behind, the curtain edge with the bench and window light, the doorway with the planter — framed tight.",
+    "fragment: a tight crop of one corner that keeps a foreground layer and depth — the corner of the bed with the nightstand behind, the curtain edge with the bench and window light, the doorway with the planter — never more than 45% of the image on any side.",
 }
 
 /**
@@ -49,7 +49,7 @@ const EDITORIAL_RULES = [
   "- every shot is a CROP of the input image: the camera does not move, geometry and perspective stay exactly as in the image; the shots differ by which part of the image they take and how tight;",
   "- every crop is a VIGNETTE: one to three objects, a clear focal point, rule of thirds, some surrounding context kept;",
   "- every crop should contain light doing something: a sconce's pool on fabric, an LED cove line on a marble top, window light across a blanket, a lamp shade's glow;",
-  "- FORBIDDEN: a crop where a whole bed, sofa or the whole room fits; a crop that is mostly bare wall, floor, ceiling or curtain; a flat patch of one material with nothing else; two crops of the same subject; the full image as a crop;",
+  "- FORBIDDEN: a crop where a whole bed, sofa or the whole room fits; a crop larger than 45% of the image on any side; a crop that is mostly bare wall, floor, ceiling or curtain; a flat patch of one material with nothing else; two crops of the same subject; the full image as a crop;",
   "- crops must differ from each other in subject, position in the image and size.",
 ].join("\n")
 
@@ -74,7 +74,7 @@ export function buildShotListPrompt(preset: ViewPreset, aspect: FrameAspect, not
     wishes.length > 0
       ? `The designer asked to show these subjects close up, in this order, giving them the first detail shots: ${wishes.map((item) => `"${item}"`).join(", ")}.`
       : "",
-    'Answer with a JSON array only, no prose, no markdown: [{"kind": "top|low|left|right|detail|texture|fragment", "label": "<2–4 Russian words, lowercase, naming the subject: \\"ваза на консоли\\", \\"тумба с лампой\\", \\"шпон дуба крупно\\">", "brief": "<English, 1–3 sentences for the image generator: the subject exactly as it appears in the image, what else is in the crop, where the light falls>", "region": [x, y, w, h]}, …] where region is the crop rectangle as fractions of the image width and height from 0 to 1 (x, y — top-left corner; w, h — size), chosen as the best composition around the subject: about 0.15–0.35 of the width for a texture, 0.25–0.5 for a detail, 0.35–0.6 for a zone or fragment.',
+    'Answer with a JSON array only, no prose, no markdown: [{"kind": "top|low|left|right|detail|texture|fragment", "label": "<2–4 Russian words, lowercase, naming the subject: \\"ваза на консоли\\", \\"тумба с лампой\\", \\"шпон дуба крупно\\">", "brief": "<English, 1–3 sentences for the image generator: the subject exactly as it appears in the image, what else is in the crop, where the light falls>", "region": [x, y, w, h]}, …] where region is the crop rectangle as fractions of the image width and height from 0 to 1 (x, y — top-left corner; w, h — size), chosen as the best composition around the subject. HARD LIMITS: no side of any region larger than 0.45 of the image (a bigger crop comes out as the whole picture again); texture 0.14–0.3, detail 0.22–0.42, fragment 0.28–0.45. Put the crop where the subject actually is in the image.',
   ]
     .filter(Boolean)
     .join("\n")

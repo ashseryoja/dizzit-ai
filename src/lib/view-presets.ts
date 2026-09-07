@@ -21,18 +21,46 @@ import type { ShotKind, ViewFrame, ViewPreset } from "@/types"
 export type ShotSlot = "angle" | "detail" | "texture" | "fragment"
 
 export const PRESET_SLOTS: Record<ViewPreset, ShotSlot[]> = {
-  // Готовая карусель: два ракурса, две детали, фактура и фрагмент.
-  set: ["angle", "angle", "detail", "detail", "texture", "fragment"],
+  // Готовая карусель: три предмета крупно, две фактуры и фрагмент. Широких
+  // «зон» в наборах больше нет: из них выходил почти исходник.
+  set: ["detail", "detail", "detail", "texture", "texture", "fragment"],
   details: ["detail", "detail", "detail", "detail"],
-  angles: ["angle", "angle", "angle", "angle"],
+  textures: ["texture", "texture", "texture", "texture"],
   fragments: ["fragment", "fragment", "fragment", "fragment"],
+  angles: ["fragment", "fragment", "fragment", "fragment"],
 }
 
 export const PRESET_LABEL: Record<ViewPreset, string> = {
   set: "Сет",
   details: "Детали",
-  angles: "Ракурсы",
+  textures: "Фактуры",
   fragments: "Фрагменты",
+  angles: "Ракурсы",
+}
+
+/**
+ * Границы области кропа по роду кадра — доли ширины и высоты кадра. Больше
+ * потолка — после расширения до формата кроп становится почти исходником;
+ * меньше пола — в кропе слишком мало пикселей, модель выдумывает.
+ */
+export const REGION_BOUNDS: Record<ShotSlot, { min: number; max: number }> = {
+  angle: { min: 0.3, max: 0.45 },
+  detail: { min: 0.22, max: 0.42 },
+  texture: { min: 0.14, max: 0.3 },
+  fragment: { min: 0.28, max: 0.45 },
+}
+
+/** Область в границах своего рода: сжимается или растёт вокруг центра, не выходя за кадр. */
+export function boundRegion(region: [number, number, number, number], kind: ShotKind): [number, number, number, number] {
+  const { min, max } = REGION_BOUNDS[slotOf(kind)]
+  const [x, y, w, h] = region
+  const cx = x + w / 2
+  const cy = y + h / 2
+  const nw = Math.min(max, Math.max(min, w))
+  const nh = Math.min(max, Math.max(min, h))
+  const nx = Math.min(Math.max(0, cx - nw / 2), 1 - nw)
+  const ny = Math.min(Math.max(0, cy - nh / 2), 1 - nh)
+  return [nx, ny, nw, nh].map((n) => Math.round(n * 1000) / 1000) as [number, number, number, number]
 }
 
 export const SHOT_LABEL: Record<ShotKind, string> = {
@@ -90,7 +118,7 @@ export function buildFrames(drafts: ShotDraft[]): ViewFrame[] {
     const fallback = (total[draft.kind] ?? 1) > 1 ? `${SHOT_LABEL[draft.kind]} ${n}` : SHOT_LABEL[draft.kind]
       const frame: ViewFrame = { key: `${draft.kind}-${n}`, kind: draft.kind, label: draft.label?.trim() || fallback }
     if (draft.brief?.trim()) frame.brief = draft.brief.trim()
-    if (draft.region) frame.region = draft.region
+    if (draft.region) frame.region = boundRegion(draft.region, draft.kind)
     return frame
   })
 }

@@ -133,8 +133,8 @@ export interface Enhancement extends GalleryItemMeta {
  */
 export type ShotKind = "top" | "low" | "left" | "right" | "detail" | "texture" | "fragment"
 
-/** Выбор в композере: готовая карусель или один тип кадров. */
-export type ViewPreset = "set" | "details" | "angles" | "fragments"
+/** Выбор в композере: готовая карусель или один тип кадров. `angles` — старые записи, теперь то же, что фрагменты. */
+export type ViewPreset = "set" | "details" | "textures" | "fragments" | "angles"
 
 /**
  * Формат кадров сета — выбирается перед построением (`lib/frame-aspect`):

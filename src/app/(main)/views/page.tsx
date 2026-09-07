@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Camera, Crop, Images, ZoomIn } from "lucide-react"
+import { Camera, Crop, Images, Layers, ZoomIn } from "lucide-react"
 
 import { AddTile } from "@/components/tool/add-tile"
 import { AspectPicker } from "@/components/tool/aspect-picker"
@@ -30,7 +30,7 @@ import type { FrameAspect, ViewPreset, ViewSet } from "@/types"
 const PRESET_OPTIONS: ToolOption<ViewPreset>[] = [
   { value: "set", label: "Сет", icon: Images },
   { value: "details", label: "Детали", icon: ZoomIn },
-  { value: "angles", label: "Ракурсы", icon: Camera },
+  { value: "textures", label: "Фактуры", icon: Layers },
   { value: "fragments", label: "Фрагменты", icon: Crop },
 ]
 
@@ -42,7 +42,7 @@ const LABELS: ToolComposerLabels = {
   optionsTitle: "Что снять",
   optionsIcon: Camera,
   footer:
-    "Сцена остаётся той же — меняются точка съёмки и кадрирование. Все кадры — крупные виньетки, как в каруселях дизайнеров: предмет с соседями, вид сверху под углом на тумбу, через край кровати, материал у шва. Общих планов и голых стен не будет. Перед построением vision-модель разбирает сцену и сама решает, что здесь стоит снять. Каждый кадр проходит Lanczos до 2000 px.",
+    "Камера не двигается: каждый кадр — кроп исходника не больше половины кадра, дорисованный в полном размере. Как в каруселях дизайнеров: предмет с соседями, материал у шва, угол кровати с тумбой. Общих планов и голых стен не будет. Перед построением vision-модель разбирает сцену и сама решает, что здесь стоит снять. Каждый кадр проходит Lanczos до 2000 px.",
   inputPlaceholder: "Что показать крупно: ваза, кресло, торшер…",
   submitLabel: "Построить",
   batchNoun: ["рендер", "рендера", "рендеров"],

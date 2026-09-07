@@ -77,16 +77,17 @@ export const VIEW_LONG_SIDE = 2000
  * полном размере. Область кропа даёт планировщик (`ViewFrame.region`); без
  * него — типовая область по типу кадра (зона — часть кадра, крупные планы —
  * «насыщенные» окна из плана предпросмотра). Область вырезается на клиенте
- * в формате сета и уходит модели как IMAGE 1, полный кадр — IMAGE 2 для
- * контекста: так модель не может «отъехать» обратно к общему плану.
+ * в формате сета и уходит модели единственным референсом: полного кадра
+ * модель не видит и не может «отъехать» обратно к общему плану; что за
+ * предметы и материалы в кропе, ей говорит инвентарь сцены в промпте.
  */
 
 /** Типовые области зон в долях кадра: [x, y, w, h]. */
 const ZONE_REGION: Record<"top" | "low" | "left" | "right", [number, number, number, number]> = {
-  top: [0.1, 0, 0.8, 0.55],
-  low: [0.1, 0.45, 0.8, 0.55],
-  left: [0, 0.1, 0.55, 0.8],
-  right: [0.45, 0.1, 0.55, 0.8],
+  top: [0.275, 0.05, 0.45, 0.45],
+  low: [0.275, 0.5, 0.45, 0.45],
+  left: [0.05, 0.3, 0.45, 0.45],
+  right: [0.5, 0.3, 0.45, 0.45],
 }
 
 const ZONE_PROMPT: Record<"top" | "low" | "left" | "right", string> = {
@@ -183,8 +184,8 @@ export function buildViewPrompt(
       : "FORMAT: portrait orientation, the subject centered with some margin around it."
   const base = options.cropped
     ? [
-        "IMAGE 1 IS THE BASE — it is already the exact crop of the scene to produce: keep its framing, geometry, perspective, objects, materials and light exactly. IMAGE 2 is the whole scene, for context only — it tells what the objects and materials in IMAGE 1 are; never output IMAGE 2 and never widen the view towards it.",
-        "GOAL: re-render IMAGE 1 at full resolution as one realistic photograph — an enhancement of this crop, not a new render.",
+        "IMAGE 1 IS THE BASE — it is already the exact crop of the scene to produce: keep its framing, geometry, perspective, objects, materials and light exactly; the output shows precisely what IMAGE 1 shows, nothing beyond its edges.",
+        "GOAL: re-render IMAGE 1 at full resolution as one realistic photograph — an enhancement of this crop, not a new render and not a wider view.",
       ]
     : [
         "INPUT IMAGE 1 IS THE BASE — use it as the only source. DO NOT change geometry. DO NOT change perspective. DO NOT reconstruct the scene. DO NOT add or remove objects. The camera does not move.",
@@ -208,14 +209,18 @@ export function buildViewPrompt(
 
 /**
  * Вырезка области исходника в формате сета: область расширяется вокруг своего
- * центра до нужной пропорции, не выходя за кадр, и уменьшается до длинной
- * стороны референса (без увеличения — модель сама дорисует детали).
+ * центра до нужной пропорции, не выходя за кадр, и приводится к рабочему
+ * размеру модели: большая уменьшается до `maxSide`, маленькая увеличивается
+ * до `minSide` — модели нужна основа полного кадра, детали она дорисует.
  */
+export const CROP_MIN_SIDE = 1536
+
 export async function cropRegion(
   source: Blob,
   region: [number, number, number, number],
   ratio: number,
-  maxSide = REFERENCE_MAX_SIDE
+  maxSide = REFERENCE_MAX_SIDE,
+  minSide = CROP_MIN_SIDE
 ): Promise<Blob> {
   const bitmap = await createImageBitmap(source)
   try {
@@ -238,7 +243,8 @@ export async function cropRegion(
     }
     const x = Math.min(Math.max(0, cx - w / 2), W - w)
     const y = Math.min(Math.max(0, cy - h / 2), H - h)
-    const k = Math.min(1, maxSide / Math.max(w, h))
+    const longest = Math.max(w, h)
+    const k = longest > maxSide ? maxSide / longest : longest < minSide ? minSide / longest : 1
     const [canvas, ctx] = makeCanvas(Math.max(1, Math.round(w * k)), Math.max(1, Math.round(h * k)))
     ctx.drawImage(bitmap, x, y, w, h, 0, 0, canvas.width, canvas.height)
     return await toBlob(canvas, "image/jpeg", 0.92)
@@ -282,17 +288,19 @@ export async function prepareViewSet(
     return px ? [px.x / width, px.y / height, px.w / width, px.h / height] : null
   }
   if (status.configured) {
-    const reference = await prepareReference(source)
+    // Полный кадр нужен только кадрам без области (старые записи без плана).
+    const reference = frames.every((frame) => regionOf(frame)) ? null : await prepareReference(source)
     return {
       async render(frame) {
         const region = regionOf(frame)
         const crop = region ? await cropRegion(source, region, ratioFor(frame)) : null
+        const base = crop ?? reference ?? (await prepareReference(source))
         // Провайдер подберёт ближайшую свою пропорцию; остаток обрежется до точного формата.
         const wanted = aspect ? frameAspectSize(aspect) : isWideShot(frame.kind) ? { width, height } : { width: 4, height: 5 }
         const image = await requestImage({
           prompt: buildViewPrompt(frame, frames, note, aspect, inventory, { cropped: Boolean(crop) }),
           aspect: wanted,
-          references: crop ? [crop, reference] : [reference],
+          references: [base],
           finalLongSide: VIEW_LONG_SIDE,
         })
         return cropToAspect(image, ratioFor(frame))
