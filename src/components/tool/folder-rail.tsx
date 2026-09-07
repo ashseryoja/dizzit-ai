@@ -1,8 +1,9 @@
 "use client"
 
-import { useEffect, useRef, useState, type KeyboardEvent } from "react"
+import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from "react"
 import { Pencil, Plus, Trash2 } from "lucide-react"
 
+import { RENDER_DRAG_TYPE } from "@/components/tool/render-tray"
 import { cn } from "@/lib/utils"
 import type { RenderFolder } from "@/types"
 
@@ -15,6 +16,8 @@ export interface FolderRailProps {
   onCreate: () => RenderFolder | null
   onRename: (id: string, title: string) => void
   onDelete: (id: string) => void
+  /** Плитку пачки бросили на вкладку: перенести записи в папку (null — в «Общую», без папки). */
+  onDropRenders?: (ids: string[], folderId: string | null) => void
   /** Подпись вкладки «всё»: по умолчанию «Общая». */
   allLabel?: string
   /** Вертикальные вкладки слева от панели (по умолчанию) или строка чипов над полоской. */
@@ -35,11 +38,40 @@ export function FolderRail({
   onCreate,
   onRename,
   onDelete,
+  onDropRenders,
   allLabel = "Общая",
   orientation = "vertical",
 }: FolderRailProps) {
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [dropId, setDropId] = useState<string | null | undefined>(undefined)
   const horizontal = orientation === "horizontal"
+
+  /* Перетаскивание плиток пачки (RenderTray): вкладка подсвечивается, пока над
+     ней держат рендер, и принимает список id из dataTransfer. */
+  const dropProps = (folderId: string | null) =>
+    onDropRenders
+      ? {
+          onDragOver: (event: DragEvent<HTMLButtonElement>) => {
+            if (!event.dataTransfer.types.includes(RENDER_DRAG_TYPE)) return
+            event.preventDefault()
+            event.dataTransfer.dropEffect = "move"
+            if (dropId !== folderId) setDropId(folderId)
+          },
+          onDragLeave: () => setDropId(undefined),
+          onDrop: (event: DragEvent<HTMLButtonElement>) => {
+            setDropId(undefined)
+            const raw = event.dataTransfer.getData(RENDER_DRAG_TYPE)
+            if (!raw) return
+            event.preventDefault()
+            try {
+              const ids = JSON.parse(raw) as unknown
+              if (Array.isArray(ids) && ids.every((id) => typeof id === "string")) onDropRenders(ids, folderId)
+            } catch {
+              // Чужие данные переноса — не наш формат, игнорируем.
+            }
+          },
+        }
+      : {}
 
   const create = () => {
     const folder = onCreate()
@@ -61,7 +93,8 @@ export function FolderRail({
           role="tab"
           aria-selected={activeId === null}
           onClick={() => onSelect(null)}
-          className={cn("folder-tab", activeId === null && "is-active")}
+          className={cn("folder-tab", activeId === null && "is-active", dropId === null && "is-drop")}
+          {...dropProps(null)}
         >
           <span className="folder-tab-label">{allLabel}</span>
         </button>
@@ -76,8 +109,9 @@ export function FolderRail({
               role="tab"
               aria-selected={active}
               onClick={() => onSelect(folder.id)}
-              className={cn("folder-tab", active && "is-active")}
+              className={cn("folder-tab", active && "is-active", dropId === folder.id && "is-drop")}
               title={folder.title}
+              {...dropProps(folder.id)}
             >
               <span className="folder-tab-label">{folder.title}</span>
             </button>

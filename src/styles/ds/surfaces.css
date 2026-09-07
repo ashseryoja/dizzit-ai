@@ -1821,3 +1821,40 @@ select.field option { background: var(--bg-overlay); color: var(--fg-1); }
 .folder-rail.is-horizontal .folder-tab-add { min-height: 30px; padding: 0 10px; }
 .folder-rail.is-horizontal .folder-tab-edit { top: -6px; left: auto; right: -6px; transform: none; }
 .folder-rail.is-horizontal .folder-editor { left: 0; top: calc(100% + 6px); --popover-origin: top left; }
+
+/* Вкладка, над которой держат перетаскиваемую плитку. */
+.folder-tab.is-drop { color: var(--fg-1); border-color: var(--fg-3); border-style: dashed; background: var(--hover-2); }
+.folder-rail.is-horizontal .folder-tab.is-drop { border-right-color: var(--fg-3); }
+
+/* Меню «В папку» у набора в панели пачки. */
+.tray-move-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 4px;
+  border-radius: var(--r-sm);
+  background: var(--bg-overlay);
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+.tray-move-item {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 6px;
+  text-align: left;
+  font-size: 12.5px;
+  color: var(--fg-2);
+  background: transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tray-move-item:hover { color: var(--fg-1); background: var(--hover-2); }

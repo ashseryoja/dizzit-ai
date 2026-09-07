@@ -262,6 +262,19 @@ export default function EnhancePage() {
     },
     [activeProject, deleteFolder, update]
   )
+  /* Перенос рендеров между папками: перетаскиванием плитки на вкладку или
+     кнопкой «В папку» у набора. Запись остаётся той же, меняется только folderId;
+     из открытой папки перенесённые уходят обычным восстановлением сцены. */
+  const moveToFolder = useCallback(
+    (ids: string[], folderId: string | null) => {
+      for (const id of ids) update(id, { folderId: folderId ?? undefined })
+    },
+    [update]
+  )
+  const moveTargets = useMemo(
+    () => [{ id: null, title: "Общая" }, ...folders.map((folder) => ({ id: folder.id, title: folder.title }))],
+    [folders]
+  )
   const folderRail = (orientation: "vertical" | "horizontal") =>
     activeProject ? (
       <FolderRail
@@ -271,6 +284,7 @@ export default function EnhancePage() {
         onCreate={() => createFolder(activeProject.id)}
         onRename={(id, title) => renameFolder(activeProject.id, id, title)}
         onDelete={removeFolder}
+        onDropRenders={moveToFolder}
         orientation={orientation}
       />
     ) : null
@@ -407,34 +421,29 @@ export default function EnhancePage() {
   const sourcesToRestore = useMemo(() => {
     return [...folderEnhancements].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   }, [folderEnhancements])
-  const restoredFolderRef = useRef<string | null | undefined>(undefined)
   const restoreSignature = sourcesToRestore.map((item) => item.id).join(",")
   const sourcesToRestoreRef = useRef(sourcesToRestore)
   sourcesToRestoreRef.current = sourcesToRestore
   useEffect(() => {
+    // Со сцены уходят рендеры, чьи записи есть в проекте, но не в этой папке:
+    // перешли в другую папку, перенесли рендер, удалили его в другом браузере.
+    // Только что вставленные файлы записи ещё не имеют — их не трогаем.
+    const targetIds = new Set(sourcesToRestoreRef.current.map((item) => item.id))
+    const known = new Set(useEnhanceStore.getState().enhancements.map((item) => item.id))
+    const obsoleteUrls = attachmentsRef.current
+      .filter((item) => !targetIds.has(item.id) && known.has(item.id))
+      .map((item) => item.previewUrl)
+    if (obsoleteUrls.length > 0) detachAttachments(obsoleteUrls, "consume")
     if (!activeProjectId || !restoreSignature) {
-      // Перешли в пустую папку — сцена прежней папки уходит (записи целы).
-      if (restoredFolderRef.current !== activeFolderId) {
-        restoredFolderRef.current = activeFolderId
-        detachAttachments(attachmentsRef.current.map((item) => item.previewUrl), "consume")
-      }
       setRestoreState("idle")
       setMissingSourceCount(0)
       return
     }
-    restoredFolderRef.current = activeFolderId
     const attemptKey = `${activeProjectId}:${activeFolderId ?? "all"}:${restoreSignature}:${restoreAttempt}`
     if (restoringSources.current === attemptKey) return
     restoringSources.current = attemptKey
     setRestoreState("loading")
     setMissingSourceCount(0)
-    // Серверный список записей проекта — авторитетный. Запись, удалённую в
-    // другом браузере, убираем и со сцены (без удаления: её уже нет).
-    const targetIds = new Set(sourcesToRestoreRef.current.map((item) => item.id))
-    const obsoleteUrls = attachmentsRef.current
-      .filter((item) => !targetIds.has(item.id))
-      .map((item) => item.previewUrl)
-    detachAttachments(obsoleteUrls, "consume")
     let cancelled = false
     void Promise.all(
       sourcesToRestoreRef.current.map(async (item) => {
@@ -556,6 +565,8 @@ export default function EnhancePage() {
     onSelect: selectSource,
     sourceLabel: "исходник",
     renderVersion,
+    moveTargets,
+    onMoveTo: moveToFolder,
   }
 
   /* Собственно обработка: исходник уже в IndexedDB, результат и миниатюра

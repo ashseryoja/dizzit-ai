@@ -1,10 +1,19 @@
 "use client"
 
-import { Fragment, type ReactNode } from "react"
-import { Check, Plus, SlidersHorizontal, X } from "lucide-react"
+import { Fragment, useEffect, useRef, useState, type DragEvent, type ReactNode } from "react"
+import { Check, FolderInput, Plus, SlidersHorizontal, X } from "lucide-react"
 
 import type { AttachedRender } from "@/components/tool/tool-composer"
 import { cn, plural } from "@/lib/utils"
+
+/** MIME переноса плиток пачки: список id записей (JSON). Принимает FolderRail. */
+export const RENDER_DRAG_TYPE = "application/x-dizzit-renders"
+
+/** Куда можно перенести рендеры: null — «Общая», то есть без папки. */
+export interface MoveTarget {
+  id: string | null
+  title: string
+}
 
 interface RenderTrayProps {
   attachments: AttachedRender[]
@@ -33,6 +42,20 @@ interface RenderTrayProps {
   sourceLabel?: string
   /** Дополнительная плитка после исходника: результат, вариант, ракурс. */
   renderVersion?: (attachment: AttachedRender, index: number) => ReactNode
+  /**
+   * Папки, куда можно перенести рендеры. Задано — плитки перетаскиваются на
+   * вкладки FolderRail, а в режиме «Выбрать» появляется кнопка «В папку».
+   */
+  moveTargets?: MoveTarget[]
+  onMoveTo?: (ids: string[], folderId: string | null) => void
+}
+
+/** Что уезжает при перетаскивании плитки: в режиме выбора — весь набор, иначе одна. */
+function dragIdsFor(attachment: AttachedRender, attachments: AttachedRender[], picked: Set<string>, picking: boolean): string[] {
+  if (picking && picked.has(attachment.previewUrl)) {
+    return attachments.filter((item) => picked.has(item.previewUrl)).map((item) => item.id)
+  }
+  return [attachment.id]
 }
 
 /**
@@ -62,10 +85,14 @@ export function RenderTray({
   editLabel = "Редактировать",
   sourceLabel,
   renderVersion,
+  moveTargets,
+  onMoveTo,
 }: RenderTrayProps) {
   const count = attachments.length
-  const pickedCount = attachments.filter((item) => picked.has(item.previewUrl)).length
+  const pickedItems = attachments.filter((item) => picked.has(item.previewUrl))
+  const pickedCount = pickedItems.length
   const allPicked = count > 0 && pickedCount === count
+  const canMove = Boolean(onMoveTo && moveTargets && moveTargets.length > 1)
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -105,6 +132,7 @@ export function RenderTray({
                 picking={picking}
                 onSelect={() => onSelect(index)}
                 onRemove={() => onRemove(index)}
+                dragIds={canMove ? dragIdsFor(attachment, attachments, picked, picking) : undefined}
               />
               {!picking ? renderVersion?.(attachment, index) : null}
             </Fragment>
@@ -127,11 +155,16 @@ export function RenderTray({
       <div className="shrink-0 px-4 pb-4 pt-2">
         <hr className="ds-divider mb-3" />
         {picking && pickedCount > 0 ? (
-          /* Отмечено несколько — единственное действие с набором: общие правки. */
-          <button type="button" onClick={onEditAll} className="btn-primary h-10 w-full justify-center text-[13px]">
-            <SlidersHorizontal className="h-4 w-4" strokeWidth={1.7} />
-            {pickedCount === 1 ? editLabel : `${editLabel} все · ${pickedCount}`}
-          </button>
+          /* Отмечено несколько: общие правки и, если есть папки, перенос набора. */
+          <div className="flex items-stretch gap-2">
+            <button type="button" onClick={onEditAll} className="btn-primary h-10 min-w-0 flex-1 justify-center text-[13px]">
+              <SlidersHorizontal className="h-4 w-4 shrink-0" strokeWidth={1.7} />
+              <span className="truncate">{pickedCount === 1 ? editLabel : `${editLabel} все · ${pickedCount}`}</span>
+            </button>
+            {canMove && moveTargets && onMoveTo ? (
+              <MoveMenu targets={moveTargets} onPick={(folderId) => onMoveTo(pickedItems.map((item) => item.id), folderId)} />
+            ) : null}
+          </div>
         ) : (
           <div className="flex items-center justify-between gap-2 px-1">
             <span className="min-w-0 truncate text-[12px]" style={{ color: "var(--fg-4)" }}>
@@ -165,8 +198,12 @@ export function RenderStrip({
   editLabel = "Редактировать",
   sourceLabel,
   renderVersion,
+  moveTargets,
+  onMoveTo,
 }: Omit<RenderTrayProps, "onClear" | "noun" | "onPickAll" | "title">) {
-  const pickedCount = attachments.filter((item) => picked.has(item.previewUrl)).length
+  const pickedItems = attachments.filter((item) => picked.has(item.previewUrl))
+  const pickedCount = pickedItems.length
+  const canMove = Boolean(onMoveTo && moveTargets && moveTargets.length > 1)
   return (
     <div className="flex items-center gap-2">
       <div className="no-scrollbar flex min-w-0 flex-1 gap-2 overflow-x-auto py-1" role="listbox" aria-multiselectable={picking} aria-label="Приложенные рендеры">
@@ -184,6 +221,7 @@ export function RenderStrip({
                   picking={picking}
                   onSelect={() => onSelect(index)}
                   onRemove={() => onRemove(index)}
+                  dragIds={canMove ? dragIdsFor(attachment, attachments, picked, picking) : undefined}
                 />
               </div>
               {version ? <div className="w-[96px] shrink-0">{version}</div> : null}
@@ -202,9 +240,14 @@ export function RenderStrip({
         ) : null}
       </div>
       {picking && pickedCount > 0 ? (
-        <button type="button" onClick={onEditAll} className="btn-primary h-8 shrink-0 px-2.5 text-[12px]">
-          {editLabel}{pickedCount > 1 ? ` все · ${pickedCount}` : ""}
-        </button>
+        <>
+          <button type="button" onClick={onEditAll} className="btn-primary h-8 shrink-0 px-2.5 text-[12px]">
+            {editLabel}{pickedCount > 1 ? ` все · ${pickedCount}` : ""}
+          </button>
+          {canMove && moveTargets && onMoveTo ? (
+            <MoveMenu compact targets={moveTargets} onPick={(folderId) => onMoveTo(pickedItems.map((item) => item.id), folderId)} />
+          ) : null}
+        </>
       ) : null}
       <button
         type="button"
@@ -227,6 +270,7 @@ function TrayThumb({
   picking,
   onSelect,
   onRemove,
+  dragIds,
 }: {
   attachment: AttachedRender
   index: number
@@ -236,6 +280,8 @@ function TrayThumb({
   picking: boolean
   onSelect: () => void
   onRemove: () => void
+  /** Id записей, которые уезжают при перетаскивании плитки на вкладку папки. */
+  dragIds?: string[]
 }) {
   return (
     <div
@@ -243,6 +289,15 @@ function TrayThumb({
       aria-selected={picked}
       tabIndex={0}
       onClick={onSelect}
+      draggable={Boolean(dragIds)}
+      onDragStart={
+        dragIds
+          ? (event: DragEvent<HTMLDivElement>) => {
+              event.dataTransfer.setData(RENDER_DRAG_TYPE, JSON.stringify(dragIds))
+              event.dataTransfer.effectAllowed = "move"
+            }
+          : undefined
+      }
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault()
@@ -286,6 +341,61 @@ function TrayThumb({
           <X className="h-3 w-3" strokeWidth={1.8} />
         </button>
       )}
+    </div>
+  )
+}
+
+/** Кнопка «В папку» с выпадающим списком папок; закрывается по клику мимо и Escape. */
+function MoveMenu({ targets, onPick, compact = false }: { targets: MoveTarget[]; onPick: (folderId: string | null) => void; compact?: boolean }) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const onPointerDown = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false)
+    }
+    window.addEventListener("pointerdown", onPointerDown)
+    window.addEventListener("keydown", onKeyDown)
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown)
+      window.removeEventListener("keydown", onKeyDown)
+    }
+  }, [open])
+  return (
+    <div ref={rootRef} className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Перенести в папку"
+        title="Перенести в папку"
+        className={cn("btn-outline justify-center", compact ? "h-8 px-2.5 text-[12px]" : "h-10 px-3 text-[13px]")}
+      >
+        <FolderInput className="h-4 w-4" strokeWidth={1.7} />
+        {compact ? null : "В папку"}
+      </button>
+      {open ? (
+        <div role="menu" className="tray-move-menu popover popover-up" aria-label="Папки">
+          {targets.map((target) => (
+            <button
+              key={target.id ?? "all"}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false)
+                onPick(target.id)
+              }}
+              className="tray-move-item"
+            >
+              {target.title}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   )
 }

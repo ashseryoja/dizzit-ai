@@ -25,7 +25,7 @@
 | Улучшение качества GPT Image 2 + Lanczos 2000 px, тумблер «Заселить сцену», пакетные функции (качество, фильтр, время) | `src/components/tool/batch-tools.tsx` | `QualityToggle`, `PopulateToggle`, `BatchToolsPanel` |
 | Правая панель-галерея пачки: заголовок «рендеры · 3 из 10» (у пачки без лимита — просто «рендеры · 14»), «Выбрать», плитки, производные версии, «Добавить», «Очистить», «Редактировать все» | `src/components/tool/render-tray.tsx` | `RenderTray`, `TrayThumb`, проп `renderVersion` |
 | Полоска миниатюр под сценой на узких экранах | `render-tray.tsx` | `RenderStrip` |
-| Папки рендеров: вкладки «Общая», «Комната 1»… и «+» у левого края правой панели, карандаш при наведении, окошко имени с удалением; на узких экранах — чипы над полоской | `src/components/tool/folder-rail.tsx` — вкладки; `src/stores/project-store.ts` — данные (`Project.folders`, `createFolder`/`renameFolder`/`deleteFolder`); `src/styles/ds/surfaces.css` — `.folder-*` | `FolderRail`; слот `rail` у `ToolAside`; принадлежность рендера — `folderId` записи |
+| Папки рендеров: вкладки «Общая», «Комната 1»… и «+» у левого края правой панели, карандаш при наведении, окошко имени с удалением; на узких экранах — чипы над полоской | `src/components/tool/folder-rail.tsx` — вкладки; `src/stores/project-store.ts` — данные (`Project.folders`, `createFolder`/`renameFolder`/`deleteFolder`); `src/styles/ds/surfaces.css` — `.folder-*` | `FolderRail`; слот `rail` у `ToolAside`; принадлежность рендера — `folderId` записи; перенос между папками — `moveTargets`/`onMoveTo` у `RenderTray` (перетаскивание плитки на вкладку, кнопка «В папку» у набора) и `onDropRenders` у `FolderRail` |
 | Закреплённая правая панель как поверхность (ширина, тень, рамка, анимация выезда) | `src/components/tool/tool-shell.tsx` | `ToolAside` |
 | Сцена: рендер во весь экран, бейджи имени/размера и «2 / 7», стрелки; поверхность во время восстановления | `src/components/tool/stage.tsx` | `Stage`, `StagePlaceholder` |
 | Пакетный грид с заголовком «Пакетное …» и кнопкой «К просмотру» | `stage.tsx` | `BatchGrid` |
@@ -232,7 +232,9 @@ refresh. Удаление пары из пачки
 `renderVersion(attachment, index)` добавляет рядом производную плитку. В
 «Редакторе рендера» это пара «исходник / новый»; новая версия показывает
 состояния обработки и ошибки и выбирается на большой сцене независимо от
-исходника.
+исходника. `moveTargets` + `onMoveTo(ids, folderId)` включают перенос в папки:
+плитки становятся перетаскиваемыми (в режиме «Выбрать» уезжает весь набор), а
+рядом с «Редактировать все» появляется кнопка «В папку» со списком папок.
 
 ### `FolderRail` — `src/components/tool/folder-rail.tsx`
 
@@ -248,6 +250,11 @@ refresh. Удаление пары из пачки
 смена папки перестраивает пачку через обычное восстановление исходников
 (`restoreAttachments`), поэтому лимитов и копий у папок нет.
 `orientation="horizontal"` — чипы над `RenderStrip` на узких экранах.
+
+Перенос между папками: `onDropRenders(ids, folderId)` принимает плитки,
+перетащенные из `RenderTray` (MIME `RENDER_DRAG_TYPE`, список id записей);
+вкладка под курсором подсвечивается. Слой «Отпустите, чтобы приложить…»
+(`useAttachments.dropProps`) на такой перенос не реагирует — только на файлы.
 
 ### `Stage`, `BatchGrid` — `src/components/tool/stage.tsx`
 

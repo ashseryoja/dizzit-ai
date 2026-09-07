@@ -64,9 +64,13 @@ export interface AttachmentIntake {
   dropProps: {
     onDragEnter: (event: DragEvent) => void
     onDragOver: (event: DragEvent) => void
-    onDragLeave: () => void
+    onDragLeave: (event: DragEvent) => void
     onDrop: (event: DragEvent) => void
   }
+}
+
+function hasFiles(event: DragEvent): boolean {
+  return Array.from(event.dataTransfer?.types ?? []).includes("Files")
 }
 
 /**
@@ -193,18 +197,25 @@ export function useAttachments({ maxFiles = MAX_BATCH, replace = false, onDetach
     [attachFiles]
   )
 
+  // Слой «Отпустите…» — только для файлов: перенос плитки пачки на вкладку
+  // папки идёт своим путём (RenderTray → FolderRail) и сюда не попадает.
   const onDragEnter = useCallback((event: DragEvent) => {
+    if (!hasFiles(event)) return
     event.preventDefault()
     dragDepth.current += 1
     setDragOver(true)
   }, [])
-  const onDragOver = useCallback((event: DragEvent) => event.preventDefault(), [])
-  const onDragLeave = useCallback(() => {
+  const onDragOver = useCallback((event: DragEvent) => {
+    if (hasFiles(event)) event.preventDefault()
+  }, [])
+  const onDragLeave = useCallback((event: DragEvent) => {
+    if (!hasFiles(event)) return
     dragDepth.current = Math.max(0, dragDepth.current - 1)
     if (dragDepth.current === 0) setDragOver(false)
   }, [])
   const onDrop = useCallback(
     (event: DragEvent) => {
+      if (!hasFiles(event)) return
       event.preventDefault()
       dragDepth.current = 0
       setDragOver(false)
