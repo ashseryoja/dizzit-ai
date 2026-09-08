@@ -4,6 +4,7 @@ import { isSameOrigin, problem } from "@/server/http"
 import { ImageProviderError, sniffImageMime } from "@/server/image-provider"
 import { providerKeyVariable, providerLabel, resolveVisionProvider, resolveVisionProviders } from "@/server/providers"
 import { planShotList } from "@/server/shot-planner"
+import { SCENE_INVENTORY_MAX_CHARS } from "@/server/scene-inventory"
 import { isFrameAspect } from "@/lib/frame-aspect"
 import { PRESET_SLOTS } from "@/lib/view-presets"
 import type { ViewPreset } from "@/types"
@@ -17,8 +18,8 @@ import type { ViewPreset } from "@/types"
  * GET  → статус: настроен ли планировщик, какой провайдер и модель.
  * POST → multipart: `image` (PNG/JPEG/WEBP до 12 МБ), `preset`
  *        (set | details | angles | fragments), `aspect` (9:16 | 16:9 | 4:3 |
- *        3:4 | 1:1), опционально `note` → JSON `{ frames, provider, model,
- *        durationMs }`.
+ *        3:4 | 1:1), опционально `note` и готовый `inventory` сцены → JSON
+ *        `{ frames, provider, model, durationMs }`.
  *
  * Планировщик — усилитель: без ключа роут отвечает 503, и клиент строит сет
  * по типовым кадрам набора.
@@ -63,6 +64,7 @@ export async function POST(request: Request) {
   const aspect = form.get("aspect")
   if (!isFrameAspect(aspect)) return problem(400, { error: "bad_request", message: "Неизвестный формат кадров." })
   const note = String(form.get("note") ?? "").slice(0, MAX_NOTE_CHARS)
+  const inventory = String(form.get("inventory") ?? "").slice(0, SCENE_INVENTORY_MAX_CHARS)
 
   const file = form.get("image")
   if (!(file instanceof File)) return problem(400, { error: "bad_request", message: "Нет картинки для планировщика." })
@@ -72,7 +74,7 @@ export async function POST(request: Request) {
   if (!mimeType) return problem(415, { error: "unsupported_reference", message: "Картинка должна быть PNG, JPEG или WEBP." })
 
   try {
-    const result = await planShotList(providers, { bytes, mimeType }, { preset, aspect, note }, request.signal)
+    const result = await planShotList(providers, { bytes, mimeType }, { preset, aspect, note, inventory }, request.signal)
     console.info(
       `[api/shots] ${result.provider} ${result.model} ${result.durationMs} ms, tokens in=${result.inputTokens ?? "?"} out=${result.outputTokens ?? "?"}, ${preset} ${aspect}: ${result.proposed} предложено → ${result.frames.length} кадров${result.fallbacks ? `, после ${result.fallbacks} отказов` : ""}`
     )

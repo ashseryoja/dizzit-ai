@@ -9,9 +9,9 @@
  * «Зона» — более широкий кроп одной части кадра (верх, низ, левая, правая
  * часть), деталь — предмет крупно, фактура — материал на предмете у края или
  * шва, фрагмент — срез с передним планом. Единственное исключение — кадр
- * «с другой точки» (`vantage`): камера поднята выше и сдвинута вбок, предмет
- * крупно сверху и чуть сбоку; область — где предмет стоит в исходнике, а
- * `side` — в какую сторону ушла камера. Правила — `server/shot-planner`
+ * «с другой точки» (`vantage`): камера меняет высоту и азимут по одному из
+ * четырёх сценариев; область — где предмет стоит в исходнике, `side` — в
+ * какую сторону ушла камера, `camera` — как именно. Правила — `server/shot-planner`
  * (планировщик) и `buildViewPrompt` в `lib/view-engine` (генерация).
  *
  * Слот — это «какого рода кадр нужен» (ракурс, деталь, фактура, фрагмент);
@@ -19,15 +19,16 @@
  * решает планировщик по конкретному рендеру (`server/shot-planner`). Без
  * планировщика слоты заполняются типовыми кадрами.
  */
-import type { ShotKind, ViewFrame, ViewPreset } from "@/types"
+import type { ShotKind, ViewCamera, ViewFrame, ViewPreset } from "@/types"
 
 export type ShotSlot = "angle" | "detail" | "texture" | "fragment" | "vantage"
 
 export const PRESET_SLOTS: Record<ViewPreset, ShotSlot[]> = {
-  // Готовая карусель: три предмета крупно, два кадра с другой точки, фактура
-  // и фрагмент. Широких «зон» в наборах больше нет: из них выходил почти
-  // исходник; второй фактуры тоже — из неё выходила скучная голая стена.
-  set: ["detail", "detail", "detail", "vantage", "vantage", "texture", "fragment"],
+  // Готовая карусель: четыре действительно разные точки съёмки чередуются с
+  // тремя осмысленными предметными виньетками. Фактура и фрагмент остаются
+  // отдельными наборами: в универсальном сете именно они чаще всего давали
+  // скучную ткань, голую стену или случайно обрезанный угол мебели.
+  set: ["vantage", "detail", "vantage", "detail", "vantage", "detail", "vantage"],
   details: ["detail", "detail", "detail", "detail"],
   textures: ["texture", "texture", "texture", "texture"],
   fragments: ["fragment", "fragment", "fragment", "fragment"],
@@ -97,8 +98,15 @@ export const SLOT_LABEL: Record<ShotSlot, string> = {
 export const ANGLE_KINDS: readonly ShotKind[] = ["top", "low", "left", "right"]
 export const SHOT_KINDS: readonly ShotKind[] = [...ANGLE_KINDS, "detail", "texture", "fragment", "vantage"]
 
+/** Четыре безопасных, но визуально разных движения камеры вокруг видимого предмета. */
+export const VANTAGE_CAMERAS: readonly ViewCamera[] = ["overhead", "high_three_quarter", "side_oblique", "low_three_quarter"]
+
 export function isShotKind(value: unknown): value is ShotKind {
   return typeof value === "string" && (SHOT_KINDS as readonly string[]).includes(value)
+}
+
+export function isViewCamera(value: unknown): value is ViewCamera {
+  return typeof value === "string" && (VANTAGE_CAMERAS as readonly string[]).includes(value)
 }
 
 /** «Зона» — широкий кроп части кадра; остальное — крупные планы. */
@@ -113,10 +121,13 @@ export function slotOf(kind: ShotKind): ShotSlot {
 /** Заготовка кадра от планировщика или шаблона — ключ и номер появятся при сборке. */
 export interface ShotDraft {
   kind: ShotKind
+  /** Канонический id предметной группы для серверной проверки дублей. */
+  subject?: string
   label?: string
   brief?: string
   region?: [number, number, number, number]
   side?: "left" | "right"
+  camera?: ViewCamera
 }
 
 /**
@@ -131,16 +142,25 @@ export function buildFrames(drafts: ShotDraft[]): ViewFrame[] {
   for (const draft of drafts) total[draft.kind] = (total[draft.kind] ?? 0) + 1
   const seen: Partial<Record<ShotKind, number>> = {}
   let lastSide: "left" | "right" | undefined
+  const usedCameras = new Set<ViewCamera>()
   return drafts.map((draft) => {
     const n = (seen[draft.kind] ?? 0) + 1
     seen[draft.kind] = n
     const fallback = (total[draft.kind] ?? 1) > 1 ? `${SHOT_LABEL[draft.kind]} ${n}` : SHOT_LABEL[draft.kind]
-      const frame: ViewFrame = { key: `${draft.kind}-${n}`, kind: draft.kind, label: draft.label?.trim() || fallback }
+    const frame: ViewFrame = { key: `${draft.kind}-${n}`, kind: draft.kind, label: draft.label?.trim() || fallback }
     if (draft.brief?.trim()) frame.brief = draft.brief.trim()
     if (draft.region) frame.region = boundRegion(draft.region, draft.kind)
     if (draft.kind === "vantage") {
       frame.side = draft.side ?? (lastSide === "left" ? "right" : "left")
       lastSide = frame.side
+      // Даже если vision-модель повторила один сценарий камеры или забыла
+      // поле, сет всё равно получает полный визуальный диапазон.
+      frame.camera =
+        (draft.camera && !usedCameras.has(draft.camera) ? draft.camera : undefined) ??
+        VANTAGE_CAMERAS.find((camera) => !usedCameras.has(camera)) ??
+        draft.camera ??
+        VANTAGE_CAMERAS[usedCameras.size % VANTAGE_CAMERAS.length]
+      usedCameras.add(frame.camera)
     }
     return frame
   })

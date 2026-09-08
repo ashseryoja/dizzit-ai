@@ -13,7 +13,7 @@ import {
   type GeneratedImage,
 } from "@/lib/image-generation"
 import { isWideShot, maxCropFraction } from "@/lib/view-presets"
-import type { FrameAspect, ShotKind, ViewFrame } from "@/types"
+import type { FrameAspect, ShotKind, ViewCamera, ViewFrame } from "@/types"
 
 export {
   PRESET_LABEL,
@@ -79,15 +79,14 @@ export const VIEW_LONG_SIDE = 2000
  * полном размере. Область кропа даёт планировщик (`ViewFrame.region`); без
  * него — типовая область по типу кадра (зона — часть кадра, крупные планы —
  * «насыщенные» окна из плана предпросмотра). Область вырезается на клиенте
- * в формате сета и уходит модели единственным референсом: полного кадра
- * модель не видит и не может «отъехать» обратно к общему плану; что за
- * предметы и материалы в кропе, ей говорит инвентарь сцены в промпте.
+ * в формате сета и уходит модели референсом; что за предметы и материалы в
+ * кропе, ей говорит инвентарь сцены в промпте.
  *
  * Исключение — кадр С ДРУГОЙ ТОЧКИ (`vantage`): модель получает кроп шире
- * области и задание переснять предмет с камеры, поднятой выше и сдвинутой
- * в сторону `frame.side`. Результат, почти совпадающий с референсом (камера
- * не сдвинулась) или с общим планом, переснимается один раз с прямым
- * указанием в промпте.
+ * области плюс полный исходник и задание переснять предмет по сценарию
+ * `frame.camera` со сдвигом в `frame.side`. Результат, почти совпадающий с
+ * референсом, общим планом или другим новым ракурсом сета, переснимается один
+ * раз с прямым указанием в промпте.
  */
 
 /**
@@ -98,6 +97,8 @@ export const VIEW_LONG_SIDE = 2000
  */
 const VANTAGE_REFERENCE = { widen: 1.5, maxFraction: 0.6 }
 const VANTAGE_SAME_THRESHOLD = 0.9
+/** Почти одинаковые готовые кадры в одном сете: один из них переснимается. */
+const VANTAGE_DUPLICATE_THRESHOLD = 0.94
 
 /** Типовые области зон в долях кадра: [x, y, w, h]. */
 const ZONE_REGION: Record<"top" | "low" | "left" | "right", [number, number, number, number]> = {
@@ -134,11 +135,42 @@ const FRAGMENT_SUBJECTS = [
   "a fourth distinct zone of the space, framed tight",
 ]
 const VANTAGE_SUBJECTS = [
-  "the main object group on a horizontal surface (a table with what stands on it, a console with its objects, a nightstand with the lamp) seen from above and beside",
-  "a second object group in another part of the space (an armchair with its side table, a shelf with its objects, a bench with a planter) seen from above and beside",
-  "a third group not shown yet, with its top surface in view",
-  "a fourth group in a different corner, from above and beside",
+  "the main object group on a horizontal surface (a table with what stands on it, a console with its objects, a nightstand with the lamp), re-photographed from the assigned camera",
+  "a second strong object group in another part of the space (an armchair with its side table, a shelf with its objects, a bench with a planter), re-photographed from the assigned camera",
+  "a third group not shown yet, selected for its silhouette, construction or relationship to a neighbour",
+  "a fourth group in a different corner, composed around the assigned camera rather than as a crop of the source",
 ]
+
+/**
+ * Ограниченный язык камеры: заметно разные композиции без экстремальной
+ * оптики и больших невидимых зон, на которых модель начинает редизайнить.
+ */
+const VANTAGE_CAMERA: Record<ViewCamera, { move: (side: "left" | "right") => string; proof: string; composition: string }> = {
+  overhead: {
+    move: (side) =>
+      `move high above the group and slightly to the ${side}; point the camera down at 65–80 degrees for a near-overhead view, not a flat orthographic plan`,
+    proof: "the top surfaces and the spacing between the objects dominate; vertical faces become secondary and visibly foreshortened",
+    composition: "build the frame from the outline of the top surface, diagonals and intentional negative space; keep every object in its exact place",
+  },
+  high_three_quarter: {
+    move: (side) =>
+      `raise the camera about 0.8–1.2 metres and orbit to the ${side} by 25–40 degrees; look down at 35–50 degrees in a high three-quarter view`,
+    proof: "top and front/side faces are both clearly visible and their perspective differs visibly from IMAGE 1",
+    composition: "use the top plane as a leading shape, with one neighbouring element creating depth rather than a centred catalogue view",
+  },
+  side_oblique: {
+    move: (side) =>
+      `keep approximately the original camera height, move closer and orbit to the ${side} by 25–40 degrees for a side-oblique view; no high-angle shortcut`,
+    proof: "overlap, spacing and visible side faces change clearly while verticals remain natural",
+    composition: "use foreground overlap and an off-centre anchor to make a layered lateral composition; do not simply crop IMAGE 1",
+  },
+  low_three_quarter: {
+    move: (side) =>
+      `lower the camera by about 0.3–0.5 metres, move closer and orbit to the ${side} by 20–35 degrees for a restrained low three-quarter view; avoid an extreme upward tilt`,
+    proof: "the object's supports, underside or lower silhouette become more legible and the original eye-level perspective is gone",
+    composition: "let the silhouette, supports or furniture edge lead the frame, with the floor only as context and no empty floor study",
+  },
+}
 
 /** Насколько тесно кадрировать — по типу кадра. */
 const FRAMING: Record<ShotKind, string> = {
@@ -184,17 +216,19 @@ function templateShot(frame: ViewFrame, frames: ViewFrame[], note: string): stri
 }
 
 export interface ViewPromptOptions {
-  /** IMAGE 1 — уже вырезанная область, IMAGE 2 — весь кадр для контекста. */
+  /** IMAGE 1 — уже вырезанная область. */
   cropped?: boolean
-  /** Повтор кадра с другой точки: прошлая попытка вернула референс без сдвига камеры — сказать модели об этом прямо. */
-  insist?: boolean
+  /** Для нового ракурса IMAGE 2 — полный исходник как паспорт сцены. */
+  hasSceneReference?: boolean
+  /** Причина единственного контрольного повтора нового ракурса. */
+  retryReason?: "unchanged" | "duplicate"
 }
 
 /**
- * Промпт кадра — по образцу промптов для AI close-ups: исходник — единственная
- * основа, камера не двигается, кадр — кроп с лёгким улучшением. Кадр с другой
- * точки — свой промпт: референс фиксирует предметы и свет, а камера поднята
- * выше и сдвинута в сторону `frame.side`. Сюжет — задание планировщика
+ * Промпт кадра — по образцу промптов для AI close-ups: обычный кадр — кроп
+ * исходника с лёгким улучшением без движения камеры. Кадр с другой точки
+ * получает локальный и общий референсы: они фиксируют предметы и свет, а
+ * камера движется по `frame.camera` в сторону `frame.side`. Сюжет — задание планировщика
  * (`frame.brief`) или типовой по типу кадра; сюжеты из комментария раздаются
  * крупным планам по порядку. Формат — выбранный пользователем; у записей без
  * формата — портрет для крупных планов.
@@ -214,21 +248,28 @@ export function buildViewPrompt(
       : "FORMAT: portrait orientation, the subject centered with some margin around it."
   if (frame.kind === "vantage") {
     const side = frame.side ?? "left"
+    const camera = frame.camera ?? "high_three_quarter"
+    const direction = VANTAGE_CAMERA[camera]
     return [
-      "IMAGE 1 IS THE REFERENCE — a crop of the scene around the subject. It fixes what exists: the objects, their arrangement and sizes, materials, colours, finishes and the light. Nothing is added, removed, moved or restyled.",
-      `GOAL: photograph the SAME subject from a NEW CAMERA POSITION — here the camera does move: it is raised well above the original eye level (about a metre higher) and shifted to the ${side} by roughly 30–40 degrees, looking down at the subject in a three-quarter high-angle close-up. Verticals converge slightly downward; the top surfaces — table tops, shelf tops, the tops of the objects — come into view and continue the same materials; what lies beyond the edges of IMAGE 1 continues the scene plausibly, in the same materials and style, without inventing decor.`,
-      options.insist
-        ? `IMPORTANT: a previous attempt returned IMAGE 1 almost unchanged — that is wrong. The viewpoint MUST be visibly different: clearly from above and from the ${side}, with the top surfaces in view and the geometry seen from the new position; the result must not be a crop or an enhancement of IMAGE 1.`
-        : "",
+      options.hasSceneReference
+        ? "REFERENCE ROLES: IMAGE 1 is the close subject reference; IMAGE 2 is the full-scene continuity blueprint. Together they are the only source of truth for identity, geometry, layout, object count, placement, materials, colours, texture scale and existing light. IMAGE 2 is not the requested wide composition."
+        : "IMAGE 1 IS THE ONLY SOURCE OF TRUTH for the subject and scene: exact identity, geometry, layout, object count, placement, materials, colours, texture scale and existing light.",
+      "IMMUTABLE DESIGN: this is the same built room photographed seconds later. Do not redesign, restyle, simplify, tidy, replace, resize, rotate, move, add or remove anything. Preserve distinctive edges, supports, seams, grain direction, weave, artwork and decor exactly. If a newly revealed sliver is uncertain, continue the nearest visible surface conservatively; never invent decor.",
+      `CAMERA — ${camera}: ${direction.move(side)}. Required visual proof of the move: ${direction.proof}.`,
+      options.retryReason === "unchanged"
+        ? `REJECT THE PREVIOUS RESULT: it stayed too close to the reference. Make the ${camera} camera move unmistakable through real parallax, changed overlap and the required visible faces; do not return an enhanced crop.`
+        : options.retryReason === "duplicate"
+          ? "REJECT THE PREVIOUS RESULT: it duplicated another shot in this carousel. Follow this shot's own subject and camera brief exactly; change the viewpoint and hierarchy without changing the design."
+          : "",
       `SUBJECT: ${frame.brief ?? templateShot(frame, frames, note)}`,
       FRAMING.vantage,
-      "COMPOSITION: rule of thirds, balanced framing, a clear focal point. DEPTH OF FIELD: subtle, the subject sharp, the background only slightly softer.",
+      `COMPOSITION: ${direction.composition}. The dominant group should occupy roughly 55–80% of the frame, remain readable, and have one clear focal point. No whole-room view and no tiny decor floating in empty wall or floor. DEPTH OF FIELD: subtle; keep the anchor sharp and identity-bearing details readable.`,
       "TEXTURE: photographic material realism with subtle micro-details (dust, tiny imperfections), do not exaggerate. LIGHT: the same light sources and the same direction of light as in the scene, shadows consistent with the new viewpoint, no new light sources. FILM & OPTICS: subtle film grain, very light chromatic aberration, minimal lens softness, no heavy effects.",
       sceneInventoryBlock(inventory),
       OBJECT_IDENTITY_HINT,
       MATERIAL_FIDELITY_HINT,
       format,
-      `STRICT RULES: only the camera moves — the objects, their arrangement, materials, colours and light stay exactly as in IMAGE 1; no new objects, no restyling, no hallucinated decor; the perspective changes only because of the new camera position. RESULT: a single realistic photograph of the same subject from above and from the ${side}, clean, natural, believable; no collage, no grid, no text, no watermark.`,
+      `FINAL CHECK: only the camera moved. The subject must match the references item-for-item and material-for-material, while perspective and parallax visibly prove the ${camera} move from the ${side}. A beautiful but redesigned image is a failure; an accurate but unchanged crop is also a failure. Return one natural photograph only: no collage, grid, text, border or watermark.`,
     ]
       .filter(Boolean)
       .join("\n")
@@ -413,14 +454,21 @@ export async function prepareViewSet(
     return px ? [px.x / width, px.y / height, px.w / width, px.h / height] : null
   }
   if (status.configured) {
-    // Полный кадр нужен только кадрам без области (старые записи без плана).
-    const reference = frames.every((frame) => regionOf(frame)) ? null : await prepareReference(source)
+    // Новым ракурсам полный кадр нужен вторым референсом: локальный кроп
+    // фиксирует предмет, общий план — все материалы, соседей и планировку.
+    const needsFullSceneReference = frames.some((frame) => frame.kind === "vantage")
+    const reference = !frames.every((frame) => regionOf(frame)) || needsFullSceneReference ? await prepareReference(source) : null
+    const acceptedVantages: Blob[] = []
+    let vantageValidation = Promise.resolve()
     return {
       async render(frame) {
         // Провайдер подберёт ближайшую свою пропорцию; остаток обрежется до точного формата.
         const wanted = aspect ? frameAspectSize(aspect) : isWideShot(frame.kind) ? { width, height } : { width: 4, height: 5 }
         const vantage = frame.kind === "vantage"
-        const generate = async (region: [number, number, number, number] | null, insist = false) => {
+        const generate = async (
+          region: [number, number, number, number] | null,
+          retryReason?: ViewPromptOptions["retryReason"]
+        ) => {
           // Кадру с другой точки референс нужен шире области: модель достраивает
           // окружение, когда камера уходит вверх и вбок.
           const crop = region
@@ -429,10 +477,15 @@ export async function prepareViewSet(
               })
             : null
           const base = crop ?? reference ?? (await prepareReference(source))
+          const references = vantage && crop && reference ? [crop, reference] : [base]
           const image = await requestImage({
-            prompt: buildViewPrompt(frame, frames, note, aspect, inventory, { cropped: Boolean(crop), insist }),
+            prompt: buildViewPrompt(frame, frames, note, aspect, inventory, {
+              cropped: Boolean(crop),
+              hasSceneReference: references.length > 1,
+              retryReason,
+            }),
             aspect: wanted,
-            references: [base],
+            references,
             finalLongSide: VIEW_LONG_SIDE,
           })
           return { image: await cropToAspect(image, ratioFor(frame)), base }
@@ -440,16 +493,40 @@ export async function prepareViewSet(
         const region = regionOf(frame)
         const first = await generate(region)
         if (vantage) {
-          // Камера не сдвинулась: кадр повторяет референс или общий план —
-          // один повтор с прямым указанием в промпте.
-          const stuck =
-            (await resemblesSource(first.image.blob, first.base, VANTAGE_SAME_THRESHOLD)) ||
-            (region !== null && (await resemblesSource(first.image.blob, source)))
-          if (stuck) {
-            console.warn(`[view-engine] кадр «${frame.label}» не сдвинул камеру — повтор с прямым указанием`)
-            return (await generate(region, true)).image
+          // Генерация трёх кадров идёт параллельно, но приёмка новых ракурсов
+          // сериализована: иначе два одновременно готовых дубля оба увидят
+          // ещё пустой список принятых кадров.
+          const previousValidation = vantageValidation
+          let releaseValidation!: () => void
+          vantageValidation = new Promise<void>((resolve) => {
+            releaseValidation = resolve
+          })
+          await previousValidation
+          try {
+            // Один контрольный повтор: либо камера не сдвинулась, либо два
+            // независимо считанных ракурса визуально схлопнулись в один кадр.
+            const unchanged =
+              (await resemblesSource(first.image.blob, first.base, VANTAGE_SAME_THRESHOLD)) ||
+              (region !== null && (await resemblesSource(first.image.blob, source)))
+            const duplicate =
+              !unchanged &&
+              (await Promise.all(
+                acceptedVantages.map((previous) => resemblesSource(first.image.blob, previous, VANTAGE_DUPLICATE_THRESHOLD))
+              )).some(Boolean)
+            if (unchanged || duplicate) {
+              const reason = unchanged ? "unchanged" : "duplicate"
+              console.warn(
+                `[view-engine] кадр «${frame.label}» ${unchanged ? "не сдвинул камеру" : "дублирует другой ракурс"} — один контрольный повтор`
+              )
+              const retried = (await generate(region, reason)).image
+              acceptedVantages.push(retried.blob)
+              return retried
+            }
+            acceptedVantages.push(first.image.blob)
+            return first.image
+          } finally {
+            releaseValidation()
           }
-          return first.image
         }
         // Модель всё же вернула общий план — один повтор с областью на треть меньше.
         if (region && (await resemblesSource(first.image.blob, source))) {
@@ -667,7 +744,7 @@ function cropShot(source: ImageBitmap, region: Region, ratio: number): HTMLCanva
 
 /** Дальний край трапеции относительно ближнего: чем меньше, тем сильнее поворот. */
 const FAR = 0.8
-/** Кадр с другой точки в предпросмотре: камера выше — как у зоны «сверху», вбок — вдвое мягче. */
+/** Кадр с другой точки в предпросмотре: мягкие суррогаты четырёх движений камеры. */
 const VANTAGE_TILT = FAR
 const VANTAGE_TURN = 0.9
 
@@ -770,16 +847,35 @@ export async function renderFrameLocally(source: Blob, frame: ViewFrame, plan: S
         canvas = cropCanvasToAspect(tiltCamera(bitmap, width, height, false), ratio)
         break
       case "vantage": {
-        // Вырезка шире области, затем «камера выше» и лёгкий поворот в сторону
-        // камеры — те же трапеции, что у зон, на самой вырезке.
+        // Вырезка шире области, затем разные комбинации вертикальной и
+        // горизонтальной трапеций — локальный preview отражает сценарий
+        // камеры, хотя настоящую скрытую геометрию создаёт только модель.
         const region = regionOf()
         const [fx, fy, fw, fh] = scaleRegion(
           [region.x / width, region.y / height, region.w / width, region.h / height],
           VANTAGE_REFERENCE.widen
         )
         const crop = cropShot(bitmap, { x: fx * width, y: fy * height, w: fw * width, h: fh * height }, ratio)
-        const raised = tiltCamera(crop, crop.width, crop.height, true, VANTAGE_TILT)
-        canvas = cropCanvasToAspect(turnSideways(raised, crop.width, crop.height, frame.side !== "right", VANTAGE_TURN), ratio)
+        const nearLeft = frame.side !== "right"
+        switch (frame.camera) {
+          case "overhead": {
+            const raised = tiltCamera(crop, crop.width, crop.height, true, 0.68)
+            canvas = cropCanvasToAspect(turnSideways(raised, crop.width, crop.height, nearLeft, 0.96), ratio)
+            break
+          }
+          case "side_oblique":
+            canvas = cropCanvasToAspect(turnSideways(crop, crop.width, crop.height, nearLeft, 0.78), ratio)
+            break
+          case "low_three_quarter": {
+            const lowered = tiltCamera(crop, crop.width, crop.height, false, 0.84)
+            canvas = cropCanvasToAspect(turnSideways(lowered, crop.width, crop.height, nearLeft, 0.88), ratio)
+            break
+          }
+          default: {
+            const raised = tiltCamera(crop, crop.width, crop.height, true, VANTAGE_TILT)
+            canvas = cropCanvasToAspect(turnSideways(raised, crop.width, crop.height, nearLeft, VANTAGE_TURN), ratio)
+          }
+        }
         break
       }
       default:

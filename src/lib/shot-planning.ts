@@ -60,7 +60,7 @@ export function shotPlannerStatus(force = false): Promise<PlannerStatus> {
  */
 export async function planViewFrames(
   source: Blob,
-  options: { preset: ViewPreset; aspect: FrameAspect; note: string; signal?: AbortSignal }
+  options: { preset: ViewPreset; aspect: FrameAspect; note: string; inventory?: string; signal?: AbortSignal }
 ): Promise<ShotPlan | null> {
   const status = await shotPlannerStatus()
   if (!status.configured) return null
@@ -71,6 +71,7 @@ export async function planViewFrames(
     form.set("preset", options.preset)
     form.set("aspect", options.aspect)
     form.set("note", options.note)
+    if (options.inventory?.trim()) form.set("inventory", options.inventory.trim())
     form.append("image", image, image.type === "image/png" ? "scene.png" : "scene.jpg")
 
     const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS)
