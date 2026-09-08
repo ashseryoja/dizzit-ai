@@ -162,8 +162,11 @@ refresh. Удаление пары из пачки
   `durable: true` ждёт серверную копию. Возвращает `{ id, width, height }`.
 - `runGalleryQueue(metas, add, run)` — карточки появляются все сразу,
   обработка по одной; порядок галереи совпадает с порядком выбора файлов.
-- `ensureActiveProject()` (`src/stores/project-store.ts`) — активный проект
-  или новый «Проект N»; для колбэков вне рендера. В рендере — `useActiveProject()`.
+- `ensureActiveProject()` (`src/stores/project-store.ts`) — промис активного
+  проекта; без него — новый «Проект N», но только после сверки списка с
+  сервером (`synced` в сторе), иначе в новом браузере фантомный проект
+  появлялся бы раньше настоящих и уезжал на сервер. Для колбэков вне рендера.
+  В рендере — `useActiveProject()`.
 - `fileBaseName(name, fallback)` (`src/lib/utils.ts`) — имя без расширения для
   скачивания.
 - `requestImage(...)`, `withImageProvider(remote, preview)`,
@@ -243,7 +246,9 @@ refresh. Удаление пары из пачки
 - `extras` — дополнительные секции обычной панели (тумблер заселения).
 - `dock` — постоянная секция над композером (материалы стиля).
 - `regionTags`, `submitBlockedReason`, `placeholder`, `notice`, `attentionKey` —
-  точечная правка и подсказки.
+  точечная правка и подсказки. Пока список проектов не сверен с сервером и
+  активного проекта нет (новый браузер), композер сам закрывает кнопку с
+  подсказкой «Загружаем проекты…» — см. `ensureActiveProject`.
 
 ### `RenderTray`, `RenderStrip` — `src/components/tool/render-tray.tsx`
 
@@ -396,7 +401,7 @@ export default function MyToolPage() {
   const tray = usePresence(intake.attachments.length > 0)
 
   const startBatch = async (files: File[]) => {
-    const project = ensureActiveProject()
+    const project = await ensureActiveProject()
     const metas = []
     for (const file of files) {
       const { id, width, height } = await saveSourceFile(file)

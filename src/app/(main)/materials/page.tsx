@@ -139,7 +139,7 @@ export default function MaterialsPage() {
 
   const startBatch = useCallback(
     async (jobs: MaterialJob[]) => {
-      const project = ensureActiveProject()
+      const project = await ensureActiveProject()
       const metas: Material[] = []
       for (const job of jobs) {
         const base = { projectId: project.id, status: "processing" as const, category: job.category, note: job.note }

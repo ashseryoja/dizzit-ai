@@ -93,7 +93,7 @@ export default function PhotoTo3DPage() {
 
   const startBuild = useCallback(
     async (file: File, buildNote: string, buildOption: FurnitureOption) => {
-      const project = ensureActiveProject()
+      const project = await ensureActiveProject()
       try {
         const { id, width, height } = await saveSourceFile(file, { durable: true })
         const meta: Model3D = {

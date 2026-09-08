@@ -216,7 +216,7 @@ export default function RestylePage() {
 
   const startBatch = useCallback(
     async (files: File[], batchNote: string, batchStyle: RestyleStyle, batchExcluded: string[]) => {
-      const project = ensureActiveProject()
+      const project = await ensureActiveProject()
       const metas: Restyle[] = []
       // Направление — не то, что было у последних переносов этого стиля в
       // проекте, и внутри пачки тоже разное: так один стиль выходит по-разному.

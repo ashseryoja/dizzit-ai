@@ -524,6 +524,12 @@ export interface AttachOptions<S, R extends SyncableRecord> {
   assetKeys?: (record: R) => string[]
   /** Ключи блобов, которые удаляются вместе с записью на этом устройстве. */
   onRemovedLocally?: (record: R) => void
+  /**
+   * Список сверен: после первого успешного pull («server») или когда сервера
+   * для записей нет и это не временный сбой («local»). До этого стор не знает,
+   * пуст ли он на самом деле — авто-создание записей по умолчанию ждёт.
+   */
+  onSettled?: (mode: "server" | "local") => void
 }
 
 const DEFAULT_ROLES = ["source", "result", "thumb-source", "thumb-result"]
@@ -731,6 +737,8 @@ export function attachServerSync<S, R extends SyncableRecord>(store: StoreApi<S>
     if (!status.persistence) {
       serverReady = false
       if (lastStatusRequestFailed) scheduleRetry()
+      // Слетевшая сессия — не локальный режим: после входа записи придут с сервера.
+      else if (!(status.authConfigured && !status.signedIn)) options.onSettled?.("local")
       return
     }
 
@@ -798,6 +806,7 @@ export function attachServerSync<S, R extends SyncableRecord>(store: StoreApi<S>
       } finally {
         applyingRemote = false
       }
+      options.onSettled?.("server")
 
       lastRemote = remoteSnapshot
 

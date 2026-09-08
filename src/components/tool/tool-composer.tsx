@@ -16,6 +16,7 @@ import { MAX_BATCH, sourceQuality } from "@/lib/enhance-engine"
 import type { AttachedRender } from "@/lib/use-attachments"
 import { usePresence } from "@/lib/use-presence"
 import { cn, plural } from "@/lib/utils"
+import { useProjectStore } from "@/stores/project-store"
 
 export type { AttachedRender }
 
@@ -151,6 +152,12 @@ export function ToolComposer<T extends string>({
   const containerRef = useRef<HTMLDivElement>(null)
   const settings = usePresence(settingsOpen)
   const noticeLayer = usePresence(Boolean(notice))
+  // Новый браузер: проекты ещё едут с сервера, активного нет. Запуск ждёт их —
+  // иначе записи ушли бы в фантомный «Проект N» (см. ensureActiveProject).
+  const projectsPending = useProjectStore(
+    (state) => !state.synced && !state.projects.some((project) => project.id === state.activeProjectId)
+  )
+  const blockedReason = submitBlockedReason ?? (projectsPending ? "Загружаем проекты…" : null)
   const panelRef = useRef<HTMLDivElement>(null)
 
   // «Волна» по контролам панели: каждой кнопке по очереди на полсекунды даётся
@@ -429,7 +436,7 @@ export function ToolComposer<T extends string>({
           value={note}
           onChange={(event) => onNoteChange(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === "Enter" && !submitBlockedReason) onSubmit()
+            if (event.key === "Enter" && !blockedReason) onSubmit()
           }}
           placeholder={placeholder ?? labels.inputPlaceholder}
           aria-label={placeholder ?? labels.inputPlaceholder}
@@ -438,12 +445,12 @@ export function ToolComposer<T extends string>({
         />
 
         {/* Обёртка держит подсказку: disabled-кнопка указатель не получает. */}
-        <span className="flex shrink-0" title={submitBlockedReason ?? undefined}>
+        <span className="flex shrink-0" title={blockedReason ?? undefined}>
           <button
             type="button"
             onClick={onSubmit}
-            disabled={Boolean(submitBlockedReason)}
-            aria-label={submitBlockedReason ? `${labels.submitLabel}: ${submitBlockedReason}` : undefined}
+            disabled={Boolean(blockedReason)}
+            aria-label={blockedReason ? `${labels.submitLabel}: ${blockedReason}` : undefined}
             className="btn-outline h-10 shrink-0 px-4 sm:px-5"
           >
             <Sparkles className="h-4 w-4" strokeWidth={1.8} />

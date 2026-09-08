@@ -28,6 +28,12 @@ interface ProjectState {
   projects: Project[]
   activeProjectId: string | null
   hydrated: boolean
+  /**
+   * Список сверен с сервером (или сервера нет). До этого стор не знает, пуст
+   * ли он на самом деле: в новом браузере проекты ещё едут, и авто-создание
+   * «Проект N» породило бы фантом, который затем уехал бы на сервер.
+   */
+  synced: boolean
 
   setHydrated: () => void
   createProject: (title?: string) => Project
@@ -76,6 +82,7 @@ export const useProjectStore = create<ProjectState>()(
       projects: [],
       activeProjectId: null,
       hydrated: false,
+      synced: false,
 
       setHydrated: () => set({ hydrated: true }),
 
@@ -174,13 +181,44 @@ export function useActiveProject(): Project | null {
   return projects.find((project) => project.id === activeProjectId) ?? null
 }
 
+const SYNC_WAIT_MS = 30_000
+
+function findActiveProject(): Project | null {
+  const { projects, activeProjectId } = useProjectStore.getState()
+  return projects.find((project) => project.id === activeProjectId) ?? null
+}
+
+/** Ждём сверки списка с сервером; сервер молчит дольше SYNC_WAIT_MS — отказ, не фантом. */
+function whenProjectsSynced(): Promise<void> {
+  if (useProjectStore.getState().synced) return Promise.resolve()
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      unsubscribe()
+      reject(new Error("Проекты ещё не загрузились с сервера — проверьте соединение и попробуйте ещё раз."))
+    }, SYNC_WAIT_MS)
+    const unsubscribe = useProjectStore.subscribe((state) => {
+      if (!state.synced) return
+      window.clearTimeout(timer)
+      unsubscribe()
+      resolve()
+    })
+  })
+}
+
 /**
  * Активный проект, а без него — новый «Проект N», как это делает селектор
  * в сайдбаре. Для колбэков вне рендера: обработкам нужно, куда их класть.
+ *
+ * Новый проект — только после сверки списка с сервером (`synced`): в новом
+ * браузере локальный стор пуст, пока проекты едут, и создание «Проект 1» в
+ * этот момент давало фантом, который слияние затем отправляло на сервер.
+ * С активным проектом на руках ждать нечего — отвечаем сразу.
  */
-export function ensureActiveProject(): Project {
-  const { projects, activeProjectId, createProject } = useProjectStore.getState()
-  return projects.find((project) => project.id === activeProjectId) ?? createProject()
+export async function ensureActiveProject(): Promise<Project> {
+  const existing = findActiveProject()
+  if (existing) return existing
+  await whenProjectsSynced()
+  return findActiveProject() ?? useProjectStore.getState().createProject()
 }
 
 // Сервер (если настроен): проекты сливаются первыми — записи инструментов
@@ -194,6 +232,7 @@ attachServerSync(useProjectStore, {
     useProjectStore.setState({ projects, activeProjectId: active })
   },
   hydrated: (state) => state.hydrated,
+  onSettled: () => useProjectStore.setState({ synced: true }),
 })
 
 /*

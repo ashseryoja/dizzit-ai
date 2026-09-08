@@ -242,7 +242,7 @@ export default function ViewsPage() {
      (pendingBlobWrites в blob-store), так что превью есть с первой секунды. */
   const startBatch = useCallback(
     async (files: File[], batchNote: string, batchPreset: ViewPreset, batchAspect: FrameAspect) => {
-      const project = ensureActiveProject()
+      const project = await ensureActiveProject()
       const metas: ViewSet[] = []
       const sources = new Map<string, File>()
       for (const file of files) {

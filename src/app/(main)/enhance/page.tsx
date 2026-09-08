@@ -195,6 +195,8 @@ function EnhancementVersionThumb({
  */
 export default function EnhancePage() {
   const activeProject = useActiveProject()
+  const projectsSynced = useProjectStore((state) => state.synced)
+  const createProject = useProjectStore((state) => state.createProject)
 
   const enhancements = useEnhanceStore((state) => state.enhancements)
   const add = useEnhanceStore((state) => state.add)
@@ -372,7 +374,9 @@ export default function EnhancePage() {
   const savingDrafts = useRef(new Map<string, ReturnType<typeof saveSourceFile>>())
   useEffect(() => {
     if (!activeProject) {
-      if (attachments.length > 0) ensureActiveProject()
+      // Проект под черновики — только когда список сверен с сервером: в новом
+      // браузере «Проект 1» иначе появлялся бы раньше настоящих проектов.
+      if (attachments.length > 0 && projectsSynced) createProject()
       return
     }
     for (const attachment of attachments) {
@@ -409,7 +413,7 @@ export default function EnhancePage() {
         })
         .finally(() => savingDrafts.current.delete(attachment.id))
     }
-  }, [activeFolderId, activeProject, add, attachments, enhancements, update])
+  }, [activeFolderId, activeProject, add, attachments, createProject, enhancements, projectsSynced, update])
 
   /* После гидрации стора восстанавливаем на рабочую сцену не только черновики,
      но и уже запущенные/готовые пары. Иначе после refresh интерфейс снова
@@ -650,7 +654,7 @@ export default function EnhancePage() {
       regions?: RegionPayload[],
       inputVersions?: ReadonlyMap<string, "source" | "result">
     ) => {
-      const project = ensureActiveProject()
+      const project = await ensureActiveProject()
       const metas: Enhancement[] = []
       const inputs = new Map<string, Blob>()
       for (const item of items) {
