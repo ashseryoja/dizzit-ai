@@ -50,7 +50,10 @@ const LABELS: ToolComposerLabels = {
 
 /** Задание на одну генерацию: без референса — чисто по описанию. */
 interface MaterialJob {
+  /** Референс и его размеры, уже прочитанные при вложении. */
   file?: File
+  width?: number
+  height?: number
   note: string
   category: MaterialCategory
 }
@@ -137,34 +140,49 @@ export default function MaterialsPage() {
     [update]
   )
 
+  /* Карточки появляются в галерее сразу по нажатию: размеры референса уже
+     известны из вложения, а его сохранение (IndexedDB + серверная копия)
+     идёт внутри очереди, под статусом «генерируем материал…». Пока оно не
+     закончилось, файл берётся из памяти (pendingBlobWrites в blob-store),
+     так что превью на карточке есть с первой секунды. */
   const startBatch = useCallback(
     async (jobs: MaterialJob[]) => {
       const project = await ensureActiveProject()
       const metas: Material[] = []
+      const sources = new Map<string, File>()
       for (const job of jobs) {
-        const base = { projectId: project.id, status: "processing" as const, category: job.category, note: job.note }
-        if (!job.file) {
-          metas.push({ ...base, id: createId(), createdAt: new Date().toISOString() })
-          continue
-        }
-        try {
-          const { id, width, height } = await saveSourceFile(job.file, { durable: true })
+        const id = createId()
+        const base = { id, projectId: project.id, status: "processing" as const, category: job.category, note: job.note }
+        if (job.file) {
+          sources.set(id, job.file)
           metas.push({
             ...base,
-            id,
             sourceName: job.file.name,
-            sourceWidth: width,
-            sourceHeight: height,
+            sourceWidth: job.width,
+            sourceHeight: job.height,
             createdAt: new Date().toISOString(),
           })
-        } catch {
-          window.alert(`«${job.file.name}» не удалось сохранить — материал пойдёт без референса.`)
-          metas.push({ ...base, id: createId(), createdAt: new Date().toISOString() })
+        } else {
+          metas.push({ ...base, createdAt: new Date().toISOString() })
         }
       }
-      await runGalleryQueue(metas, add, runGenerate)
+      await runGalleryQueue(metas, add, async (meta) => {
+        const file = sources.get(meta.id)
+        if (file) {
+          try {
+            await saveSourceFile(file, { id: meta.id, durable: true })
+          } catch (error) {
+            update(meta.id, {
+              status: "error",
+              error: `Референс не удалось сохранить: ${error instanceof Error ? error.message : "хранилище недоступно"}.`,
+            })
+            return
+          }
+        }
+        await runGenerate(meta)
+      })
     },
-    [add, runGenerate]
+    [add, runGenerate, update]
   )
 
   const submit = () => {
@@ -175,7 +193,7 @@ export default function MaterialsPage() {
     }
     const jobs: MaterialJob[] =
       attachments.length > 0
-        ? attachments.map((item) => ({ file: item.file, note: description, category }))
+        ? attachments.map((item) => ({ file: item.file, width: item.width, height: item.height, note: description, category }))
         : [{ note: description, category }]
     intake.clearAttachments()
     setNote("")
