@@ -34,9 +34,18 @@ const BASE_TONE: Record<MaterialFamily, [number, number, number]> = {
 /** Семейство по словам описания; `null` — описание вне четырёх семейств. */
 export function matchCategory(note: string): MaterialFamily | null {
   const text = note.toLowerCase()
-  if (/дерев|дуб|орех|ясен|сосн|wood|oak/.test(text)) return "wood"
-  if (/метал|сталь|латун|медь|алюмин|metal|steel/.test(text)) return "metal"
-  if (/ткан|текстиль|лён|лен |хлопок|шерст|велюр|fabric|linen/.test(text)) return "fabric"
+  // `\b` в JS знает только латиницу — для кириллицы границы слова через lookaround.
+  const word = (stem: string) => `(?<![а-яё])${stem}(?![а-яё])`
+  const wood = new RegExp(`дерев|дуб|орех|ясен|сосн|${word("бук")}|${word("тик")}|шпон|паркет|доск|wood|oak|walnut|\\bash\\b|teak|veneer|parquet|plank`)
+  const metal = /метал|сталь|латун|медь|медн|бронз|хром|алюмин|нержав|metal|steel|brass|copper|bronze|chrome|alumin/
+  const stone = /камен|камн|мрамор|гранит|бетон|травертин|терраццо|плитк|сланец|stone|marble|granite|concrete|travertine|terrazzo|slate|\btiles?\b/
+  const fabric = new RegExp(
+    `ткан|текстиль|лён|${word("лен")}|хлопок|шерст|велюр|бархат|букле|твид|рогож|обивк|гусин|fabric|linen|cotton|wool|velvet|boucle|tweed|upholster|houndstooth|textile`
+  )
+  if (wood.test(text)) return "wood"
+  if (metal.test(text)) return "metal"
+  if (fabric.test(text)) return "fabric"
+  if (stone.test(text)) return "stone"
   return null
 }
 
@@ -61,17 +70,38 @@ export interface MaterialJobInput {
   hasReference: boolean
 }
 
+/**
+ * Промпт тайла. Текст пользователя уходит как процитированный запрос, а не как
+ * «предмет» текстуры: люди пишут «дай этот материал на кресле», «пол как на
+ * фото», «сделай темнее» — модель должна понять, откуда брать материал, и не
+ * рисовать кресло, комнату или сцену. Референс может быть фото предмета или
+ * интерьера, а не плоским образцом — это тоже проговаривается явно.
+ */
 export function buildMaterialPrompt({ category, note, hasReference }: MaterialJobInput): string {
   const family = category === "auto" ? matchCategory(note) : category
-  const description = note.trim()
-  const subject = family
-    ? `${FAMILY_ENGLISH[family]}${description ? `: ${description}` : ""}`
-    : description || "the material shown in the reference image"
+  const description = note.trim().replace(/\s+/g, " ")
+  const familyLine = family
+    ? `Material family: ${FAMILY_ENGLISH[family]}.`
+    : "Material family: infer it from the request and the reference."
+  const requestLine = description
+    ? `User request (may be casual, in any language, and may mention an object, a room or where the material is used; treat such mentions only as a hint about WHICH surface the material comes from, never as something to depict): "${description}"`
+    : hasReference
+      ? "User request: reproduce the material shown in the reference as a texture."
+      : ""
+  const referenceLine = hasReference
+    ? [
+        "The attached image is a reference, not a target composition. It may show a whole object, furniture piece or interior rather than a flat swatch.",
+        "Identify the material the request points to (if the request does not say which, take the dominant material of the main object) and reproduce its color, tone, pattern, weave or grain, and finish as a flat tile.",
+        "Ignore the object's shape, background, scene lighting, shadows, reflections and perspective.",
+      ].join(" ")
+    : ""
   return [
-    `Seamless, tileable texture of ${subject}.`,
-    "Photographed flat and straight-on, evenly lit, the material fills the entire square frame edge to edge. No perspective, no objects, no borders, no text, no watermark.",
-    "Realistic surface detail suitable as an albedo texture for 3D rendering.",
-    hasReference ? "Match the color, tone and character of the attached reference image." : "",
+    "Task: generate a seamless, tileable material texture (albedo / base-color map) for 3D rendering.",
+    familyLine,
+    requestLine,
+    referenceLine,
+    "Output rules: the material alone fills the entire square frame edge to edge, photographed flat and straight-on under even diffuse light, with edges that tile without visible seams.",
+    "No objects, no furniture, no rooms, no perspective, no borders, no labels, no text, no watermark. Realistic surface detail.",
   ]
     .filter(Boolean)
     .join("\n")
