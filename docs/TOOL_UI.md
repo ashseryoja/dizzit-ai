@@ -38,7 +38,7 @@
 | Прокрутка наверх при смене режима экрана: сцена ↔ галерея результатов | `src/lib/use-scroll-top.ts` | `useScrollTopOnChange(hasAttachments)` |
 | Выбор формата кадров (9:16, 3:4, 1:1, 4:3, 16:9) с глифами пропорций в панели настроек | `src/components/tool/aspect-picker.tsx` — секция; `src/lib/frame-aspect.ts` — список и пропорции; `src/styles/ds/surfaces.css` — `.aspect-*` | `AspectPicker`, слот `extras` композера |
 | Планировщик раскадровки: сначала `describeScene` фиксирует инвентарь, затем vision-модель получает его вместе с рендером, ранжирует выразительные предметные группы и составляет список без заполнителей и дублей (`ViewFrame.region`, `brief`); универсальный сет — четыре `vantage`, чередующиеся с тремя деталями. У `vantage` четыре сценария `ViewFrame.camera` и сторона `side`; генератор получает локальный кроп плюс полный исходник, меняет только камеру, а почти неизменный результат или визуальный дубль получает один контрольный повтор. Готовый кадр — Lanczos3 до 2000 px (`VIEW_LONG_SIDE`); без ключа — кадры по составу набора | `src/lib/shot-planning.ts` — клиент; `src/app/api/shots/route.ts` + `src/server/shot-planner.ts` — сервер; `src/lib/view-presets.ts` — состав наборов слотами и сборка кадров | `planViewFrames`; `buildShotListPrompt`, `parseShotList`, `planShotList`; `PRESET_SLOTS`, `assignShots`, `framesOf` |
-| Карточка результата: «до/после», скачать, удалить, статусы | `src/components/tool/tool-card.tsx` | `ToolCard` (у сетов кадров — своя `view-set-card.tsx`) |
+| Карточка результата: «до/после», скачать, удалить, статусы, повтор 2×2 для тайлов | `src/components/tool/tool-card.tsx` | `ToolCard` (у сетов кадров — своя `view-set-card.tsx`); проп `tileable`, рецепт `.tile-repeat` в `surfaces.css` |
 | Правила приёма файлов: форматы, лимит, предупреждения, перенос, вставка из буфера, замена вместо добавления | `src/lib/use-attachments.ts` | `useAttachments`; константы форматов и лимитов — `src/lib/enhance-engine.ts` |
 | Рабочий набор: режим «Выбрать», «Выбрать все», стрелки и Escape, «Редактировать все», что уходит в обработку | `src/lib/use-batch-selection.ts` | `useBatchSelection` |
 | Сохранение исходника в IndexedDB/на сервере, серверный черновик до запуска, очередь пачки | `src/lib/tool-jobs.ts`, `src/app/(main)/enhance/page.tsx` | `saveSourceFile({ durable: true })`, статус `draft`, `runGalleryQueue` |
@@ -303,7 +303,10 @@ refresh. Удаление пары из пачки
 ### `ToolCard`, `ViewSetCard` — карточки результата
 
 `ToolCard` общая: миниатюры и полные файлы из IndexedDB/серверного хранилища,
-«до/после» по удержанию, скачать, удалить, повтор при ошибке. `useStoredBlobUrl`
+«до/после» по удержанию, скачать, удалить, повтор при ошибке. `tileable` —
+результат должен повторяться без шва (материалы): кнопка «Повтор 2×2» кладёт
+результат четырьмя копиями встык через `background-repeat` (`.tile-repeat`),
+стык — в центре карточки, шов виден сразу. `useStoredBlobUrl`
 проверяет запасные ключи по порядку, ограниченно ждёт запаздывающий объект и
 возвращает `loading / ready / missing / error`. В терминальном состоянии
 `StoredAssetNotice` оставляет размеры карточки стабильными и предлагает только
@@ -324,7 +327,7 @@ refresh. Удаление пары из пачки
 | `folder-rail.tsx` | `FolderRail` | папки рендеров: вкладки у правой панели, переименование и удаление |
 | `stage.tsx` | `Stage`, `StagePlaceholder`, `BatchGrid` | сцена, её состояние восстановления и пакетный грид |
 | `tool-dropzone.tsx` | `ToolDropzone` | пустой экран-дропзона |
-| `tool-card.tsx` | `ToolCard`, `StoredAssetNotice`, `useBlobUrl`, `downloadStoredResult` | карточка результата; стабильное состояние отсутствующего файла; совместимый хук «блоб → object URL»; скачивание полного результата |
+| `tool-card.tsx` | `ToolCard`, `StoredAssetNotice`, `useBlobUrl`, `downloadStoredResult` | карточка результата (`tileable` — повтор 2×2 для бесшовных тайлов); стабильное состояние отсутствующего файла; совместимый хук «блоб → object URL»; скачивание полного результата |
 | `view-set-card.tsx` | `ViewSetCard` | карточка сета кадров («Ракурсы»): общий план слева, кадры справа |
 | `aspect-picker.tsx` | `AspectPicker` | выбор формата кадров с глифами пропорций — секция панели настроек |
 | `add-tile.tsx` | `AddTile` | «добавить ещё» в галерее результатов: полоса над списком (`variant="bar"`) или плитка (`tile`) — пунктир, плюс, подпись; по клику — выбор файла |
@@ -371,7 +374,7 @@ refresh. Удаление пары из пачки
 | `ToolDropzone` | ✓ RenderReveal | ✓ ViewsInvite | ✓ StyleSwap | — (MaterialPreviewGrid) | ✓ FurnitureMorph, `armed` |
 | `ToolGallery` + карточка | — (результат остаётся на Stage) | ✓ `layout="stack"`, ViewSetCard | ✓ ToolCard | ✓ ToolCard | — (сцена + лента) |
 | `AddTile` («добавить ещё» в галерее результатов) | — (пачка остаётся в панели) | ✓ полоса «Добавить кадр» над сетами | ✓ полоса «Добавить интерьер» над результатами | — (композер всегда) | — |
-| Своё на странице | постоянная пара «исходник / новый» в `RenderTray`, результат на Stage, контекст, разбор сцены (инвентарь предметов) + качество GPT Image 2 + Lanczos 2000 px, заселение, пакетные функции, области правки, `notice` | выбор набора кадров, формат кадров (`AspectPicker` в `extras`, панель открывается сама, `submitBlockedReason` + `notice` до выбора), планировщик кадров перед генерацией, подпись под сценой | стили, док материалов, вторая панель, `notice` | референсы не обязательны | одно фото, `ModelStage`/`ModelChip` |
+| Своё на странице | постоянная пара «исходник / новый» в `RenderTray`, результат на Stage, контекст, разбор сцены (инвентарь предметов) + качество GPT Image 2 + Lanczos 2000 px, заселение, пакетные функции, области правки, `notice` | выбор набора кадров, формат кадров (`AspectPicker` в `extras`, панель открывается сама, `submitBlockedReason` + `notice` до выбора), планировщик кадров перед генерацией, подпись под сценой | стили, док материалов, вторая панель, `notice` | референсы не обязательны; карточка с `tileable` («Повтор 2×2» — проверка шва) | одно фото, `ModelStage`/`ModelChip` |
 
 Страницы после выноса общего: `enhance` ≈ 420 строк, `restyle` ≈ 375, `views` ≈ 275,
 `materials` ≈ 220, `photo-3d` ≈ 330 — в них только конфигурация и логика инструмента.

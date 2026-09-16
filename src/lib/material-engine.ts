@@ -8,9 +8,17 @@ import type { MaterialCategory } from "@/types"
  * Движок генерации материала.
  *
  * Основной путь — `generateMaterial`: описание и семейство собираются в
- * промпт бесшовной текстуры, референс (если есть) уходит картинкой, чтобы
- * модель взяла его тон и характер; результат — квадрат 1024×1024 от
- * gpt-image-2 (`lib/image-generation` → `/api/images`).
+ * промпт бесшовной текстуры (`buildMaterialPrompt`), референс (если есть)
+ * уходит картинкой, чтобы модель взяла его тон и характер; результат —
+ * квадрат от gpt-image-2 (`lib/image-generation` → `/api/images`, 2K у
+ * API Models) как есть, без обработки пикселей.
+ *
+ * Бесшовность достигается промптом: он подробно объясняет модели, что тайл
+ * будет повторяться встык, как должен вести себя рисунок у краёв (целое
+ * число повторов по осям кадра у регулярных узоров, равномерная статистика
+ * у нерегулярных), каким должен быть свет и ракурс, и просит проверить
+ * результат в раскладке 2×2. Ту же раскладку показывает карточка галереи
+ * («Повтор 2×2») — шов, если он есть, виден сразу.
  *
  * Без ключа провайдера — `generateMaterialLocally`, ПРЕДПРОСМОТР: процедурные
  * текстуры на canvas по семейству, референс усредняется до одного тона;
@@ -76,6 +84,17 @@ export interface MaterialJobInput {
  * фото», «сделай темнее» — модель должна понять, откуда брать материал, и не
  * рисовать кресло, комнату или сцену. Референс может быть фото предмета или
  * интерьера, а не плоским образцом — это тоже проговаривается явно.
+ *
+ * Бесшовность — главный блок промпта, и он написан как инструкция, а не как
+ * прилагательное: что значит «повторяется встык» (правый край продолжает
+ * левый, низ — верх), как обращаться с элементами у края (обрезаны и
+ * продолжаются с противоположной стороны в той же позиции), как укладывать
+ * регулярный узор (сетка повторов по осям кадра, целое число повторов по
+ * ширине и высоте, не меньше 4×4), как держать нерегулярный (одинаковая
+ * плотность, контраст и масштаб у всех краёв и в центре, без одной большой
+ * доминирующей детали), каким должен быть свет (ровный, без виньетки и
+ * бликов) и ракурс (строго сверху, без перспективы). В конце — самопроверка
+ * раскладкой 2×2. Запреты собраны отдельным списком «NEVER include».
  */
 export function buildMaterialPrompt({ category, note, hasReference }: MaterialJobInput): string {
   const family = category === "auto" ? matchCategory(note) : category
@@ -92,16 +111,26 @@ export function buildMaterialPrompt({ category, note, hasReference }: MaterialJo
     ? [
         "The attached image is a reference, not a target composition. It may show a whole object, furniture piece or interior rather than a flat swatch.",
         "Identify the material the request points to (if the request does not say which, take the dominant material of the main object) and reproduce its color, tone, pattern, weave or grain, and finish as a flat tile.",
-        "Ignore the object's shape, background, scene lighting, shadows, reflections and perspective.",
+        "Ignore the object's shape, background, scene lighting, shadows, reflections and perspective. Do not copy the reference's framing or lighting: the tile follows the seamless rules below.",
       ].join(" ")
     : ""
   return [
-    "Task: generate a seamless, tileable material texture (albedo / base-color map) for 3D rendering.",
+    "Task: generate a SEAMLESS, TILEABLE material texture — the base-color (albedo) map of a 3D material. This exact image will be repeated edge to edge in every direction, so it must wrap around perfectly: the right edge continues exactly into the left edge and the bottom edge continues exactly into the top edge, with no visible seam, line, brightness step, colour shift or pattern break where the copies meet.",
     familyLine,
     requestLine,
     referenceLine,
-    "Output rules: the material alone fills the entire square frame edge to edge, photographed flat and straight-on under even diffuse light, with edges that tile without visible seams.",
-    "No objects, no furniture, no rooms, no perspective, no borders, no labels, no text, no watermark. Realistic surface detail.",
+    "SEAMLESS WRAP — the most important requirement:",
+    "- Treat the square as one cell cut out of an endless, evenly lit sheet of this material. Every element that touches an edge is cut off there and continues at the same position on the opposite edge: a plank cut by the right edge continues from the left edge in the same row; a vein leaving through the top re-enters from the bottom at the same column; a tile grout line that meets the bottom edge meets the top edge at the same x position.",
+    "- Regular patterns (tiles, bricks, planks, parquet, herringbone, weaves, checks, houndstooth, mosaics, embossed motifs): align the repeat grid with the frame axes — never rotated, skewed or drifting — and fit an EXACT whole number of repeats across the width and an exact whole number across the height, at least 4 × 4 (for example 4 × 4, 6 × 6 or 8 × 8). The frame edges must fall exactly on repeat boundaries so the pattern continues without any offset when the tile is repeated. Keep the period, the element size, the grout width and the colour rhythm identical over the whole frame.",
+    "- Irregular materials (stone, marble, concrete, plaster, terrazzo, wood grain, leather, fabric pile, metal finish): keep the texture statistically uniform over the whole frame — the same density, contrast, scale and colour near every edge and every corner as in the centre. No single large vein, knot, stain, crack, cloud or highlight may dominate the frame or sit in its centre; nothing may visibly begin or end at an edge; the corners must look exactly like the middle.",
+    "- One scale everywhere: no zoom, no foreshortening, no elements that are larger near one edge than near the other.",
+    "LIGHTING AND CAMERA:",
+    "- Strict orthographic top-down view of a perfectly flat surface: no perspective, no tilt, no curvature, no depth of field, no blur anywhere.",
+    "- Perfectly even, shadowless, diffuse lighting: identical brightness and colour temperature at every corner and at the centre — no vignette, no light falloff, no gradient, no light spot, no specular highlight, no glossy reflection of a light source, no cast shadow, no ambient occlusion at the frame border.",
+    "- Realistic surface micro-detail at the material's true scale, neutral white balance, colours as the material looks in soft daylight, consistent finish over the whole frame.",
+    "FRAME: the material alone fills the entire square from edge to edge and corner to corner; the picture IS the material, not a photo of a sample.",
+    "NEVER include: a visible tile border or seam line, margins, padding, frame, mat, rounded corners, drop shadow, mockup or 3D preview (sphere, cube, ball, plane in a scene), background, table, wall, objects, furniture, hands, rooms, people, perspective, text, letters, numbers, labels, logo, watermark, signature.",
+    "FINAL CHECK before you output: imagine the image placed in a 2 × 2 grid of identical copies. The result must look like one continuous surface with no visible line, step or repeated-looking break where the copies meet, both horizontally and vertically. If a pattern would not line up, adjust the number of repeats so that it does.",
   ]
     .filter(Boolean)
     .join("\n")

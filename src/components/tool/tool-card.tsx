@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Download, Eye, ImageOff, RefreshCw, Trash2 } from "lucide-react"
+import { Download, Eye, Grid2x2, ImageOff, RefreshCw, Trash2 } from "lucide-react"
 
 import { ThinkingGlyph } from "@/components/glyphs"
 import { getBlob, resultKey, sourceKey, thumbResultKey, thumbSourceKey } from "@/lib/blob-store"
@@ -35,13 +35,16 @@ export async function downloadStoredResult(item: GalleryItemMeta, baseName?: str
  * чистое изображение, действия — по ховеру). Общая для всех инструментов
  * профиля: миниатюры едут из IndexedDB, полный результат достаётся оттуда же
  * только на скачивание. «До/после» появляется, только если у записи есть
- * исходник или референс.
+ * исходник или референс. `tileable` — результат должен повторяться без шва
+ * (материалы): добавляется переключатель «Повтор 2×2», который кладёт
+ * результат четырьмя копиями встык, стык — в центре карточки.
  */
 export function ToolCard({
   item,
   caption,
   processingLabel,
   downloadBaseName,
+  tileable = false,
   onRetry,
   onDelete,
 }: {
@@ -52,11 +55,14 @@ export function ToolCard({
   processingLabel: string
   /** Имя файла при скачивании — без расширения, оно берётся из типа блоба. */
   downloadBaseName: string
+  /** Результат — бесшовный тайл: показать переключатель повтора 2×2. */
+  tileable?: boolean
   onRetry: () => void
   onDelete: () => void
 }) {
   const { id, status } = item
   const [comparing, setComparing] = useState(false)
+  const [repeating, setRepeating] = useState(false)
 
   // Метаданные могут приехать с сервера раньше объектов. Полный файл —
   // штатный запасной вариант миниатюре; отдельный хук результата продолжает
@@ -91,7 +97,15 @@ export function ToolCard({
       style={{ borderRadius: "var(--r-lg)" }}
     >
       <div className="relative w-full" style={{ aspectRatio: `${width} / ${height}` }}>
-        {shown ? (
+        {shown && tileable && repeating && status === "done" && !comparing ? (
+          /* Повтор 2×2: результат фоном с background-repeat — без лишних пикселей и запросов. */
+          <div
+            role="img"
+            aria-label="Повтор тайла 2×2"
+            className="tile-repeat select-none"
+            style={{ backgroundImage: `url("${shown}")` }}
+          />
+        ) : shown ? (
           /* Плейн <img>: источник — object URL из IndexedDB, next/image
              с ним не работает. */
           // eslint-disable-next-line @next/next/no-img-element
@@ -166,7 +180,21 @@ export function ToolCard({
         {shown && status === "done" ? (
           <>
             {/* Действия — по ховеру, как отметки на карточках нейрофотосессии. */}
-            <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+            <div
+              className={cn(
+                "absolute right-2 top-2 flex gap-1 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100",
+                repeating ? "opacity-100" : "opacity-0"
+              )}
+            >
+              {tileable && resultAsset.url ? (
+                <CardAction
+                  label={repeating ? "Скрыть повтор" : "Показать повтор 2×2"}
+                  onClick={() => setRepeating((value) => !value)}
+                  active={repeating}
+                >
+                  <Grid2x2 className="h-3.5 w-3.5" strokeWidth={1.8} />
+                </CardAction>
+              ) : null}
               {sourceAsset.url && resultAsset.url ? (
                 <CardAction
                   label="Показать исходник (удерживайте)"
@@ -189,6 +217,10 @@ export function ToolCard({
             {comparing ? (
               <span className="chip absolute left-2 top-2" style={{ background: "rgba(16,16,18,0.7)", color: "rgba(255,255,255,0.9)" }}>
                 до
+              </span>
+            ) : tileable && repeating ? (
+              <span className="chip absolute left-2 top-2" style={{ background: "rgba(16,16,18,0.7)", color: "rgba(255,255,255,0.9)" }}>
+                повтор 2×2
               </span>
             ) : null}
 

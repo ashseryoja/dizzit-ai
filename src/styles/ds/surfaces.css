@@ -252,6 +252,16 @@ select.field option { background: var(--bg-overlay); color: var(--fg-1); }
 .cell-input:hover:not(:read-only) { border-color: var(--line-strong); }
 .cell-input:focus { border-color: var(--accent); background: var(--bg-raised); }
 
+/* Повтор тайла 2×2 на карточке материала: та же картинка фоном, стык
+   четырёх копий приходится на центр — любой шов виден сразу. */
+.tile-repeat {
+  position: absolute;
+  inset: 0;
+  background-repeat: repeat;
+  background-size: 50% 50%;
+  background-position: 0 0;
+}
+
 /* ============================================================
    ЧИПЫ
    ============================================================ */

@@ -42,7 +42,7 @@ const LABELS: ToolComposerLabels = {
   optionsTitle: "Материал",
   optionsIcon: Layers,
   footer:
-    "Описание задаёт характер материала, референс — тон, семейство — рисунок. Результат — квадратный тайл 1024×1024.",
+    "Описание задаёт характер материала, референс — тон, семейство — рисунок. Результат — квадратный бесшовный тайл: повторяется без стыков.",
   inputPlaceholder: "Опишите материал…",
   submitLabel: "Сгенерировать",
   batchNoun: ["референс", "референса", "референсов"],
@@ -271,6 +271,7 @@ export default function MaterialsPage() {
               item={material}
               caption={`${CATEGORY_LABEL[material.category] ?? "авто"}${material.note ? ` · ${material.note}` : ""}`}
               processingLabel="генерируем материал…"
+              tileable
               downloadBaseName={`material-${CATEGORY_LABEL[material.category] ?? "auto"}-${material.id.slice(0, 4)}`}
               onRetry={() => retry(material)}
               onDelete={() => deleteMaterial(material)}
