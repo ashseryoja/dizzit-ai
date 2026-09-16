@@ -6,7 +6,7 @@ import { Cog, Layers, Mountain, Shirt, Sparkles, TreePine } from "lucide-react"
 import { MaterialPreviewGrid } from "@/components/tool/material-preview-grid"
 import { ToolCard } from "@/components/tool/tool-card"
 import { ToolComposer, type ToolComposerLabels, type ToolOption } from "@/components/tool/tool-composer"
-import { ComposerDock, ToolGallery, ToolShell } from "@/components/tool/tool-shell"
+import { ComposerDock, TILE_GALLERY_WIDTH, ToolGallery, ToolShell } from "@/components/tool/tool-shell"
 import { getBlob, sourceKey } from "@/lib/blob-store"
 import { MAX_BATCH } from "@/lib/enhance-engine"
 import { generateMaterial } from "@/lib/material-engine"
@@ -258,13 +258,13 @@ export default function MaterialsPage() {
               рода тайлы здесь получают. Клики по заготовкам ничего не
               генерируют — галерея сменяет их только после собственной
               генерации пользователя; слот лишь ведёт в поле описания. */}
-          <MaterialPreviewGrid className="max-w-[880px]" onActivate={focusComposer} />
+          <MaterialPreviewGrid className={TILE_GALLERY_WIDTH} onActivate={focusComposer} />
           <button type="button" onClick={intake.pickFiles} className="btn-ghost">
             Приложить референсы
           </button>
         </div>
       ) : (
-        <ToolGallery>
+        <ToolGallery layout="tiles">
           {visible.map((material) => (
             <ToolCard
               key={material.id}

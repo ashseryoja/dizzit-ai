@@ -32,7 +32,7 @@
 | Пустой экран — дропзона с пунктиром, приглашением, заголовком и подписью | `src/components/tool/tool-dropzone.tsx` | `ToolDropzone` |
 | Слой «Отпустите, чтобы приложить…», скрытый `<input type="file">`, отступы под композер и панель, скелет до гидрации | `tool-shell.tsx` | `ToolShell` |
 | Положение композера внизу (отступ под сайдбар и панель, анимация появления) | `tool-shell.tsx` | `ComposerDock` |
-| Галерея результатов: масонри колонками или широкие карточки одна под другой (`layout="stack"` у сетов кадров) | `tool-shell.tsx` | `ToolGallery` |
+| Галерея результатов: масонри колонками, широкие карточки одна под другой (`layout="stack"` у сетов кадров) или сетка по три квадратных тайла в ряд по центру (`layout="tiles"` у материалов, ширина — `TILE_GALLERY_WIDTH`) | `tool-shell.tsx` | `ToolGallery`, `TILE_GALLERY_WIDTH` |
 | «Добавить кадр» / «Добавить интерьер», когда дропзоны уже нет: узкая полоса над галереей (`variant="bar"`, без прокрутки к концу списка; в галерее-масонри занимает всю ширину над колонками) или плитка под последним результатом (`variant="tile"`) | `src/components/tool/add-tile.tsx`; `.add-bar`, `.add-tile*` в `surfaces.css` | `AddTile`, `onClick={intake.pickFiles}` |
 | Слот «Загрузить…» в панели настроек, когда пачка пуста, а композер остался (после отправки — над галереей результатов) | `tool-composer.tsx` | блок «Панель настроек», условие `selectionMode && attachments.length > 0` |
 | Прокрутка наверх при смене режима экрана: сцена ↔ галерея результатов | `src/lib/use-scroll-top.ts` | `useScrollTopOnChange(hasAttachments)` |
@@ -228,7 +228,11 @@ refresh. Удаление пары из пачки
   рисует вкладки снаружи левого края (папки рендеров); страница тогда
   расширяет отступы `trayMargin` у `ToolShell` и `trayRight` у `ComposerDock`
   на ширину вкладок (40 px).
-- `ToolGallery` — колонки масонри для карточек.
+- `ToolGallery` — колонки масонри для карточек. `layout="tiles"` — сетка
+  3 × квадратные тайлы по центру (материалы): карточки одинаковые, масонри им
+  не нужно. Ширину сетки задаёт экспорт `TILE_GALLERY_WIDTH` из того же файла —
+  его же берёт превью-сетка пустого экрана, чтобы раскладка не прыгала после
+  первой генерации.
 
 ### `ToolComposer` — `src/components/tool/tool-composer.tsx`
 
@@ -321,7 +325,7 @@ refresh. Удаление пары из пачки
 
 | Файл | Экспорт | Что это |
 | --- | --- | --- |
-| `tool-shell.tsx` | `ToolShell`, `ComposerDock`, `ToolAside`, `ToolGallery` | каркас экрана и плавающие слои |
+| `tool-shell.tsx` | `ToolShell`, `ComposerDock`, `ToolAside`, `ToolGallery`, `TILE_GALLERY_WIDTH` | каркас экрана и плавающие слои; ширина сетки тайлов |
 | `tool-composer.tsx` | `ToolComposer` | композер с панелью настроек |
 | `render-tray.tsx` | `RenderTray`, `RenderStrip` | панель-галерея пачки и полоска миниатюр |
 | `folder-rail.tsx` | `FolderRail` | папки рендеров: вкладки у правой панели, переименование и удаление |
@@ -372,7 +376,7 @@ refresh. Удаление пары из пачки
 | `Stage` | ✓ с `overlay` (RegionEditor) | ✓ | ✓ `aspect-[4/3]` | — | — (своя `ModelStage`) |
 | `BatchGrid` | ✓ | ✓ | ✓ `compact` | — | — |
 | `ToolDropzone` | ✓ RenderReveal | ✓ ViewsInvite | ✓ StyleSwap | — (MaterialPreviewGrid) | ✓ FurnitureMorph, `armed` |
-| `ToolGallery` + карточка | — (результат остаётся на Stage) | ✓ `layout="stack"`, ViewSetCard | ✓ ToolCard | ✓ ToolCard | — (сцена + лента) |
+| `ToolGallery` + карточка | — (результат остаётся на Stage) | ✓ `layout="stack"`, ViewSetCard | ✓ ToolCard | ✓ `layout="tiles"`, ToolCard | — (сцена + лента) |
 | `AddTile` («добавить ещё» в галерее результатов) | — (пачка остаётся в панели) | ✓ полоса «Добавить кадр» над сетами | ✓ полоса «Добавить интерьер» над результатами | — (композер всегда) | — |
 | Своё на странице | постоянная пара «исходник / новый» в `RenderTray`, результат на Stage, контекст, разбор сцены (инвентарь предметов) + качество GPT Image 2 + Lanczos 2000 px, заселение, пакетные функции, области правки, `notice` | выбор набора кадров, формат кадров (`AspectPicker` в `extras`, панель открывается сама, `submitBlockedReason` + `notice` до выбора), планировщик кадров перед генерацией, подпись под сценой | стили, док материалов, вторая панель, `notice` | референсы не обязательны; карточка с `tileable` («Повтор 2×2» — проверка шва) | одно фото, `ModelStage`/`ModelChip` |
 

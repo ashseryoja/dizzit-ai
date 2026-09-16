@@ -178,9 +178,28 @@ export function ToolAside({
 
 /**
  * Галерея результатов: по умолчанию масонри колонками; `layout="stack"` —
- * широкие карточки одна под другой (сеты кадров: исходник слева, кадры справа).
+ * широкие карточки одна под другой (сеты кадров: исходник слева, кадры справа);
+ * `layout="tiles"` — сетка по три в ряд по центру экрана для квадратных тайлов
+ * (материалы): карточки одного размера, поэтому масонри им не нужно, а без
+ * ограничения ширины три тайла растягивались бы на всю страницу.
+ * Вертикальный зазор даёт `mb-4` карточки — в сетке он работает как row-gap.
  */
-export function ToolGallery({ children, layout = "columns" }: { children: ReactNode; layout?: "columns" | "stack" }) {
+export function ToolGallery({
+  children,
+  layout = "columns",
+}: {
+  children: ReactNode
+  layout?: "columns" | "stack" | "tiles"
+}) {
   if (layout === "stack") return <div className="flex flex-col gap-8">{children}</div>
+  if (layout === "tiles")
+    return <div className={cn(TILE_GALLERY_WIDTH, "grid grid-cols-2 gap-x-4 sm:grid-cols-3")}>{children}</div>
   return <div className="columns-1 gap-4 sm:columns-2 xl:columns-3">{children}</div>
 }
+
+/**
+ * Ширина сетки тайлов: держит тайл ≈ 250 px и центрирует колонки. Тот же класс
+ * берёт превью-сетка пустого экрана, чтобы после первой генерации раскладка
+ * не прыгала.
+ */
+export const TILE_GALLERY_WIDTH = "mx-auto w-full max-w-[780px]"
