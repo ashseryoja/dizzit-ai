@@ -45,7 +45,9 @@
 | Где живут записи и картинки: кэш IndexedDB, синхронизация со своим сервером, вход по паролю, подпись «серверное хранение / локальный режим» | `src/lib/server-sync.ts` — клиент (очередь, слияние, `useServerStatus`); `src/lib/blob-store.ts` — кэш блобов; `src/server/{auth,records,storage,db}.ts` + `src/app/api/{records,assets,session,auth}` — сервер; `src/middleware.ts` — дверь | `attachServerSync` в каждом сторе; `serverStatus`, `useServerStatus` |
 | Куда уходит генерация картинок: positive/negative prompt, провайдер, пропорции, уменьшение референса, Lanczos-постобработка, предпросмотр без ключа, подпись «предпросмотр без ключа» на карточке | `src/lib/image-generation.ts` — клиент; `src/app/api/images/route.ts` + `src/server/image-provider.ts`, `providers.ts` (выбор), `apimodels.ts`, `laozhang.ts`, `image-postprocess.ts`, `http.ts` — сервер | `requestImage`, `composeProviderPrompt`, `withImageProvider`, `prepareReference`, `resizeToLongSideLanczos`, `previewCaption`; промпты — в движке инструмента (`build*Prompt`) |
 | Разбор сцены перед улучшением: vision-модель составляет инвентарь кадра — материалы поверхностей (пол травертин, а не микроцемент; шпон дуба, а не ламинат) и предметы (телевизор выключен, шторы тюлевые, люстра горит), он уходит в промпт gpt-image-2 и хранится в записи (`sceneInventory`); выбор модели, промпт аналитика, чистка ответа, запрет подмены материалов | `src/lib/scene-analysis.ts` — клиент; `src/app/api/scene/route.ts` + `src/server/scene-inventory.ts`, `vision-provider.ts`, `providers.ts` (`resolveVisionProviders` — цепочка с запасными) — сервер; блоки промпта — `src/lib/enhance-engine.ts` | `describeScene`, `sceneAnalysisStatus`, `hasMaterialsSection`; `analyzeScene`, `buildSceneInventoryPrompt`, `tidyInventory`; `OBJECT_IDENTITY_HINT`, `MATERIAL_FIDELITY_HINT`, `sceneInventoryBlock`, `sourceQualityHint`, `EnhanceHooks.onInventory` |
+| «Фото → 3D»: куда уходит фото и откуда берётся модель — задача Meshy (Image to 3D), опрос готовности, GLB в своём хранилище под ключом `${id}:model`, возобновление опроса после перезагрузки, каркас-заглушка без ключа; три формата результата (`MODEL_FORMATS`: GLB — вьюер, FBX и OBJ-архив с материалом и текстурой — для 3ds Max/ArchiCAD/AutoCAD; докачиваются фоном, список готовых — `Model3D.formats`); просмотр GLB (вращение, зум, автоповорот) и скачивание по форматам | `src/lib/model-engine.ts` — клиент; `src/app/api/models/route.ts`, `[taskId]/route.ts`, `[taskId]/file/route.ts` + `src/server/meshy.ts` — сервер (ключ `MESHY_API_KEY`, параметры задачи, перекладывание GLB в хранилище); `src/server/zip.ts` — архив OBJ; `src/components/tool/model-viewer.tsx` — вьюер и скачивание; `.model-viewer`, `.model-downloads` в `surfaces.css` | `modelProviderStatus`, `submitModelTask`, `awaitModelTask`, `fetchModelFile`, `readGlbStats`; `createMeshyTask`, `getMeshyTask`, `downloadMeshyModel`; `buildZip`; `ModelViewer`, `ModelDownloads`, `downloadStoredModel` |
 | В какой проект класть новые записи | `src/stores/project-store.ts` | `ensureActiveProject`, `useActiveProject` |
+| Альбом-презентация: из чего складывается PDF (обложка во весь лист с затемнением, содержание с номерами страниц, концепция с палитрой, общие планы и «до / после», сеты ракурсов, доска материалов, задняя страница), форматы страниц и темы, план страниц (что войдёт и сколько страниц — до сборки), тексты от ИИ, выбор состава миниатюрами, сборка по кнопке, превью PDF | `src/shared/album.ts` — контракт спецификации и **план страниц** (`planAlbum`, `splitBalanced`, `materialColumns`, `ALBUM_CAPACITY`, `MATERIAL_GRID`, `ALBUM_SECTION_TITLE`) — один на клиент и сервер; `src/lib/album-engine.ts` — сборка спецификации из записей, факты для ИИ, запросы, `formatAlbumDate`; `src/server/album-document.tsx` — вёрстка страниц (@react-pdf, страницы по плану), `album-render.ts` — шрифты (Unbounded Light/Medium — статические начертания, Garet) и картинки, `album-copy.ts` — промпт текстов, `album-images.ts` — откуда байты картинок и копии для PDF на сервере (`prepareAlbumAssets`; ключ копии `pdfKey` — в `shared/album.ts`; из кэша браузера копии выгружает `prepareAlbumImages` движка); роуты `src/app/api/album`, `/prepare` и `/copy`; `src/components/tool/album-section.tsx`, `album-picker.tsx`, `album-style-picker.tsx`, `album-build.tsx`, `album-preview.tsx`; `.album-*` в `surfaces.css` | `buildAlbumSpec`, `buildAlbumFacts`, `defaultAlbum`, `renderAlbum`, `requestAlbumCopy`, `planAlbum`; `AlbumDocument`, `loadAlbumImages`, `renderAlbumPdf`, `buildAlbumCopyPrompt`; `AlbumSection`, `AlbumPicker`, `AlbumFormatPicker`, `AlbumThemePicker`, `AlbumBuildPanel`, `AlbumBuildBar`, `AlbumPreview` |
 | Внешний вид всего перечисленного (рецепты CSS) | `src/styles/ds/surfaces.css` | `.stage-*`, `.batch-tile`, `.tray-*`, `.dropzone`, `.popover`, `.presence-*`, `.composer-notice`, `.rg-tag`, `.style-dock` |
 
 Пример. Нужно убрать индикатор качества исходников из панели настроек на всех
@@ -325,7 +327,7 @@ refresh. Удаление пары из пачки
 
 | Файл | Экспорт | Что это |
 | --- | --- | --- |
-| `tool-shell.tsx` | `ToolShell`, `ComposerDock`, `ToolAside`, `ToolGallery`, `TILE_GALLERY_WIDTH` | каркас экрана и плавающие слои; ширина сетки тайлов |
+| `tool-shell.tsx` | `ToolShell`, `ComposerDock`, `ToolAside`, `ToolGallery`, `TILE_GALLERY_WIDTH` | каркас экрана и плавающие слои (без `intake` — экран без приёма файлов: альбом); ширина сетки тайлов |
 | `tool-composer.tsx` | `ToolComposer` | композер с панелью настроек |
 | `render-tray.tsx` | `RenderTray`, `RenderStrip` | панель-галерея пачки и полоска миниатюр |
 | `folder-rail.tsx` | `FolderRail` | папки рендеров: вкладки у правой панели, переименование и удаление |
@@ -348,6 +350,12 @@ refresh. Удаление пары из пачки
 | `views-invite.tsx` | `ViewsInvite` | приглашение «Ракурсов»: общий план и кадры из него |
 | `room-sketch.tsx` | `RoomSketch` | эскиз комнаты (SVG) для приглашений |
 | `furniture-morph.tsx` | `FurnitureMorph` | каркасы мебели, перетекающие друг в друга («Фото → 3D») |
+| `model-viewer.tsx` | `ModelViewer`, `ModelDownloads`, `downloadStoredModel` | просмотр настоящего GLB из хранилища (`<model-viewer>`, подгружается лениво) и плашка скачивания по форматам «GLB · FBX · OBJ» («Фото → 3D») |
+| `album-section.tsx` | `AlbumSection` | шаг настройки альбома: панель с номером, заголовком и строкой-итогом |
+| `album-picker.tsx` | `AlbumPicker` | выбор состава альбома: сетка миниатюр готовых записей с номерами порядка, «выбрать все / снять все»; режим `single` с плиткой «без картинки» — обложка |
+| `album-style-picker.tsx` | `AlbumFormatPicker`, `AlbumThemePicker`, `ALBUM_FORMAT_OPTIONS`, `ALBUM_THEME_OPTIONS` | формат страниц с глифами пропорции листа и тема с глифом тёмного/светлого листа |
+| `album-build.tsx` | `AlbumBuildPanel`, `AlbumBuildBar`, `albumBuildResult`, `AlbumBuildState` | панель сборки: структура будущего PDF по плану страниц, кнопка «Собрать PDF» → «Скачать PDF» → «Собрать заново», итог сборки, превью; компактная полоса для `ComposerDock` на узких экранах |
+| `album-preview.tsx` | `AlbumPreview` | превью альбома: собранный PDF во встроенном просмотрщике, вуаль состояния с прогрессом подготовки картинок, «показана прежняя версия» |
 
 Общие примитивы вне инструментов (`src/components/ui/` и рядом) — те же
 правила, один компонент на повторяющуюся часть:
@@ -382,6 +390,17 @@ refresh. Удаление пары из пачки
 
 Страницы после выноса общего: `enhance` ≈ 420 строк, `restyle` ≈ 375, `views` ≈ 275,
 `materials` ≈ 220, `photo-3d` ≈ 330 — в них только конфигурация и логика инструмента.
+
+**«Альбом-презентация»** (`src/app/(main)/album/page.tsx`) — экран другого рода:
+он не генерирует, а собирает PDF из готовых записей всех инструментов. Поэтому
+`ToolShell` без `intake` (файлы не принимаются) и без сцены; слева — три шага
+`AlbumSection` (состав из `AlbumPicker`, обложка и тексты, оформление из
+`AlbumFormatPicker` / `AlbumThemePicker`), справа — `AlbumBuildPanel`: структура
+будущего PDF по плану `planAlbum`, кнопка сборки и `AlbumPreview`. Сборка
+начинается только по кнопке; после правок панель предлагает собрать заново.
+На узких экранах в `ComposerDock` живёт `AlbumBuildBar` с той же кнопкой.
+Данные — `src/stores/album-store.ts` (коллекция `albums`, без блобов), сборка и
+запросы — `src/lib/album-engine.ts`, вёрстка PDF — `src/server/album-document.tsx`.
 
 ---
 

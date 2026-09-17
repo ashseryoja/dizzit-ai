@@ -9,7 +9,7 @@ import type { Sql } from "@/server/db"
  * составу, а не по смыслу полей. Схема — db/migrations/0001_init.sql.
  */
 
-export const COLLECTIONS = ["projects", "enhancements", "restyles", "views", "materials", "models"] as const
+export const COLLECTIONS = ["projects", "enhancements", "restyles", "views", "materials", "models", "albums"] as const
 export type Collection = (typeof COLLECTIONS)[number]
 
 export function isCollection(value: unknown): value is Collection {
@@ -89,6 +89,13 @@ export async function upsertAssetMeta(sql: Sql, ownerId: string, asset: AssetMet
 export async function deleteAssetMeta(sql: Sql, ownerId: string, keys: string[]): Promise<void> {
   if (keys.length === 0) return
   await sql`delete from assets where owner_id = ${ownerId} and key in ${sql(keys)}`
+}
+
+/** Какие из перечисленных ключей числятся в учёте — одним запросом (копии для PDF альбома). */
+export async function listAssetKeysIn(sql: Sql, ownerId: string, keys: string[]): Promise<string[]> {
+  if (keys.length === 0) return []
+  const rows = await sql<{ key: string }[]>`select key from assets where owner_id = ${ownerId} and key in ${sql(keys)}`
+  return rows.map((row) => row.key)
 }
 
 /** Ключи объектов записи — чтобы удалить их из хранилища вместе с записью. */

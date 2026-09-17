@@ -27,6 +27,18 @@ export const serverConfig = {
   get blobConfigured(): boolean {
     return Boolean(env("BLOB_STORE_ID") || env("BLOB_READ_WRITE_TOKEN"))
   },
+  /** Ключ Meshy («Фото → 3D»). Пусто — страница строит каркас-заглушку. */
+  get meshyApiKey(): string {
+    return env("MESHY_API_KEY")
+  },
+  /** База API Meshy; переопределяется только для фальшивого провайдера в тестах. */
+  get meshyBaseUrl(): string {
+    return (env("MESHY_API_BASE_URL") || "https://api.meshy.ai/openapi/v1").replace(/\/+$/, "")
+  },
+  /** Модель Meshy: `latest` (по умолчанию), `meshy-7`, `meshy-6`, `meshy-6-lite`. */
+  get meshyModel(): string {
+    return env("MESHY_AI_MODEL") || "latest"
+  },
   /**
    * Каталог для картинок на диске — замена Blob в локальной разработке.
    * В проде (Vercel) диска нет: без Blob хранение картинок выключено.

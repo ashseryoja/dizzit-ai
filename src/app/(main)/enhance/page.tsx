@@ -476,6 +476,10 @@ export default function EnhancePage() {
       })
     return () => {
       cancelled = true
+      // Освобождаем ключ попытки: иначе повторный запуск эффекта с теми же
+      // зависимостями (React StrictMode в dev монтирует эффекты дважды) упрётся
+      // в защиту выше и никогда не выйдет из состояния «loading».
+      if (restoringSources.current === attemptKey) restoringSources.current = null
     }
   }, [activeFolderId, activeProjectId, detachAttachments, restoreAttachments, restoreSignature, restoreAttempt])
 

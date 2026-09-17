@@ -68,7 +68,9 @@ export function FurnitureMorph({
        rAF может не прийти вовсе, а сцена после resize не должна оставаться
        пустой. Цикл rAF — только поверх этого. */
     const draw = (now: number) => {
-      const elapsed = now - start
+      // Метка rAF — время начала кадра и бывает раньше `start`; отрицательный
+      // цикл дал бы SHAPES[-1].
+      const elapsed = Math.max(0, now - start)
       const rgb = parseRgb(getComputedStyle(canvas).color)
       ctx.clearRect(0, 0, width, height)
 

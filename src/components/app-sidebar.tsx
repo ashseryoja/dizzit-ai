@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import {
+  BookOpen,
   ChevronDown,
   Database,
   Layers,
@@ -20,6 +21,7 @@ import { Logo } from "@/components/logo"
 import { usePresence } from "@/lib/use-presence"
 import { cn } from "@/lib/utils"
 import { useServerStatus } from "@/lib/server-sync"
+import { useAlbumStore } from "@/stores/album-store"
 import { useCompanyStore } from "@/stores/company-store"
 import { useEnhanceStore } from "@/stores/enhance-store"
 import { useMaterialStore } from "@/stores/material-store"
@@ -44,6 +46,7 @@ const TOOL_LINKS: ToolLink[] = [
   { href: "/restyle", label: "Перенос стиля", icon: RestyleGlyph },
   { href: "/photo-3d", label: "Фото → 3D", icon: PhotoToCubeGlyph },
   { href: "/materials", label: "Генерация материала", icon: Layers },
+  { href: "/album", label: "Альбом-презентация", icon: BookOpen },
 ]
 
 /** Размеры пунктов: на таче крупнее, чтобы попадать пальцем (как в UpSound). */
@@ -271,6 +274,7 @@ function ProjectSwitcher({ large, onNavigate }: { large: boolean; onNavigate?: (
                           useModelStore.getState().removeByProject(project.id)
                           useViewsStore.getState().removeByProject(project.id)
                           useRestyleStore.getState().removeByProject(project.id)
+                          useAlbumStore.getState().removeByProject(project.id)
                           deleteProject(project.id)
                         }}
                         className="btn-icon h-7 w-7"

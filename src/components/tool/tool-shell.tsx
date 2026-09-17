@@ -24,6 +24,10 @@ export interface Presence {
  * Содержимое экрана (дропзона / сцена / галерея) — children; плавающие слои
  * (ComposerDock, ToolAside) — layers. Страница не знает про разметку
  * каркаса: чтобы поменять слой переноса или отступы везде, правят этот файл.
+ *
+ * Экран без приёма файлов (альбом-презентация собирается из уже готового)
+ * не передаёт `intake`: остаются скелет, GC и раскладка, без input и слоя
+ * переноса.
  */
 export function ToolShell({
   intake,
@@ -34,9 +38,10 @@ export function ToolShell({
   layers,
   children,
 }: {
-  intake: AttachmentIntake
+  /** Приём файлов; без него экран файлов не принимает. */
+  intake?: AttachmentIntake
   /** Подпись слоя переноса: «Отпустите, чтобы приложить рендеры». */
-  dropLabel: string
+  dropLabel?: string
   /** Внизу есть композер — контент получает отступ, чтобы не уходить под него. */
   composerOpen: boolean
   /** Справа открыта панель-галерея пачки — контент получает отступ под неё. */
@@ -49,7 +54,7 @@ export function ToolShell({
   const mounted = useMounted()
   // GC общего хранилища блобов — после гидрации сторов ВСЕХ инструментов.
   useBlobGc()
-  const dragLayer = usePresence(intake.dragOver)
+  const dragLayer = usePresence(intake?.dragOver ?? false)
 
   if (!mounted) {
     return (
@@ -61,7 +66,7 @@ export function ToolShell({
 
   return (
     <div
-      {...intake.dropProps}
+      {...intake?.dropProps}
       className={cn(
         "page-shell transition-[margin] duration-300",
         composerOpen && "pb-32",
@@ -70,14 +75,16 @@ export function ToolShell({
       )}
       style={{ transitionTimingFunction: "var(--ease-out)" }}
     >
-      <input
-        ref={intake.inputRef}
-        type="file"
-        accept={intake.accept}
-        multiple={intake.multiple}
-        className="hidden"
-        onChange={intake.onInputChange}
-      />
+      {intake ? (
+        <input
+          ref={intake.inputRef}
+          type="file"
+          accept={intake.accept}
+          multiple={intake.multiple}
+          className="hidden"
+          onChange={intake.onInputChange}
+        />
+      ) : null}
 
       {dragLayer.present ? (
         <div

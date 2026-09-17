@@ -1,17 +1,32 @@
 "use client"
 
-import { useCallback, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Armchair, Box, ImageOff, LampDesk, Library, RefreshCw, Sofa, Sparkles, Table, Trash2 } from "lucide-react"
 
 import { ThinkingGlyph } from "@/components/glyphs"
 import { FurnitureMorph } from "@/components/tool/furniture-morph"
+import { ModelDownloads, ModelViewer } from "@/components/tool/model-viewer"
 import { StoredAssetNotice } from "@/components/tool/tool-card"
 import { ToolComposer, type ToolComposerLabels, type ToolOption } from "@/components/tool/tool-composer"
 import { ToolDropzone } from "@/components/tool/tool-dropzone"
 import { ComposerDock, ToolShell } from "@/components/tool/tool-shell"
-import { sourceKey, thumbSourceKey } from "@/lib/blob-store"
+import { getBlob, modelKey, putLocalBlob, sourceKey, thumbSourceKey } from "@/lib/blob-store"
 import { SHAPE_LABEL } from "@/lib/furniture-wire"
-import { buildModelLocally, resolveShape, type FurnitureOption } from "@/lib/model-engine"
+import {
+  awaitModelTask,
+  buildModelLocally,
+  fetchModelFile,
+  MESHY_ENGINE,
+  MODEL_FORMATS,
+  ModelBuildError,
+  modelProviderStatus,
+  PREVIEW_ENGINE,
+  readGlbStats,
+  resolveShape,
+  submitModelTask,
+  type FurnitureOption,
+  type ModelTaskProgress,
+} from "@/lib/model-engine"
 import { saveSourceFile } from "@/lib/tool-jobs"
 import { useAttachments } from "@/lib/use-attachments"
 import { usePresence } from "@/lib/use-presence"
@@ -19,7 +34,7 @@ import { useStoredBlobUrl } from "@/lib/use-stored-blob"
 import { cn, plural } from "@/lib/utils"
 import { useModelStore } from "@/stores/model-store"
 import { ensureActiveProject, useActiveProject } from "@/stores/project-store"
-import type { Model3D } from "@/types"
+import type { Model3D, ModelFormat } from "@/types"
 
 const SHAPE_OPTIONS: ToolOption<FurnitureOption>[] = [
   { value: "auto", label: "Авто", icon: Sparkles },
@@ -38,7 +53,7 @@ const LABELS: ToolComposerLabels = {
   optionsTitle: "Предмет",
   optionsIcon: Box,
   footer:
-    "Модель строится по одному фото: предмет угадывается по кадру и описанию. Экспорт в GLB/OBJ появится с подключением провайдера.",
+    "Модель строится по одному фото за 1–5 минут. Готовую можно вращать, приближать и скачать: GLB — для Blender, Unreal и веба, FBX и OBJ (архив с материалом и текстурой) — для 3ds Max, ArchiCAD и AutoCAD.",
   inputPlaceholder: "Комментарий к модели…",
   submitLabel: "Создать 3D",
   batchNoun: ["фото", "фото", "фото"],
@@ -54,6 +69,10 @@ const formatCount = (value: number) => new Intl.NumberFormat("ru-RU").format(val
  * перетекают друг в друга: показывает, что здесь получают. После генерации
  * та же сцена показывает результат крупно, а остальные модели проекта —
  * лентой под ней.
+ *
+ * Модель считает Meshy (lib/model-engine → /api/models): задача ставится один
+ * раз, её id хранится в записи, и опрос переживает перезагрузку страницы —
+ * повторно кредиты не тратятся. Без ключа — каркас-заглушка из библиотеки.
  */
 export default function PhotoTo3DPage() {
   const activeProject = useActiveProject()
@@ -68,6 +87,11 @@ export default function PhotoTo3DPage() {
   const [note, setNote] = useState("")
   const [option, setOption] = useState<FurnitureOption>("auto")
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  // Ход задач Meshy живёт в состоянии страницы, а не в записи: иначе каждый
+  // процент уезжал бы синхронизацией на сервер.
+  const [progress, setProgress] = useState<Record<string, ModelTaskProgress>>({})
+  const building = useRef(new Set<string>())
+  const collecting = useRef(new Set<string>())
 
   const visible = activeProject ? models.filter((item) => item.projectId === activeProject.id) : []
   // Выбранная модель — либо та, что кликнули в ленте, либо самая свежая.
@@ -78,18 +102,75 @@ export default function PhotoTo3DPage() {
 
   const runBuild = useCallback(
     async (meta: Model3D) => {
+      if (building.current.has(meta.id)) return
+      building.current.add(meta.id)
       try {
-        const stats = await buildModelLocally(meta.shape)
-        update(meta.id, { status: "done", error: undefined, ...stats })
+        const provider = await modelProviderStatus()
+        if (!provider.configured) {
+          const stats = await buildModelLocally(meta.shape)
+          update(meta.id, { status: "done", error: undefined, engine: PREVIEW_ENGINE, ...stats })
+          return
+        }
+        let taskId = meta.taskId
+        if (!taskId) {
+          const photo = await getBlob(sourceKey(meta.id))
+          if (!photo) throw new ModelBuildError("Фото не найдено в хранилище — приложите его заново.", true)
+          taskId = await submitModelTask(photo)
+          update(meta.id, { taskId })
+        }
+        await awaitModelTask(taskId, (step) => setProgress((current) => ({ ...current, [meta.id]: step })))
+        const glb = await fetchModelFile(taskId, meta.id)
+        // Кэш браузера; при серверном хранении GLB уже лежит там под тем же ключом.
+        await putLocalBlob(modelKey(meta.id), glb).catch(() => undefined)
+        const stats = await readGlbStats(glb)
+        update(meta.id, { status: "done", error: undefined, engine: MESHY_ENGINE, edgeCount: undefined, modelBytes: glb.size, ...stats })
       } catch (error) {
         update(meta.id, {
           status: "error",
           error: error instanceof Error ? error.message : "Построение не удалось.",
+          ...(error instanceof ModelBuildError && error.taskLost ? { taskId: undefined } : {}),
         })
+      } finally {
+        building.current.delete(meta.id)
+        setProgress(({ [meta.id]: _finished, ...rest }) => rest)
       }
     },
     [update]
   )
+
+  // FBX и OBJ забираются фоном уже после того, как GLB закрутился во вьюере:
+  // Meshy хранит файлы 3 дня, поэтому сервер сразу перекладывает их к себе.
+  // Сбой сети оставляет `formats` пустым — попытка повторится при следующем
+  // открытии страницы; формат, которого у задачи нет, просто не попадает в список.
+  const collectFormats = useCallback(
+    async (meta: Model3D) => {
+      if (!meta.taskId || collecting.current.has(meta.id)) return
+      // Из набора запись не убирается: одна попытка на загрузку страницы.
+      collecting.current.add(meta.id)
+      const formats: ModelFormat[] = ["glb"]
+      for (const format of MODEL_FORMATS) {
+        if (format === "glb") continue
+        try {
+          const file = await fetchModelFile(meta.taskId, meta.id, format)
+          await putLocalBlob(modelKey(meta.id, format), file).catch(() => undefined)
+          formats.push(format)
+        } catch (error) {
+          if (!(error instanceof ModelBuildError && error.taskLost)) return
+        }
+      }
+      update(meta.id, { formats })
+    },
+    [update]
+  )
+
+  // Задача Meshy считается у провайдера: после перезагрузки (или на другом
+  // устройстве) опрос той же задачи просто продолжается.
+  useEffect(() => {
+    for (const model of models) {
+      if (model.status === "processing" && model.taskId) void runBuild(model)
+      else if (model.status === "done" && model.engine === MESHY_ENGINE && !model.formats) void collectFormats(model)
+    }
+  }, [models, runBuild, collectFormats])
 
   const startBuild = useCallback(
     async (file: File, buildNote: string, buildOption: FurnitureOption) => {
@@ -184,7 +265,12 @@ export default function PhotoTo3DPage() {
       ) : (
         <div className="flex flex-col gap-4">
           {selected ? (
-            <ModelStage model={selected} onRetry={() => retry(selected)} onDelete={() => deleteModel(selected)} />
+            <ModelStage
+              model={selected}
+              progress={progress[selected.id]}
+              onRetry={() => retry(selected)}
+              onDelete={() => deleteModel(selected)}
+            />
           ) : null}
 
           {visible.length > 1 ? (
@@ -208,24 +294,35 @@ export default function PhotoTo3DPage() {
 /** Большая сцена результата: модель крупно, фото-исходник в углу, подпись и действия. */
 function ModelStage({
   model,
+  progress,
   onRetry,
   onDelete,
 }: {
   model: Model3D
+  progress?: ModelTaskProgress
   onRetry: () => void
   onDelete: () => void
 }) {
   const sourceAsset = useStoredBlobUrl([thumbSourceKey(model.id), sourceKey(model.id)])
   const done = model.status === "done"
+  const real = done && model.engine === MESHY_ENGINE
 
   return (
     <figure className="card relative overflow-hidden" style={{ borderRadius: "var(--r-xl)" }}>
-      {/* Пока строится — библиотека перетекает («ищем форму»), готовая модель — одна и вращается. */}
-      <FurnitureMorph
-        key={done ? model.shape : "searching"}
-        shape={done ? model.shape : undefined}
-        className={cn("h-[52dvh] min-h-[360px] w-full", model.status === "error" && "opacity-30")}
-      />
+      {/* Пока строится — библиотека перетекает («ищем форму»); готовая модель Meshy —
+          настоящий GLB во вьюере, заглушка без ключа — один каркас, который вращается. */}
+      {real ? (
+        // Отступ снизу — под подпись: основание модели не уходит под плашку.
+        <div className="h-[52dvh] min-h-[360px] w-full pb-14 pt-2">
+          <ModelViewer key={model.id} modelId={model.id} className="h-full w-full" />
+        </div>
+      ) : (
+        <FurnitureMorph
+          key={done ? model.shape : "searching"}
+          shape={done ? model.shape : undefined}
+          className={cn("h-[52dvh] min-h-[360px] w-full", model.status === "error" && "opacity-30")}
+        />
+      )}
 
       {sourceAsset.url ? (
         <div
@@ -260,6 +357,7 @@ function ModelStage({
       )}
 
       <div className="absolute right-3 top-3 flex gap-1">
+        {real ? <ModelDownloads model={model} /> : null}
         {model.status !== "processing" ? (
           <button type="button" onClick={onRetry} aria-label="Построить заново" className="btn-icon h-9 w-9" style={{ background: "rgba(16,16,18,0.62)" }}>
             <RefreshCw className="h-4 w-4" strokeWidth={1.7} />
@@ -274,7 +372,13 @@ function ModelStage({
         <div className="fade-in pointer-events-none absolute inset-x-0 bottom-4 flex flex-col items-center gap-2">
           <ThinkingGlyph size={22} className="text-white/80" />
           <span className="text-[12px]" style={{ color: "var(--fg-3)" }}>
-            строим модель по фото…
+            {!model.taskId
+              ? "строим модель по фото…"
+              : progress && progress.progress > 0
+                ? `строим модель · ${progress.progress}%`
+                : progress && progress.queue > 0
+                  ? `в очереди · впереди ${progress.queue}`
+                  : "строим модель по фото · 1–5 минут"}
           </span>
         </div>
       ) : null}
@@ -293,18 +397,23 @@ function ModelStage({
 
       {done ? (
         <figcaption
-          className="rise-in absolute bottom-3 left-3 flex flex-col gap-0.5 rounded-[8px] px-2.5 py-1.5"
+          className="rise-in pointer-events-none absolute bottom-3 left-3 flex flex-col gap-0.5 rounded-[8px] px-2.5 py-1.5"
           style={{ background: "rgba(16,16,18,0.62)" }}
         >
           <span className="text-[13px]" style={{ color: "rgba(255,255,255,0.92)" }}>
             {SHAPE_LABEL[model.shape]}
             {model.note ? ` · ${model.note}` : ""}
           </span>
-          {model.vertexCount && model.edgeCount ? (
+          {real && model.vertexCount && model.faceCount ? (
             <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.55)" }}>
-              каркас · {formatCount(model.vertexCount)} {plural(model.vertexCount, ["вершина", "вершины", "вершин"])} ·{" "}
-              {formatCount(model.edgeCount)} {plural(model.edgeCount, ["ребро", "ребра", "рёбер"])} · экспорт GLB появится с
-              провайдером
+              GLB · {formatCount(model.vertexCount)} {plural(model.vertexCount, ["вершина", "вершины", "вершин"])} ·{" "}
+              {formatCount(model.faceCount)} {plural(model.faceCount, ["треугольник", "треугольника", "треугольников"])}
+              {model.modelBytes ? ` · ${(model.modelBytes / 1024 / 1024).toFixed(1)} МБ` : ""}
+            </span>
+          ) : !real && model.vertexCount && model.edgeCount ? (
+            <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.55)" }}>
+              каркас-заглушка · {formatCount(model.vertexCount)} {plural(model.vertexCount, ["вершина", "вершины", "вершин"])} ·{" "}
+              {formatCount(model.edgeCount)} {plural(model.edgeCount, ["ребро", "ребра", "рёбер"])} · ключ Meshy не задан
             </span>
           ) : null}
         </figcaption>

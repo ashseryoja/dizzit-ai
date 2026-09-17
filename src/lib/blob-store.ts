@@ -38,6 +38,12 @@ export const sourceKey = (id: string) => `${id}:source`
 export const resultKey = (id: string) => `${id}:result`
 export const thumbSourceKey = (id: string) => `${id}:thumb-source`
 export const thumbResultKey = (id: string) => `${id}:thumb-result`
+/**
+ * Файлы модели «Фото → 3D»: GLB — `${id}:model`, остальные — `${id}:model-fbx`,
+ * `${id}:model-obj`. На сервер их кладёт `/api/models/:taskId/file`, а не `putBlob`.
+ */
+export const modelKey = (id: string, format: "glb" | "fbx" | "obj" = "glb") =>
+  format === "glb" ? `${id}:model` : `${id}:model-${format}`
 
 /** Все ключи одной обработки — для каскадного удаления. */
 export function keysOf(id: string): string[] {

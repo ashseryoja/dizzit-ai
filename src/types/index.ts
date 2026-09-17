@@ -6,6 +6,7 @@
  */
 
 import type { RegionPayload } from "@/lib/render-regions"
+import type { AlbumCopy, AlbumFormat, AlbumTheme } from "@/shared/album"
 export interface Project {
   id: string
   title: string
@@ -270,9 +271,16 @@ export interface Material extends GalleryItemMeta {
 export type FurnitureShape = "chair" | "table" | "lamp" | "sofa" | "shelf"
 
 /**
- * 3D-модель по одному фото. Геометрия пока не хранится: локальный движок
- * подбирает форму из библиотеки каркасов, а провайдер, который отдаст
- * настоящий GLB, подключается отдельно (тогда появится result-блоб).
+ * Форматы модели: GLB — для вьюера в браузере, FBX и OBJ (ZIP с материалом и
+ * текстурой) — для 3ds Max, ArchiCAD, AutoCAD и остальных DCC.
+ */
+export type ModelFormat = "glb" | "fbx" | "obj"
+
+/**
+ * 3D-модель по одному фото. С ключом Meshy (`/api/models`) результат —
+ * настоящий GLB в блобе `${id}:model` (lib/blob-store), `engine` — `meshy`.
+ * Без ключа локальный движок подбирает форму из библиотеки каркасов
+ * (`engine: "preview"`), геометрия тогда не хранится.
  */
 export interface Model3D extends GalleryItemMeta {
   shape: FurnitureShape
@@ -280,5 +288,55 @@ export interface Model3D extends GalleryItemMeta {
   sourceWidth: number
   sourceHeight: number
   vertexCount?: number
+  /** Рёбра каркаса-заглушки. */
   edgeCount?: number
+  /** Треугольники настоящей модели. */
+  faceCount?: number
+  /** Размер GLB в байтах. */
+  modelBytes?: number
+  /**
+   * Задача Meshy. Пока она есть, «Повторить» и перезагрузка страницы
+   * продолжают опрос той же задачи, а не ставят (и не оплачивают) новую.
+   * Снимается, когда Meshy сам отказал.
+   */
+  taskId?: string
+  /**
+   * Форматы, уже переложенные к нам (Meshy хранит файлы 3 дня). Поля нет —
+   * FBX и OBJ ещё забираются; страница повторит попытку при следующем открытии.
+   */
+  formats?: ModelFormat[]
+}
+
+/* ── Альбом-презентация ── */
+
+/**
+ * Альбом собирается из того, что инструменты уже сделали в проекте: обложка
+ * со стилем студии, общие планы, сеты ракурсов, доска материалов. Запись
+ * хранит только состав и тексты — ссылки на записи инструментов по id, а
+ * картинки берутся по их обычным ключам (lib/blob-store) в момент сборки
+ * PDF (`/api/album`). Своих блобов у альбома нет.
+ */
+export interface Album {
+  id: string
+  projectId: string
+  title: string
+  subtitle: string
+  format: AlbumFormat
+  theme: AlbumTheme
+  /** Запись обложки: перенос стиля или улучшение; пусто — обложка текстовая. */
+  coverId?: string
+  /** Общие планы — id улучшений и переносов стиля в порядке показа. */
+  overviewIds: string[]
+  /** Разворот «до / после» у переносов стиля. */
+  showBefore: boolean
+  viewSetIds: string[]
+  materialIds: string[]
+  /** Абзац концепции, если пользователь правил его руками; иначе берётся из `copy`. */
+  concept?: string
+  /** Тексты от ИИ; пересчитываются по кнопке, не при каждом изменении состава. */
+  copy?: AlbumCopy
+  /** Модель, писавшая тексты — для подписи. */
+  copyModel?: string
+  createdAt: string
+  updatedAt: string
 }

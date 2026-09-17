@@ -77,6 +77,20 @@
       ],
       "autoPort": true,
       "port": 3015
+    },
+    {
+      "name": "dizzit-ai-album-check",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "NEXT_DIST_DIR=.next-preview",
+        "APP_ACCESS_PASSWORD=album-check",
+        "AUTH_SECRET=album-check-local-secret-not-for-prod",
+        "npx",
+        "next",
+        "dev"
+      ],
+      "autoPort": true,
+      "port": 3016
     }
   ]
 }

@@ -23,7 +23,7 @@ import { getLocalBlob } from "@/lib/blob-store"
  * Ключи блобов на сервере те же, что в IndexedDB (`${id}:${role}`).
  */
 
-export type Collection = "projects" | "enhancements" | "restyles" | "views" | "materials" | "models"
+export type Collection = "projects" | "enhancements" | "restyles" | "views" | "materials" | "models" | "albums"
 
 export interface ServerStatus {
   authConfigured: boolean

@@ -3,15 +3,17 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
 
-import { deleteBlobs, keysOf } from "@/lib/blob-store"
+import { deleteBlobs, keysOf, modelKey } from "@/lib/blob-store"
 import { attachServerSync } from "@/lib/server-sync"
 import type { GenerationStatus, Model3D } from "@/types"
 
 /**
  * Модели «Фото → 3D». Тот же паттерн, что enhance-store: метаданные в
- * localStorage (ключ `dizzit-models`, попадает в резервную копию), фото —
- * в IndexedDB. Удаление каскадно сносит и блобы.
+ * localStorage (ключ `dizzit-models`, попадает в резервную копию), фото и
+ * GLB — в IndexedDB. Удаление каскадно сносит и блобы.
  */
+const blobKeys = (id: string) => [...keysOf(id), modelKey(id), modelKey(id, "fbx"), modelKey(id, "obj")]
+
 interface ModelState {
   models: Model3D[]
   hydrated: boolean
@@ -41,13 +43,13 @@ export const useModelStore = create<ModelState>()(
 
       remove: (id) => {
         set((state) => ({ models: state.models.filter((item) => item.id !== id) }))
-        void deleteBlobs(keysOf(id))
+        void deleteBlobs(blobKeys(id))
       },
 
       removeByProject: (projectId) => {
         const doomed = get().models.filter((item) => item.projectId === projectId)
         set((state) => ({ models: state.models.filter((item) => item.projectId !== projectId) }))
-        void deleteBlobs(doomed.flatMap((item) => keysOf(item.id)))
+        void deleteBlobs(doomed.flatMap((item) => blobKeys(item.id)))
       },
     }),
     {
@@ -56,13 +58,15 @@ export const useModelStore = create<ModelState>()(
       onRehydrateStorage: () => (state) => {
         state?.setHydrated()
         // Застрявшее «processing» после перезагрузки — ошибка с «Повторить».
+        // Кроме задач Meshy: они считаются на стороне провайдера, страница
+        // продолжит опрос той же задачи (см. photo-3d/page.tsx).
         // localStorage синхронный: этот колбэк срабатывает ещё внутри create(),
         // когда константа стора не присвоена. Правку откладываем на микрозадачу —
         // иначе ReferenceError глотается persist и правка молча не применяется.
         queueMicrotask(() => {
           useModelStore.setState((current) => ({
             models: current.models.map((item) =>
-              item.status === "processing"
+              item.status === "processing" && !item.taskId
                 ? {
                     ...item,
                     status: "error" as GenerationStatus,
@@ -82,5 +86,5 @@ attachServerSync(useModelStore, {
   select: (state) => state.models,
   apply: (models) => useModelStore.setState({ models }),
   hydrated: (state) => state.hydrated,
-  onRemovedLocally: (item) => void deleteBlobs(keysOf(item.id)),
+  onRemovedLocally: (item) => void deleteBlobs(blobKeys(item.id)),
 })

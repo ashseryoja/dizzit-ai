@@ -1,14 +1,35 @@
 /**
- * Локальный движок «Фото → 3D»: настоящей реконструкции здесь нет, форма
- * подбирается из каркасной библиотеки по выбору пользователя, описанию и
- * имени файла. Провайдер, который отдаст GLB, подключается отдельно —
- * интерфейс страницы к этому готов (status/processing/error как везде).
+ * Движок «Фото → 3D».
+ *
+ * С ключом Meshy (`/api/models`, серверный прокси — `src/server/meshy.ts`)
+ * модель настоящая: фото уходит задачей, страница опрашивает её готовность и
+ * забирает GLB. Ключа в браузере нет. Без ключа работает локальная заглушка:
+ * форма подбирается из каркасной библиотеки по выбору пользователя, описанию и
+ * имени файла — главная кнопка не остаётся без результата, а запись помечается
+ * `engine: "preview"`.
  */
 
 import { SHAPES, wireStats } from "@/lib/furniture-wire"
-import type { FurnitureShape } from "@/types"
+import { PREVIEW_ENGINE, prepareReference } from "@/lib/image-generation"
+import type { FurnitureShape, ModelFormat } from "@/types"
 
 export type FurnitureOption = "auto" | FurnitureShape
+
+/**
+ * Форматы модели: GLB крутится во вьюере сразу по готовности, FBX и OBJ
+ * (ZIP с материалом и текстурой) докачиваются фоном — для 3ds Max, ArchiCAD,
+ * AutoCAD.
+ */
+export const MODEL_FORMATS: readonly ModelFormat[] = ["glb", "fbx", "obj"]
+export const MODEL_FILE: Record<ModelFormat, { label: string; extension: string; mime: string }> = {
+  glb: { label: "GLB", extension: "glb", mime: "model/gltf-binary" },
+  fbx: { label: "FBX", extension: "fbx", mime: "application/octet-stream" },
+  obj: { label: "OBJ", extension: "obj.zip", mime: "application/zip" },
+}
+
+/** Метка записи, посчитанной Meshy. */
+export const MESHY_ENGINE = "meshy"
+export { PREVIEW_ENGINE }
 
 const KEYWORDS: Record<FurnitureShape, RegExp> = {
   chair: /стул|кресл|табурет|chair|stool|seat/i,
@@ -37,4 +58,191 @@ export interface ModelBuildResult {
 export async function buildModelLocally(shape: FurnitureShape): Promise<ModelBuildResult> {
   await new Promise((resolve) => setTimeout(resolve, 2200 + Math.random() * 900))
   return wireStats(shape)
+}
+
+/* ── Meshy ──────────────────────────────────────────────────────────── */
+
+/**
+ * Ошибка построения с текстом для карточки. `taskLost` — задача у провайдера
+ * закончилась неудачей или пропала: «Повторить» должен ставить новую, а не
+ * опрашивать прежнюю.
+ */
+export class ModelBuildError extends Error {
+  readonly taskLost: boolean
+  constructor(message: string, taskLost = false) {
+    super(message)
+    this.name = "ModelBuildError"
+    this.taskLost = taskLost
+  }
+}
+
+export interface ModelProviderStatus {
+  configured: boolean
+  model: string
+}
+
+export interface ModelTaskProgress {
+  /** 0…100. */
+  progress: number
+  /** Задач впереди в очереди Meshy. */
+  queue: number
+}
+
+const STATUS_TTL_MS = 60_000
+const POLL_INTERVAL_MS = 4_000
+/** Meshy считает 1–5 минут; очередь в часы пик добавляет ещё. */
+const POLL_LIMIT_MS = 25 * 60_000
+/** Сколько сбоев сети подряд терпит опрос, прежде чем сдаться. */
+const POLL_MAX_FAILURES = 6
+
+let statusCache: { value: ModelProviderStatus; at: number } | null = null
+let statusInFlight: Promise<ModelProviderStatus> | null = null
+
+/** Настроен ли Meshy. Кэш на минуту. */
+export function modelProviderStatus(force = false): Promise<ModelProviderStatus> {
+  if (!force && statusCache && Date.now() - statusCache.at < STATUS_TTL_MS) return Promise.resolve(statusCache.value)
+  if (statusInFlight) return statusInFlight
+  statusInFlight = fetch("/api/models", { cache: "no-store" })
+    .then(async (response) => {
+      if (!response.ok) throw new Error(`status ${response.status}`)
+      const json = (await response.json()) as Partial<ModelProviderStatus>
+      return { configured: Boolean(json.configured), model: String(json.model ?? "") }
+    })
+    .catch(() => ({ configured: false, model: "" }))
+    .then((value) => {
+      statusCache = { value, at: Date.now() }
+      statusInFlight = null
+      return value
+    })
+  return statusInFlight
+}
+
+async function problemOf(response: Response, fallback: string): Promise<{ message: string; retryable: boolean }> {
+  try {
+    const json = (await response.json()) as { message?: string; retryable?: boolean }
+    return { message: json.message || fallback, retryable: json.retryable !== false }
+  } catch {
+    return { message: fallback, retryable: true }
+  }
+}
+
+/** Поставить задачу Meshy по фото. Кредиты списываются в этот момент. */
+export async function submitModelTask(photo: Blob, signal?: AbortSignal): Promise<string> {
+  const form = new FormData()
+  form.append("image", await prepareReference(photo), "photo")
+  let response: Response
+  try {
+    response = await fetch("/api/models", { method: "POST", body: form, signal })
+  } catch {
+    throw new ModelBuildError("Нет связи с сервером — задача не поставлена.", true)
+  }
+  if (!response.ok) throw new ModelBuildError((await problemOf(response, "Не удалось поставить задачу.")).message, true)
+  const { taskId } = (await response.json()) as { taskId?: string }
+  if (!taskId) throw new ModelBuildError("Сервер не вернул id задачи.", true)
+  return taskId
+}
+
+const sleep = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(resolve, ms)
+    signal?.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer)
+        reject(new DOMException("Aborted", "AbortError"))
+      },
+      { once: true }
+    )
+  })
+
+/** Ждать готовности задачи. Сбой сети задачу не теряет: она считается у Meshy. */
+export async function awaitModelTask(
+  taskId: string,
+  onProgress?: (progress: ModelTaskProgress) => void,
+  signal?: AbortSignal
+): Promise<void> {
+  const startedAt = Date.now()
+  let failures = 0
+  while (Date.now() - startedAt < POLL_LIMIT_MS) {
+    let response: Response | null = null
+    try {
+      response = await fetch(`/api/models/${encodeURIComponent(taskId)}`, { cache: "no-store", signal })
+    } catch (error) {
+      if (signal?.aborted) throw error
+    }
+    if (response?.ok) {
+      failures = 0
+      const task = (await response.json()) as { status: string; progress?: number; queue?: number; error?: string | null }
+      if (task.status === "succeeded") return
+      if (task.status === "failed") throw new ModelBuildError(task.error || "Meshy не смог построить модель по этому фото.", true)
+      onProgress?.({ progress: task.progress ?? 0, queue: task.queue ?? 0 })
+    } else {
+      const problem = response ? await problemOf(response, "Не удалось узнать статус задачи.") : null
+      if (problem && !problem.retryable) throw new ModelBuildError(problem.message, response?.status === 404)
+      if (response?.status === 404) throw new ModelBuildError(problem?.message ?? "Задача не найдена.", true)
+      failures += 1
+      if (failures >= POLL_MAX_FAILURES) {
+        throw new ModelBuildError(`${problem?.message ?? "Нет связи с сервером."} Задача продолжает считаться — нажмите «Повторить» позже.`)
+      }
+    }
+    await sleep(POLL_INTERVAL_MS, signal)
+  }
+  throw new ModelBuildError("Meshy считает дольше обычного. Задача не потеряна — нажмите «Повторить» позже.")
+}
+
+/**
+ * Файл готовой задачи; сервер заодно кладёт его в своё хранилище под ключом
+ * `modelKey(recordId, format)`. `taskLost` у ошибки — такого формата у задачи нет.
+ */
+export async function fetchModelFile(taskId: string, recordId: string, format: ModelFormat = "glb", signal?: AbortSignal): Promise<Blob> {
+  let response: Response
+  try {
+    const query = new URLSearchParams({ record: recordId, format })
+    response = await fetch(`/api/models/${encodeURIComponent(taskId)}/file?${query}`, { cache: "no-store", signal })
+  } catch (error) {
+    if (signal?.aborted) throw error
+    throw new ModelBuildError("Модель готова, но скачать её не удалось — нажмите «Повторить».")
+  }
+  if (!response.ok) {
+    const problem = await problemOf(response, "Модель готова, но скачать её не удалось.")
+    throw new ModelBuildError(problem.message, response.status === 404)
+  }
+  const bytes = await response.blob()
+  return new Blob([bytes], { type: MODEL_FILE[format].mime })
+}
+
+export interface GlbStats {
+  vertexCount: number
+  faceCount: number
+}
+
+/**
+ * Вершины и треугольники из JSON-чанка GLB: суммы по примитивам мешей.
+ * Нужны только для подписи — при любой странности отдаём нули.
+ */
+export async function readGlbStats(glb: Blob): Promise<GlbStats> {
+  try {
+    const header = new DataView(await glb.slice(0, 20).arrayBuffer())
+    // magic «glTF», версия, длина; затем чанк: длина + тип «JSON».
+    if (header.getUint32(0, true) !== 0x46546c67 || header.getUint32(16, true) !== 0x4e4f534a) return { vertexCount: 0, faceCount: 0 }
+    const jsonLength = header.getUint32(12, true)
+    const gltf = JSON.parse(await glb.slice(20, 20 + jsonLength).text()) as {
+      accessors?: { count?: number }[]
+      meshes?: { primitives?: { attributes?: { POSITION?: number }; indices?: number; mode?: number }[] }[]
+    }
+    let vertexCount = 0
+    let faceCount = 0
+    for (const mesh of gltf.meshes ?? []) {
+      for (const primitive of mesh.primitives ?? []) {
+        const vertices = gltf.accessors?.[primitive.attributes?.POSITION ?? -1]?.count ?? 0
+        vertexCount += vertices
+        if ((primitive.mode ?? 4) !== 4) continue
+        const indices = primitive.indices === undefined ? vertices : (gltf.accessors?.[primitive.indices]?.count ?? 0)
+        faceCount += Math.floor(indices / 3)
+      }
+    }
+    return { vertexCount, faceCount }
+  } catch {
+    return { vertexCount: 0, faceCount: 0 }
+  }
 }

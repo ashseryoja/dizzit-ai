@@ -2013,3 +2013,265 @@ select.field option { background: var(--bg-overlay); color: var(--fg-1); }
   text-overflow: ellipsis;
 }
 .tray-move-item:hover { color: var(--fg-1); background: var(--hover-2); }
+
+/* ── Альбом-презентация ─────────────────────────────────────────────────
+   Шаги настройки (AlbumSection), выбор состава миниатюрами (AlbumPicker),
+   панель сборки со структурой PDF (AlbumBuildPanel), превью (AlbumPreview),
+   полоса сборки на узких экранах (AlbumBuildBar) и глиф темы
+   (AlbumThemePicker). */
+.album-step { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 20px; }
+.album-step-no {
+  display: flex;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  font-family: var(--font-display);
+  font-size: 12px;
+  color: var(--fg-2);
+}
+
+.album-pick { display: flex; flex-direction: column; gap: var(--space-4); }
+.album-pick-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); }
+.album-pick-title { font-size: var(--fs-body-sm); color: var(--fg-1); }
+.album-pick .chip.is-on { color: var(--fg-1); border-color: var(--line-strong); }
+.album-pick-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(124px, 1fr));
+  gap: 10px;
+}
+.album-pick-grid.is-square { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
+.album-pick-tile {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  background: var(--bg-raised);
+  padding: 0;
+  cursor: pointer;
+  opacity: 0.5;
+  transition: opacity 160ms var(--ease-out), border-color 160ms var(--ease-out), box-shadow 160ms var(--ease-out);
+}
+.album-pick-grid.is-square .album-pick-tile { aspect-ratio: 1 / 1; }
+.album-pick-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.album-pick-tile:hover { opacity: 0.8; border-color: var(--line-strong); }
+.album-pick-tile.is-selected { opacity: 1; border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.album-pick-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.album-pick-tile.is-none { display: flex; align-items: center; justify-content: center; opacity: 0.7; }
+.album-pick-tile.is-none.is-selected { opacity: 1; }
+.album-pick-none { padding: 0 8px; font-size: var(--fs-caption); color: var(--fg-2); text-align: center; }
+.album-pick-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-overlay);
+  color: transparent;
+  font-family: var(--font-display);
+  font-size: 10.5px;
+  line-height: 1;
+  transition: background 160ms var(--ease-out), color 160ms var(--ease-out);
+}
+.album-pick-tile.is-selected .album-pick-badge { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.album-pick-label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 14px 8px 6px;
+  font-size: var(--fs-micro);
+  line-height: 1.2;
+  text-align: left;
+  color: #fff;
+  background: rgba(16, 16, 18, 0.72);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.album-pick-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: var(--fs-caption);
+  color: var(--fg-3);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  white-space: nowrap;
+}
+.album-pick-link:hover { color: var(--fg-1); }
+
+/* Панель сборки: структура будущего PDF строками «номер · раздел · страницы». */
+.album-build { display: flex; flex-direction: column; gap: var(--space-5); }
+.album-build-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); }
+.album-outline { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.album-outline-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: baseline;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+}
+.album-outline-no { font-family: var(--font-display); font-size: 10px; color: var(--fg-4); }
+.album-outline-title { display: block; font-size: var(--fs-body-sm); color: var(--fg-1); }
+.album-outline-detail {
+  display: block;
+  margin-top: 1px;
+  font-size: var(--fs-caption);
+  color: var(--fg-4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.album-outline-pages { font-size: var(--fs-caption); color: var(--fg-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.album-build-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.album-build-actions .btn-primary { flex: 1 1 auto; height: 44px; }
+.album-build-note { margin: -6px 0 0; font-size: var(--fs-caption); line-height: 1.5; color: var(--fg-4); }
+.album-build-note.is-error { color: var(--danger); }
+.album-build-note.is-stale { color: var(--fg-2); }
+
+.album-progress {
+  display: block;
+  width: 100%;
+  max-width: 220px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--line-strong);
+  overflow: hidden;
+}
+.album-progress-fill { display: block; height: 100%; background: var(--accent); transition: width 240ms var(--ease-out); }
+.album-progress.is-busy .album-progress-fill { width: 40% !important; animation: album-progress-slide 1.1s var(--ease-std) infinite; }
+@keyframes album-progress-slide {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(250%); }
+}
+
+.album-preview {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+  background: var(--bg-raised);
+}
+.album-preview-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: var(--bg-raised); transition: opacity 200ms var(--ease-std); }
+.album-preview.is-stale .album-preview-frame { opacity: 0.55; }
+.album-preview-veil {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  text-align: center;
+}
+.album-preview-veil.is-over { background: color-mix(in srgb, var(--bg-surface) 82%, transparent); }
+.album-preview-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-overlay);
+  font-size: var(--fs-micro);
+  color: var(--fg-1);
+}
+
+/* Полоса сборки в ComposerDock на узких экранах — поверхность, как у композера. */
+.album-build-bar {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  max-width: 880px;
+  padding: 10px 10px 10px 16px;
+  border-radius: var(--r-lg);
+  background: var(--bg-surface);
+  border: 1px solid var(--line);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+}
+
+/* Глиф темы в выборе оформления: тёмный или светлый лист с «строкой» текста. */
+.album-theme-glyph {
+  position: relative;
+  display: block;
+  flex: none;
+  width: 30px;
+  height: 22px;
+  border-radius: 4px;
+  border: 1.5px solid currentColor;
+  opacity: 0.55;
+  transition: opacity var(--dur-fast) var(--ease-std), border-color var(--dur-fast) var(--ease-std);
+}
+.album-theme-glyph.is-dark { background: #1e1e21; }
+.album-theme-glyph.is-light { background: #f4f4f5; }
+.album-theme-glyph::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  right: 12px;
+  bottom: 5px;
+  height: 2px;
+  border-radius: 1px;
+}
+.album-theme-glyph.is-dark::after { background: #ffffff; }
+.album-theme-glyph.is-light::after { background: #1e1e21; }
+.seg-item.aspect-choice:hover .album-theme-glyph { opacity: 0.85; }
+.seg-item.aspect-choice.is-active .album-theme-glyph { opacity: 1; border-color: var(--accent); }
+
+/* Вьюер настоящей 3D-модели («Фото → 3D», components/tool/model-viewer.tsx).
+   Фон — поверхность карточки; постер и полоса загрузки библиотеки не нужны:
+   своё состояние ожидания показывает StoredAssetNotice. */
+.model-viewer {
+  background: transparent;
+  --poster-color: transparent;
+  --progress-bar-color: transparent;
+  --progress-bar-height: 0px;
+  cursor: grab;
+}
+.model-viewer:active { cursor: grabbing; }
+
+/* Скачивание модели по форматам (ModelDownloads): плашка «↓ GLB · FBX · OBJ»
+   в ряду действий сцены. Формат, который ещё докачивается, приглушён. */
+.model-downloads {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 36px;
+  padding: 0 4px 0 10px;
+  border-radius: var(--r-md);
+  background: rgba(16, 16, 18, 0.62);
+  color: rgba(255, 255, 255, 0.6);
+}
+.model-downloads button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 7px;
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.92);
+  transition: background var(--dur-fast) var(--ease-std), opacity var(--dur-fast) var(--ease-std);
+}
+.model-downloads button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.12); }
+.model-downloads button:disabled { opacity: 0.45; cursor: default; }

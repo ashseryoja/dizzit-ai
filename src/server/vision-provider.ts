@@ -30,7 +30,8 @@ export interface VisionImage {
 
 export interface VisionRequest {
   prompt: string
-  image: VisionImage
+  /** Без картинки — обычный текстовый запрос к той же чат-модели (тексты альбома без обложки). */
+  image?: VisionImage
   /** Потолок ответа в токенах: инвентарь короткий, длинный ответ нам вреден. */
   maxTokens: number
   signal?: AbortSignal
@@ -158,13 +159,15 @@ export class OpenAiCompatibleVisionProvider implements VisionProvider {
       messages: [
         {
           role: "user",
-          content: [
-            { type: "text", text: input.prompt },
-            {
-              type: "image_url",
-              image_url: { url: `data:${input.image.mimeType};base64,${toBase64(input.image.bytes)}`, detail: "high" },
-            },
-          ],
+          content: input.image
+            ? [
+                { type: "text", text: input.prompt },
+                {
+                  type: "image_url",
+                  image_url: { url: `data:${input.image.mimeType};base64,${toBase64(input.image.bytes)}`, detail: "high" },
+                },
+              ]
+            : input.prompt,
         },
       ],
     }
