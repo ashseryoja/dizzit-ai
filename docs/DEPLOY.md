@@ -141,6 +141,13 @@ Vercel → Project → Settings → Environment Variables (**без префик
 Как это работает (`src/server/meshy.ts`, `src/app/api/models/*`,
 `src/lib/model-engine.ts`):
 
+0. Настройки генерации выбирает пользователь в панели над композером
+   (`ModelDock`), контракт — `src/shared/model3d.ts`: модель (Meshy 7 / 6 /
+   6 Lite), детализация (стандарт 50 000 / ультра 150 000 треугольников),
+   текстура, PBR-карты, улучшение фото, мульти-вид (до трёх ракурсов, только
+   Meshy 7 — задача уходит в Multi-Image to 3D, в записи `taskKind: "multi"`).
+   Проверенные цены API: Meshy 7/6 — 20 кредитов без текстуры и 30 с ней,
+   «Ультра» +5, Lite — 5. Lite отклоняет сам параметр `image_enhancement`.
 1. `POST /api/models` — фото (≤ 2048 px, JPEG/PNG) уходит в Meshy Image to 3D
    задачей: текстура, ремеш до 50 000 треугольников, три формата — GLB
    (вьюер в браузере), FBX и OBJ (3ds Max, ArchiCAD, AutoCAD). Число форматов

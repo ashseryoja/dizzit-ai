@@ -35,9 +35,12 @@ export const serverConfig = {
   get meshyBaseUrl(): string {
     return (env("MESHY_API_BASE_URL") || "https://api.meshy.ai/openapi/v1").replace(/\/+$/, "")
   },
-  /** Модель Meshy: `latest` (по умолчанию), `meshy-7`, `meshy-6`, `meshy-6-lite`. */
+  /**
+   * Что уходит провайдеру, когда пользователь выбрал флагман (`Meshy 7`):
+   * `meshy-7` по умолчанию; `latest` — всегда самая новая модель Meshy.
+   */
   get meshyModel(): string {
-    return env("MESHY_AI_MODEL") || "latest"
+    return env("MESHY_AI_MODEL") || "meshy-7"
   },
   /**
    * Каталог для картинок на диске — замена Blob в локальной разработке.

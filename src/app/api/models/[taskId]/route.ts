@@ -21,9 +21,11 @@ export async function GET(request: Request, context: { params: Promise<{ taskId:
   }
   const { taskId } = await context.params
   if (!TASK_ID.test(taskId)) return problem(400, { error: "bad_request", message: "Недопустимый id задачи." })
+  // `kind=multi` — задача из нескольких ракурсов: у Meshy это отдельный эндпоинт.
+  const kind = new URL(request.url).searchParams.get("kind") === "multi" ? "multi" : "image"
 
   try {
-    const task = await getMeshyTask(taskId, request.signal)
+    const task = await getMeshyTask(taskId, kind, request.signal)
     return NextResponse.json(
       { status: task.status, progress: task.progress, queue: task.queue, error: task.error, credits: task.consumedCredits },
       { headers: { "Cache-Control": "no-store" } }

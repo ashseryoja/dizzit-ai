@@ -3,8 +3,9 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
 
-import { deleteBlobs, keysOf, modelKey } from "@/lib/blob-store"
+import { deleteBlobs, keysOf, modelKey, viewKey } from "@/lib/blob-store"
 import { attachServerSync } from "@/lib/server-sync"
+import { DEFAULT_MODEL_SETTINGS, MODEL_VIEW_ROLES, normalizeModelSettings, type ModelSettings } from "@/shared/model3d"
 import type { GenerationStatus, Model3D } from "@/types"
 
 /**
@@ -12,11 +13,23 @@ import type { GenerationStatus, Model3D } from "@/types"
  * localStorage (ключ `dizzit-models`, попадает в резервную копию), фото и
  * GLB — в IndexedDB. Удаление каскадно сносит и блобы.
  */
-const blobKeys = (id: string) => [...keysOf(id), modelKey(id), modelKey(id, "fbx"), modelKey(id, "obj")]
+const blobKeys = (id: string) => [
+  ...keysOf(id),
+  modelKey(id),
+  modelKey(id, "fbx"),
+  modelKey(id, "obj"),
+  ...MODEL_VIEW_ROLES.map((role) => viewKey(id, role)),
+]
 
 interface ModelState {
   models: Model3D[]
+  /** Последние настройки панели генерации — чтобы не выставлять их заново. Живут только в этом браузере. */
+  settings: ModelSettings
+  multiView: boolean
   hydrated: boolean
+
+  setSettings: (settings: ModelSettings) => void
+  setMultiView: (on: boolean) => void
 
   setHydrated: () => void
   add: (model: Model3D) => void
@@ -29,7 +42,12 @@ export const useModelStore = create<ModelState>()(
   persist(
     (set, get) => ({
       models: [],
+      settings: DEFAULT_MODEL_SETTINGS,
+      multiView: false,
       hydrated: false,
+
+      setSettings: (settings) => set({ settings: normalizeModelSettings(settings) }),
+      setMultiView: (multiView) => set({ multiView }),
 
       setHydrated: () => set({ hydrated: true }),
 
@@ -54,7 +72,11 @@ export const useModelStore = create<ModelState>()(
     }),
     {
       name: "dizzit-models",
-      partialize: (state) => ({ models: state.models }),
+      partialize: (state) => ({ models: state.models, settings: state.settings, multiView: state.multiView }),
+      merge: (persisted, current) => {
+        const saved = (persisted ?? {}) as Partial<ModelState>
+        return { ...current, ...saved, settings: normalizeModelSettings(saved.settings) }
+      },
       onRehydrateStorage: () => (state) => {
         state?.setHydrated()
         // Застрявшее «processing» после перезагрузки — ошибка с «Повторить».

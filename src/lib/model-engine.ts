@@ -11,6 +11,7 @@
 
 import { SHAPES, wireStats } from "@/lib/furniture-wire"
 import { PREVIEW_ENGINE, prepareReference } from "@/lib/image-generation"
+import type { ModelSettings, ModelTaskKind } from "@/shared/model3d"
 import type { FurnitureShape, ModelFormat } from "@/types"
 
 export type FurnitureOption = "auto" | FurnitureShape
@@ -126,10 +127,23 @@ async function problemOf(response: Response, fallback: string): Promise<{ messag
   }
 }
 
-/** Поставить задачу Meshy по фото. Кредиты списываются в этот момент. */
-export async function submitModelTask(photo: Blob, signal?: AbortSignal): Promise<string> {
+/** Длинная сторона фото: несколько ракурсов ужимаются сильнее — тело запроса на Vercel не больше 4,5 МБ. */
+const SINGLE_PHOTO_SIDE = 2048
+const MULTI_PHOTO_SIDE = 1536
+
+/**
+ * Поставить задачу Meshy. `photos` — главный вид первым, дальше ракурсы.
+ * Кредиты списываются в этот момент.
+ */
+export async function submitModelTask(
+  photos: Blob[],
+  settings: ModelSettings,
+  signal?: AbortSignal
+): Promise<{ taskId: string; kind: ModelTaskKind }> {
   const form = new FormData()
-  form.append("image", await prepareReference(photo), "photo")
+  const side = photos.length > 1 ? MULTI_PHOTO_SIDE : SINGLE_PHOTO_SIDE
+  for (const photo of photos) form.append("image", await prepareReference(photo, side), "photo")
+  form.append("settings", JSON.stringify(settings))
   let response: Response
   try {
     response = await fetch("/api/models", { method: "POST", body: form, signal })
@@ -137,9 +151,9 @@ export async function submitModelTask(photo: Blob, signal?: AbortSignal): Promis
     throw new ModelBuildError("Нет связи с сервером — задача не поставлена.", true)
   }
   if (!response.ok) throw new ModelBuildError((await problemOf(response, "Не удалось поставить задачу.")).message, true)
-  const { taskId } = (await response.json()) as { taskId?: string }
+  const { taskId, kind } = (await response.json()) as { taskId?: string; kind?: ModelTaskKind }
   if (!taskId) throw new ModelBuildError("Сервер не вернул id задачи.", true)
-  return taskId
+  return { taskId, kind: kind === "multi" ? "multi" : "image" }
 }
 
 const sleep = (ms: number, signal?: AbortSignal) =>
@@ -158,22 +172,29 @@ const sleep = (ms: number, signal?: AbortSignal) =>
 /** Ждать готовности задачи. Сбой сети задачу не теряет: она считается у Meshy. */
 export async function awaitModelTask(
   taskId: string,
+  kind: ModelTaskKind,
   onProgress?: (progress: ModelTaskProgress) => void,
   signal?: AbortSignal
-): Promise<void> {
+): Promise<{ credits: number }> {
   const startedAt = Date.now()
   let failures = 0
   while (Date.now() - startedAt < POLL_LIMIT_MS) {
     let response: Response | null = null
     try {
-      response = await fetch(`/api/models/${encodeURIComponent(taskId)}`, { cache: "no-store", signal })
+      response = await fetch(`/api/models/${encodeURIComponent(taskId)}?kind=${kind}`, { cache: "no-store", signal })
     } catch (error) {
       if (signal?.aborted) throw error
     }
     if (response?.ok) {
       failures = 0
-      const task = (await response.json()) as { status: string; progress?: number; queue?: number; error?: string | null }
-      if (task.status === "succeeded") return
+      const task = (await response.json()) as {
+        status: string
+        progress?: number
+        queue?: number
+        error?: string | null
+        credits?: number
+      }
+      if (task.status === "succeeded") return { credits: task.credits ?? 0 }
       if (task.status === "failed") throw new ModelBuildError(task.error || "Meshy не смог построить модель по этому фото.", true)
       onProgress?.({ progress: task.progress ?? 0, queue: task.queue ?? 0 })
     } else {
@@ -194,10 +215,17 @@ export async function awaitModelTask(
  * Файл готовой задачи; сервер заодно кладёт его в своё хранилище под ключом
  * `modelKey(recordId, format)`. `taskLost` у ошибки — такого формата у задачи нет.
  */
-export async function fetchModelFile(taskId: string, recordId: string, format: ModelFormat = "glb", signal?: AbortSignal): Promise<Blob> {
+export async function fetchModelFile(
+  taskId: string,
+  recordId: string,
+  kind: ModelTaskKind,
+  /** `thumb` — превью модели для библиотеки (кладётся под `thumbResultKey`). */
+  format: ModelFormat | "thumb" = "glb",
+  signal?: AbortSignal
+): Promise<Blob> {
   let response: Response
   try {
-    const query = new URLSearchParams({ record: recordId, format })
+    const query = new URLSearchParams({ record: recordId, format, kind })
     response = await fetch(`/api/models/${encodeURIComponent(taskId)}/file?${query}`, { cache: "no-store", signal })
   } catch (error) {
     if (signal?.aborted) throw error
@@ -208,7 +236,7 @@ export async function fetchModelFile(taskId: string, recordId: string, format: M
     throw new ModelBuildError(problem.message, response.status === 404)
   }
   const bytes = await response.blob()
-  return new Blob([bytes], { type: MODEL_FILE[format].mime })
+  return format === "thumb" ? bytes : new Blob([bytes], { type: MODEL_FILE[format].mime })
 }
 
 export interface GlbStats {

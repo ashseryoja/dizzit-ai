@@ -44,6 +44,8 @@ export const thumbResultKey = (id: string) => `${id}:thumb-result`
  */
 export const modelKey = (id: string, format: "glb" | "fbx" | "obj" = "glb") =>
   format === "glb" ? `${id}:model` : `${id}:model-${format}`
+/** Дополнительный ракурс предмета к главному фото («Фото → 3D», мульти-вид). */
+export const viewKey = (id: string, role: "left" | "back" | "right") => `${id}:view-${role}`
 
 /** Все ключи одной обработки — для каскадного удаления. */
 export function keysOf(id: string): string[] {

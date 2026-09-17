@@ -1,17 +1,16 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Armchair, Box, ImageOff, LampDesk, Library, RefreshCw, Sofa, Sparkles, Table, Trash2 } from "lucide-react"
+import { Box } from "lucide-react"
 
-import { ThinkingGlyph } from "@/components/glyphs"
 import { FurnitureMorph } from "@/components/tool/furniture-morph"
-import { ModelDownloads, ModelViewer } from "@/components/tool/model-viewer"
-import { StoredAssetNotice } from "@/components/tool/tool-card"
-import { ToolComposer, type ToolComposerLabels, type ToolOption } from "@/components/tool/tool-composer"
+import { ModelDock } from "@/components/tool/model-dock"
+import { ModelLibrary, ModelLibraryStrip } from "@/components/tool/model-library"
+import { ModelStage } from "@/components/tool/model-stage"
+import { ToolComposer, type ToolComposerLabels } from "@/components/tool/tool-composer"
 import { ToolDropzone } from "@/components/tool/tool-dropzone"
-import { ComposerDock, ToolShell } from "@/components/tool/tool-shell"
-import { getBlob, modelKey, putLocalBlob, sourceKey, thumbSourceKey } from "@/lib/blob-store"
-import { SHAPE_LABEL } from "@/lib/furniture-wire"
+import { ComposerDock, ToolAside, ToolShell } from "@/components/tool/tool-shell"
+import { getBlob, modelKey, putBlob, putLocalBlob, sourceKey, thumbResultKey, viewKey } from "@/lib/blob-store"
 import {
   awaitModelTask,
   buildModelLocally,
@@ -24,26 +23,25 @@ import {
   readGlbStats,
   resolveShape,
   submitModelTask,
-  type FurnitureOption,
   type ModelTaskProgress,
 } from "@/lib/model-engine"
 import { saveSourceFile } from "@/lib/tool-jobs"
 import { useAttachments } from "@/lib/use-attachments"
+import { useIsMobile } from "@/lib/use-is-mobile"
 import { usePresence } from "@/lib/use-presence"
-import { useStoredBlobUrl } from "@/lib/use-stored-blob"
-import { cn, plural } from "@/lib/utils"
+import { useViewSlots } from "@/lib/use-view-slots"
+import { cn } from "@/lib/utils"
+import {
+  MODEL_MAX_PHOTOS,
+  estimateModelCost,
+  modelAiInfo,
+  type ModelSettings,
+  type ModelSlot,
+  type ModelViewRole,
+} from "@/shared/model3d"
 import { useModelStore } from "@/stores/model-store"
 import { ensureActiveProject, useActiveProject } from "@/stores/project-store"
 import type { Model3D, ModelFormat } from "@/types"
-
-const SHAPE_OPTIONS: ToolOption<FurnitureOption>[] = [
-  { value: "auto", label: "Авто", icon: Sparkles },
-  { value: "chair", label: "Стул", icon: Armchair },
-  { value: "table", label: "Стол", icon: Table },
-  { value: "lamp", label: "Лампа", icon: LampDesk },
-  { value: "sofa", label: "Диван", icon: Sofa },
-  { value: "shelf", label: "Стеллаж", icon: Library },
-]
 
 const LABELS: ToolComposerLabels = {
   filesTitle: "Фото",
@@ -52,23 +50,18 @@ const LABELS: ToolComposerLabels = {
   filesCaption: "один предмет в кадре · нейтральный фон · предмет целиком",
   optionsTitle: "Предмет",
   optionsIcon: Box,
-  footer:
-    "Модель строится по одному фото за 1–5 минут. Готовую можно вращать, приближать и скачать: GLB — для Blender, Unreal и веба, FBX и OBJ (архив с материалом и текстурой) — для 3ds Max, ArchiCAD и AutoCAD.",
-  inputPlaceholder: "Комментарий к модели…",
+  footer: "",
+  inputPlaceholder: "Название или комментарий к модели…",
   submitLabel: "Создать 3D",
   batchNoun: ["фото", "фото", "фото"],
 }
 
-const formatCount = (value: number) => new Intl.NumberFormat("ru-RU").format(value)
-
 /**
- * «Фото → 3D». Одно фото — одна модель: новое фото заменяет приложенное.
- * Каркас, приём файлов и композер — общие для инструментов (см.
- * docs/TOOL_UI.md); панели-галереи пачки и сцены рендера здесь нет — вместо
- * них своя сцена модели. Пустой экран — большая зона, в которой каркасы мебели
- * перетекают друг в друга: показывает, что здесь получают. После генерации
- * та же сцена показывает результат крупно, а остальные модели проекта —
- * лентой под ней.
+ * «Фото → 3D» — экран по образцу рабочего пространства Meshy (см.
+ * docs/TOOL_UI.md): панель генерации над композером (`ModelDock`: фото и
+ * ракурсы, модель, детализация, текстура), сцена модели в центре
+ * (`ModelStage`), библиотека моделей проекта справа (`ModelLibrary`). У Meshy
+ * панель генерации слева — у нас там сайдбар, поэтому она внизу.
  *
  * Модель считает Meshy (lib/model-engine → /api/models): задача ставится один
  * раз, её id хранится в записи, и опрос переживает перезагрузку страницы —
@@ -81,12 +74,27 @@ export default function PhotoTo3DPage() {
   const add = useModelStore((state) => state.add)
   const update = useModelStore((state) => state.update)
   const remove = useModelStore((state) => state.remove)
+  const settings = useModelStore((state) => state.settings)
+  const setSettings = useModelStore((state) => state.setSettings)
+  const multiView = useModelStore((state) => state.multiView)
+  const setMultiView = useModelStore((state) => state.setMultiView)
 
-  const intake = useAttachments({ maxFiles: 1, replace: true })
-  const { attachments } = intake
+  const [configured, setConfigured] = useState<boolean | null>(null)
+  useEffect(() => {
+    void modelProviderStatus().then((status) => setConfigured(status.configured))
+  }, [])
+
+  // Несколько ракурсов принимает только флагман — с другой моделью пачка снова из одного фото.
+  const multiOn = multiView && modelAiInfo(settings.ai).multiView && configured !== false
+  const intake = useAttachments({ maxFiles: multiOn ? MODEL_MAX_PHOTOS : 1, replace: !multiOn })
+  const slots = useViewSlots(intake, multiOn)
+
   const [note, setNote] = useState("")
-  const [option, setOption] = useState<FurnitureOption>("auto")
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  // Панель генерации развёрнута на широком экране и свёрнута на телефоне, пока её не тронули.
+  const narrow = useIsMobile(767)
+  const [dockChoice, setDockChoice] = useState<boolean | null>(null)
+  const dockOpen = dockChoice ?? !narrow
   // Ход задач Meshy живёт в состоянии страницы, а не в записи: иначе каждый
   // процент уезжал бы синхронизацией на сервер.
   const [progress, setProgress] = useState<Record<string, ModelTaskProgress>>({})
@@ -94,11 +102,9 @@ export default function PhotoTo3DPage() {
   const collecting = useRef(new Set<string>())
 
   const visible = activeProject ? models.filter((item) => item.projectId === activeProject.id) : []
-  // Выбранная модель — либо та, что кликнули в ленте, либо самая свежая.
+  // Выбранная модель — либо та, что кликнули в библиотеке, либо самая свежая.
   const selected = visible.find((item) => item.id === selectedId) ?? visible[0] ?? null
-  const hasAttachments = attachments.length > 0
-  const showComposer = hasAttachments || visible.length > 0
-  const composer = usePresence(showComposer)
+  const library = usePresence(visible.length > 0)
 
   const runBuild = useCallback(
     async (meta: Model3D) => {
@@ -112,23 +118,37 @@ export default function PhotoTo3DPage() {
           return
         }
         let taskId = meta.taskId
+        let kind = meta.taskKind ?? "image"
         if (!taskId) {
-          const photo = await getBlob(sourceKey(meta.id))
-          if (!photo) throw new ModelBuildError("Фото не найдено в хранилище — приложите его заново.", true)
-          taskId = await submitModelTask(photo)
-          update(meta.id, { taskId })
+          const main = await getBlob(sourceKey(meta.id))
+          if (!main) throw new ModelBuildError("Фото не найдено в хранилище — приложите его заново.", true)
+          const views = await Promise.all((meta.views ?? []).map((role) => getBlob(viewKey(meta.id, role)).catch(() => null)))
+          const photos = [main, ...views.filter((blob): blob is Blob => Boolean(blob))]
+          const jobSettings = meta.settings ?? useModelStore.getState().settings
+          const task = await submitModelTask(photos, jobSettings)
+          taskId = task.taskId
+          kind = task.kind
+          update(meta.id, { taskId, taskKind: kind, settings: jobSettings })
         }
-        await awaitModelTask(taskId, (step) => setProgress((current) => ({ ...current, [meta.id]: step })))
-        const glb = await fetchModelFile(taskId, meta.id)
+        const { credits } = await awaitModelTask(taskId, kind, (step) => setProgress((current) => ({ ...current, [meta.id]: step })))
+        const glb = await fetchModelFile(taskId, meta.id, kind)
         // Кэш браузера; при серверном хранении GLB уже лежит там под тем же ключом.
         await putLocalBlob(modelKey(meta.id), glb).catch(() => undefined)
         const stats = await readGlbStats(glb)
-        update(meta.id, { status: "done", error: undefined, engine: MESHY_ENGINE, edgeCount: undefined, modelBytes: glb.size, ...stats })
+        update(meta.id, {
+          status: "done",
+          error: undefined,
+          engine: MESHY_ENGINE,
+          edgeCount: undefined,
+          modelBytes: glb.size,
+          credits: credits || undefined,
+          ...stats,
+        })
       } catch (error) {
         update(meta.id, {
           status: "error",
           error: error instanceof Error ? error.message : "Построение не удалось.",
-          ...(error instanceof ModelBuildError && error.taskLost ? { taskId: undefined } : {}),
+          ...(error instanceof ModelBuildError && error.taskLost ? { taskId: undefined, taskKind: undefined } : {}),
         })
       } finally {
         building.current.delete(meta.id)
@@ -138,20 +158,25 @@ export default function PhotoTo3DPage() {
     [update]
   )
 
-  // FBX и OBJ забираются фоном уже после того, как GLB закрутился во вьюере:
-  // Meshy хранит файлы 3 дня, поэтому сервер сразу перекладывает их к себе.
-  // Сбой сети оставляет `formats` пустым — попытка повторится при следующем
-  // открытии страницы; формат, которого у задачи нет, просто не попадает в список.
+  // Превью для библиотеки, FBX и OBJ забираются фоном уже после того, как GLB
+  // закрутился во вьюере: Meshy хранит файлы 3 дня, поэтому сервер сразу
+  // перекладывает их к себе. Сбой сети оставляет `formats` пустым — попытка
+  // повторится при следующем открытии страницы; формат, которого у задачи
+  // нет, просто не попадает в список.
   const collectFormats = useCallback(
     async (meta: Model3D) => {
       if (!meta.taskId || collecting.current.has(meta.id)) return
       // Из набора запись не убирается: одна попытка на загрузку страницы.
       collecting.current.add(meta.id)
+      const kind = meta.taskKind ?? "image"
+      await fetchModelFile(meta.taskId, meta.id, kind, "thumb")
+        .then((thumb) => putLocalBlob(thumbResultKey(meta.id), thumb))
+        .catch(() => undefined)
       const formats: ModelFormat[] = ["glb"]
       for (const format of MODEL_FORMATS) {
         if (format === "glb") continue
         try {
-          const file = await fetchModelFile(meta.taskId, meta.id, format)
+          const file = await fetchModelFile(meta.taskId, meta.id, kind, format)
           await putLocalBlob(modelKey(meta.id, format), file).catch(() => undefined)
           formats.push(format)
         } catch (error) {
@@ -173,46 +198,67 @@ export default function PhotoTo3DPage() {
   }, [models, runBuild, collectFormats])
 
   const startBuild = useCallback(
-    async (file: File, buildNote: string, buildOption: FurnitureOption) => {
+    async (photos: { slot: ModelSlot; file: File }[], buildNote: string, buildSettings: ModelSettings) => {
       const project = await ensureActiveProject()
+      const main = photos[0].file
       try {
-        const { id, width, height } = await saveSourceFile(file, { durable: true })
+        const { id, width, height } = await saveSourceFile(main, { durable: true })
+        const views: ModelViewRole[] = []
+        for (const photo of photos.slice(1)) {
+          if (photo.slot === "main") continue
+          await putBlob(viewKey(id, photo.slot), photo.file)
+          views.push(photo.slot)
+        }
         const meta: Model3D = {
           id,
           projectId: project.id,
           status: "processing",
-          shape: resolveShape(buildOption, buildNote, file.name),
+          shape: resolveShape("auto", buildNote, main.name),
           note: buildNote,
-          sourceName: file.name,
+          sourceName: main.name,
           sourceWidth: width,
           sourceHeight: height,
+          settings: buildSettings,
+          ...(views.length > 0 ? { views } : {}),
           createdAt: new Date().toISOString(),
         }
         add(meta)
         setSelectedId(id)
         await runBuild(meta)
       } catch {
-        window.alert(`«${file.name}» не удалось сохранить в хранилище браузера.`)
+        window.alert(`«${main.name}» не удалось сохранить в хранилище браузера.`)
       }
     },
     [add, runBuild]
   )
 
   const submit = () => {
-    const photo = attachments[0]
-    if (!photo) {
-      intake.pickFiles()
+    if (!slots.main) {
+      slots.pick("main")
       return
     }
+    const photos = slots.ordered.map(({ slot, attachment }) => ({ slot, file: attachment.file }))
     intake.clearAttachments()
     const buildNote = note.trim()
     setNote("")
-    void startBuild(photo.file, buildNote, option)
+    void startBuild(photos, buildNote, settings)
   }
 
   const retry = (model: Model3D) => {
-    update(model.id, { status: "processing", error: undefined })
-    void runBuild(model)
+    // Готовая модель «заново» — это новая платная задача; после сбоя связи
+    // «Повторить» продолжает прежнюю, уже оплаченную.
+    const rebuild = model.status === "done" && model.engine === MESHY_ENGINE
+    if (rebuild) {
+      const cost = estimateModelCost(model.settings ?? settings)
+      if (!window.confirm(`Построить модель заново? Это новая задача — около ${cost.credits} кредитов Meshy.`)) return
+    }
+    const patch: Partial<Model3D> = {
+      status: "processing",
+      error: undefined,
+      ...(rebuild ? { taskId: undefined, taskKind: undefined, formats: undefined, credits: undefined } : {}),
+    }
+    update(model.id, patch)
+    void runBuild({ ...model, ...patch })
   }
 
   const deleteModel = (model: Model3D) => {
@@ -221,249 +267,84 @@ export default function PhotoTo3DPage() {
     remove(model.id)
   }
 
+  const libraryProps = { models: visible, selectedId: selected?.id ?? null, progress, onSelect: setSelectedId, onDelete: deleteModel }
+
   return (
     <ToolShell
       intake={intake}
       dropLabel="Отпустите, чтобы приложить фото"
-      composerOpen={showComposer}
+      composerOpen
+      composerSpace={dockOpen ? "pb-[22rem]" : "pb-44"}
+      trayOpen={visible.length > 0}
       layers={
-        <ComposerDock presence={composer}>
-          <ToolComposer
-            attachments={attachments}
-            onPickFiles={intake.pickFiles}
-            onRemoveAttachment={intake.removeAttachment}
-            onClearAttachments={intake.clearAttachments}
-            note={note}
-            onNoteChange={setNote}
-            option={option}
-            onOptionChange={setOption}
-            options={SHAPE_OPTIONS}
-            labels={LABELS}
-            onSubmit={submit}
-            maxFiles={1}
-          />
-        </ComposerDock>
+        <>
+          <ComposerDock trayOpen={visible.length > 0}>
+            <ToolComposer
+              attachments={intake.attachments}
+              onPickFiles={() => slots.pick("main")}
+              onRemoveAttachment={intake.removeAttachment}
+              onClearAttachments={intake.clearAttachments}
+              note={note}
+              onNoteChange={setNote}
+              option="auto"
+              onOptionChange={() => undefined}
+              options={[]}
+              labels={LABELS}
+              onSubmit={submit}
+              maxFiles={intake.maxFiles}
+              settingsInDock
+              dockLabel="Параметры модели"
+              dock={
+                <ModelDock
+                  slots={slots}
+                  settings={settings}
+                  onSettingsChange={setSettings}
+                  multiView={multiView}
+                  onMultiViewChange={setMultiView}
+                  configured={configured}
+                  open={dockOpen}
+                  onOpenChange={setDockChoice}
+                />
+              }
+            />
+          </ComposerDock>
+          <ToolAside presence={library} label="Модели проекта">
+            <ModelLibrary {...libraryProps} />
+          </ToolAside>
+        </>
       }
     >
       {visible.length === 0 ? (
         /* Сцена-приглашение: каркасы мебели перетекают друг в друга. Приложенное
            фото держит контур подсвеченным — как приглашение нажать «Создать 3D». */
         <ToolDropzone
-          onPick={intake.pickFiles}
-          label={hasAttachments ? "Заменить фото" : "Добавить фото"}
-          armed={hasAttachments}
-          visual={<FurnitureMorph showLabel className="relative h-[300px] w-full max-w-[520px] sm:h-[340px]" />}
-          title={hasAttachments ? "Фото приложено" : "Добавить фото"}
+          onPick={() => slots.pick("main")}
+          label={slots.main ? "Заменить фото" : "Добавить фото"}
+          armed={Boolean(slots.main)}
+          visual={<FurnitureMorph showLabel className={cn("relative w-full max-w-[520px]", dockOpen ? "h-[180px] sm:h-[210px]" : "h-[300px] sm:h-[340px]")} />}
+          title={slots.main ? "Фото приложено" : "Что построим сегодня?"}
           description={
-            hasAttachments
-              ? `«${attachments[0].file.name}» — нажмите «${LABELS.submitLabel}» внизу или выберите другое фото.`
+            slots.main
+              ? `«${slots.main.file.name}» — проверьте параметры внизу и нажмите «${LABELS.submitLabel}».`
               : "Один предмет в кадре — стул, стол, лампа, диван — и получите его 3D-модель. Нажмите, перетащите сюда или вставьте из буфера. PNG, JPG или WEBP до 32 МБ."
           }
-          caption="Модель строится по одному фото, без разметки и ручной настройки."
-          className="max-w-[760px] gap-2 px-6 pb-10 pt-4 sm:pb-12"
+          caption="Модель строится по фото за 1–5 минут: GLB — крутить прямо здесь, FBX и OBJ — в 3ds Max, ArchiCAD и AutoCAD."
+          className="max-w-[760px] gap-2 px-6 pb-8 pt-4 sm:pb-10"
         />
       ) : (
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3">
           {selected ? (
             <ModelStage
               model={selected}
               progress={progress[selected.id]}
+              className={dockOpen ? "h-[calc(100dvh-24.5rem)] min-h-[300px]" : "h-[calc(100dvh-12.5rem)] min-h-[360px]"}
               onRetry={() => retry(selected)}
               onDelete={() => deleteModel(selected)}
             />
           ) : null}
-
-          {visible.length > 1 ? (
-            <div className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
-              {visible.map((model) => (
-                <ModelChip
-                  key={model.id}
-                  model={model}
-                  active={model.id === selected?.id}
-                  onClick={() => setSelectedId(model.id)}
-                />
-              ))}
-            </div>
-          ) : null}
+          {visible.length > 1 ? <ModelLibraryStrip {...libraryProps} /> : null}
         </div>
       )}
     </ToolShell>
-  )
-}
-
-/** Большая сцена результата: модель крупно, фото-исходник в углу, подпись и действия. */
-function ModelStage({
-  model,
-  progress,
-  onRetry,
-  onDelete,
-}: {
-  model: Model3D
-  progress?: ModelTaskProgress
-  onRetry: () => void
-  onDelete: () => void
-}) {
-  const sourceAsset = useStoredBlobUrl([thumbSourceKey(model.id), sourceKey(model.id)])
-  const done = model.status === "done"
-  const real = done && model.engine === MESHY_ENGINE
-
-  return (
-    <figure className="card relative overflow-hidden" style={{ borderRadius: "var(--r-xl)" }}>
-      {/* Пока строится — библиотека перетекает («ищем форму»); готовая модель Meshy —
-          настоящий GLB во вьюере, заглушка без ключа — один каркас, который вращается. */}
-      {real ? (
-        // Отступ снизу — под подпись: основание модели не уходит под плашку.
-        <div className="h-[52dvh] min-h-[360px] w-full pb-14 pt-2">
-          <ModelViewer key={model.id} modelId={model.id} className="h-full w-full" />
-        </div>
-      ) : (
-        <FurnitureMorph
-          key={done ? model.shape : "searching"}
-          shape={done ? model.shape : undefined}
-          className={cn("h-[52dvh] min-h-[360px] w-full", model.status === "error" && "opacity-30")}
-        />
-      )}
-
-      {sourceAsset.url ? (
-        <div
-          className="fade-in absolute left-3 top-3 flex items-center gap-2 rounded-[10px] p-1 pr-3"
-          style={{ background: "rgba(16,16,18,0.62)", border: "1px solid rgba(255,255,255,0.12)" }}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={sourceAsset.url}
-            alt=""
-            aria-hidden
-            className="h-12 w-12 rounded-[7px] object-cover"
-            draggable={false}
-            onError={sourceAsset.reportImageError}
-          />
-          <span className="flex flex-col">
-            <span className="text-[11px] uppercase tracking-wide" style={{ color: "rgba(255,255,255,0.5)" }}>
-              фото
-            </span>
-            <span className="max-w-[160px] truncate text-[12px]" style={{ color: "rgba(255,255,255,0.9)" }}>
-              {model.sourceName}
-            </span>
-          </span>
-        </div>
-      ) : (
-        <StoredAssetNotice
-          status={sourceAsset.status}
-          onRetry={sourceAsset.retry}
-          compact
-          className="absolute left-3 top-3 z-10 min-h-[76px] w-[224px] rounded-[10px] border [border-color:var(--line)]"
-        />
-      )}
-
-      <div className="absolute right-3 top-3 flex gap-1">
-        {real ? <ModelDownloads model={model} /> : null}
-        {model.status !== "processing" ? (
-          <button type="button" onClick={onRetry} aria-label="Построить заново" className="btn-icon h-9 w-9" style={{ background: "rgba(16,16,18,0.62)" }}>
-            <RefreshCw className="h-4 w-4" strokeWidth={1.7} />
-          </button>
-        ) : null}
-        <button type="button" onClick={onDelete} aria-label="Удалить модель" className="btn-icon btn-danger h-9 w-9" style={{ background: "rgba(16,16,18,0.62)" }}>
-          <Trash2 className="h-4 w-4" strokeWidth={1.7} />
-        </button>
-      </div>
-
-      {model.status === "processing" ? (
-        <div className="fade-in pointer-events-none absolute inset-x-0 bottom-4 flex flex-col items-center gap-2">
-          <ThinkingGlyph size={22} className="text-white/80" />
-          <span className="text-[12px]" style={{ color: "var(--fg-3)" }}>
-            {!model.taskId
-              ? "строим модель по фото…"
-              : progress && progress.progress > 0
-                ? `строим модель · ${progress.progress}%`
-                : progress && progress.queue > 0
-                  ? `в очереди · впереди ${progress.queue}`
-                  : "строим модель по фото · 1–5 минут"}
-          </span>
-        </div>
-      ) : null}
-
-      {model.status === "error" ? (
-        <div className="fade-in absolute inset-0 flex flex-col items-center justify-center gap-3 p-4 text-center">
-          <p className="max-w-[280px] text-[12.5px] leading-snug" style={{ color: "var(--fg-1)" }}>
-            {model.error ?? "Не получилось."}
-          </p>
-          <button type="button" onClick={onRetry} className="btn-outline h-9 px-4 text-[13px]">
-            <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.8} />
-            Повторить
-          </button>
-        </div>
-      ) : null}
-
-      {done ? (
-        <figcaption
-          className="rise-in pointer-events-none absolute bottom-3 left-3 flex flex-col gap-0.5 rounded-[8px] px-2.5 py-1.5"
-          style={{ background: "rgba(16,16,18,0.62)" }}
-        >
-          <span className="text-[13px]" style={{ color: "rgba(255,255,255,0.92)" }}>
-            {SHAPE_LABEL[model.shape]}
-            {model.note ? ` · ${model.note}` : ""}
-          </span>
-          {real && model.vertexCount && model.faceCount ? (
-            <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.55)" }}>
-              GLB · {formatCount(model.vertexCount)} {plural(model.vertexCount, ["вершина", "вершины", "вершин"])} ·{" "}
-              {formatCount(model.faceCount)} {plural(model.faceCount, ["треугольник", "треугольника", "треугольников"])}
-              {model.modelBytes ? ` · ${(model.modelBytes / 1024 / 1024).toFixed(1)} МБ` : ""}
-            </span>
-          ) : !real && model.vertexCount && model.edgeCount ? (
-            <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.55)" }}>
-              каркас-заглушка · {formatCount(model.vertexCount)} {plural(model.vertexCount, ["вершина", "вершины", "вершин"])} ·{" "}
-              {formatCount(model.edgeCount)} {plural(model.edgeCount, ["ребро", "ребра", "рёбер"])} · ключ Meshy не задан
-            </span>
-          ) : null}
-        </figcaption>
-      ) : null}
-    </figure>
-  )
-}
-
-/** Лента моделей проекта под сценой. */
-function ModelChip({ model, active, onClick }: { model: Model3D; active: boolean; onClick: () => void }) {
-  const sourceAsset = useStoredBlobUrl([thumbSourceKey(model.id), sourceKey(model.id)])
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn("nav-item h-14 shrink-0 gap-2.5 pl-1.5 pr-3", active && "is-active")}
-      style={{ borderRadius: "var(--r-md)" }}
-    >
-      {sourceAsset.url ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={sourceAsset.url}
-          alt=""
-          aria-hidden
-          className="h-11 w-11 rounded-[8px] object-cover"
-          draggable={false}
-          onError={sourceAsset.reportImageError}
-        />
-      ) : (
-        <span
-          className="flex h-11 w-11 items-center justify-center rounded-[8px]"
-          style={{ background: "var(--bg-raised)", color: "var(--fg-4)" }}
-          title={sourceAsset.status === "loading" ? "Загружаем фото…" : "Файл ещё не синхронизирован"}
-        >
-          {sourceAsset.status === "loading" ? (
-            <ThinkingGlyph size={15} />
-          ) : (
-            <ImageOff className="h-4 w-4" strokeWidth={1.6} />
-          )}
-        </span>
-      )}
-      <span className="flex flex-col text-left">
-        <span className="text-[13px]" style={{ color: "var(--fg-1)" }}>
-          {SHAPE_LABEL[model.shape]}
-        </span>
-        <span className="max-w-[160px] truncate text-[11px]" style={{ color: "var(--fg-5)" }}>
-          {model.status === "processing" ? "строим…" : model.status === "error" ? "ошибка" : model.note || model.sourceName}
-        </span>
-      </span>
-    </button>
   )
 }

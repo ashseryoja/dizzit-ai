@@ -1,8 +1,10 @@
 import { sessionFromRequest } from "@/server/auth"
 import { getSql } from "@/server/db"
 import { problem } from "@/server/http"
+import { sniffImageMime } from "@/server/image-provider"
 import {
   downloadMeshyModel,
+  downloadMeshyThumbnail,
   getMeshyTask,
   MeshyError,
   meshyConfigured,
@@ -16,8 +18,9 @@ import { objectKey, resolveStorage } from "@/server/storage"
 import type { ModelFormat } from "@/types"
 
 /**
- * Файл готовой задачи: `?format=glb` (по умолчанию), `fbx` или `obj` (ZIP с
- * материалом и текстурой). Ссылки Meshy подписаны и без CORS, а ассеты
+ * Файл готовой задачи: `?format=glb` (по умолчанию), `fbx`, `obj` (ZIP с
+ * материалом и текстурой) или `thumb` — превью модели для библиотеки (ключ
+ * `${record}:thumb-result`). `kind=multi` — задача из нескольких ракурсов. Ссылки Meshy подписаны и без CORS, а ассеты
  * хранятся 3 дня, поэтому файл идёт через сервер: при первом запросе
  * скачивается у Meshy и кладётся в наше хранилище под ключом `${record}:model`
  * (`:model-fbx`, `:model-obj`) — тем же, по которому клиент потом читает его
@@ -57,27 +60,28 @@ export async function GET(request: Request, context: { params: Promise<{ taskId:
   const { taskId } = await context.params
   const query = new URL(request.url).searchParams
   const record = query.get("record") ?? ""
-  const format = (query.get("format") ?? "glb") as ModelFormat
-  if (!TASK_ID.test(taskId) || !RECORD_ID.test(record) || !MODEL_FORMATS.includes(format)) {
+  const format = (query.get("format") ?? "glb") as ModelFormat | "thumb"
+  const kind = query.get("kind") === "multi" ? "multi" : "image"
+  if (!TASK_ID.test(taskId) || !RECORD_ID.test(record) || !(format === "thumb" || MODEL_FORMATS.includes(format))) {
     return problem(400, { error: "bad_request", message: "Недопустимый id задачи, записи или формат." })
   }
-  const contentType = MODEL_CONTENT_TYPE[format]
 
   const session = await sessionFromRequest(request)
   const storage = session ? resolveStorage() : null
-  const key = format === "glb" ? `${record}:model` : `${record}:model-${format}`
+  const key = format === "thumb" ? `${record}:thumb-result` : format === "glb" ? `${record}:model` : `${record}:model-${format}`
 
   try {
     if (session && storage) {
       const stored = await storage.get(objectKey(session.ownerId, key))
-      if (stored) return stream(stored.bytes, contentType)
+      if (stored) return stream(stored.bytes, stored.contentType)
     }
 
-    const task = await getMeshyTask(taskId, request.signal)
+    const task = await getMeshyTask(taskId, kind, request.signal)
     if (task.status !== "succeeded" || !task.glbUrl) {
       return problem(409, { error: "not_ready", message: task.error ?? "Модель ещё не готова.", retryable: task.status !== "failed" })
     }
-    const bytes = await downloadMeshyModel(task, format, request.signal)
+    const bytes = format === "thumb" ? await downloadMeshyThumbnail(task, request.signal) : await downloadMeshyModel(task, format, request.signal)
+    const contentType = format === "thumb" ? (sniffImageMime(bytes) ?? "image/png") : MODEL_CONTENT_TYPE[format]
 
     if (session && storage) {
       await storage.put(objectKey(session.ownerId, key), bytes, contentType)

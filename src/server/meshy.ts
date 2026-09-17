@@ -4,6 +4,7 @@ import sharp from "sharp"
 
 import { serverConfig } from "@/server/config"
 import { buildZip } from "@/server/zip"
+import { modelAiInfo, modelPolycount, type ModelSettings, type ModelTaskKind } from "@/shared/model3d"
 import type { ModelFormat } from "@/types"
 
 /**
@@ -23,7 +24,13 @@ import type { ModelFormat } from "@/types"
  * 3ds Max, ArchiCAD, AutoCAD. OBJ у Meshy — три отдельных файла (геометрия,
  * материал, текстура), поэтому отдаётся одним ZIP. На цену число форматов не
  * влияет, только на время задачи.
+ *
+ * Настройки задачи — `ModelSettings` из `src/shared/model3d.ts`. Несколько
+ * фото (главный вид + ракурсы) уходят в соседний эндпоинт Multi-Image to 3D;
+ * какой из двух считает задачу, помнит запись (`ModelTaskKind`).
  */
+
+const TASK_PATH: Record<ModelTaskKind, string> = { image: "/image-to-3d", multi: "/multi-image-to-3d" }
 
 export const MODEL_FORMATS: readonly ModelFormat[] = ["glb", "fbx", "obj"]
 
@@ -61,13 +68,11 @@ export interface MeshyTask {
   queue: number
   glbUrl: string | null
   /** Подписанные ссылки Meshy на файлы результата; наружу не отдаются. */
-  urls: { glb?: string; fbx?: string; obj?: string; mtl?: string; texture?: string }
+  urls: { glb?: string; fbx?: string; obj?: string; mtl?: string; texture?: string; thumbnail?: string }
   error: string | null
   consumedCredits: number
 }
 
-/** Модель уходит в браузер и в Blob на 1 ГБ — держим её в пределах 5–10 МБ. */
-const TARGET_POLYCOUNT = 50_000
 /** Meshy сам оптимизирует картинку; больше 2048 px ему не нужно, а тело запроса растёт. */
 const SOURCE_MAX_SIDE = 2048
 const REQUEST_TIMEOUT_MS = 60_000
@@ -132,21 +137,37 @@ async function toDataUri(bytes: Uint8Array): Promise<string> {
   return `data:image/${hasAlpha ? "png" : "jpeg"};base64,${encoded.toString("base64")}`
 }
 
-/** Поставить задачу. Кредиты списываются Meshy в этот момент. */
-export async function createMeshyTask(photo: Uint8Array, signal?: AbortSignal): Promise<string> {
+/**
+ * Поставить задачу. Кредиты списываются Meshy в этот момент. `photos` —
+ * главный вид первым, дальше ракурсы; настройки уже приведены к возможностям
+ * модели (`normalizeModelSettings`). Ремеш держит модель в пределах, которые
+ * тянут браузер и Blob на 1 ГБ.
+ */
+export async function createMeshyTask(
+  photos: Uint8Array[],
+  settings: ModelSettings,
+  signal?: AbortSignal
+): Promise<{ id: string; kind: ModelTaskKind }> {
+  const kind: ModelTaskKind = photos.length > 1 ? "multi" : "image"
+  const images = await Promise.all(photos.map(toDataUri))
   const body = {
-    image_url: await toDataUri(photo),
-    ai_model: serverConfig.meshyModel,
-    should_texture: true,
+    ...(kind === "multi" ? { image_urls: images } : { image_url: images[0] }),
+    // MESHY_AI_MODEL подменяет только флагман: так можно прибить версию, не трогая выбор пользователя.
+    ai_model: settings.ai === "meshy-7" ? serverConfig.meshyModel : settings.ai,
+    ...(settings.quality === "ultra" ? { ultra_mode: true } : {}),
+    // Lite отклоняет сам параметр («only supported for meshy-6»), даже выключенный.
+    ...(modelAiInfo(settings.ai).enhance ? { image_enhancement: settings.enhance } : {}),
+    should_texture: settings.texture,
+    ...(settings.texture ? { enable_pbr: settings.pbr } : {}),
     should_remesh: true,
     topology: "triangle",
-    target_polycount: TARGET_POLYCOUNT,
+    target_polycount: modelPolycount(settings),
     target_formats: MODEL_FORMATS,
   }
-  const json = await call("/image-to-3d", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }, signal)
+  const json = await call(TASK_PATH[kind], { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }, signal)
   const id = json && typeof json === "object" && "result" in json ? String((json as { result: unknown }).result) : ""
   if (!id) throw new MeshyError("unavailable", "Meshy не вернул id задачи.")
-  return id
+  return { id, kind }
 }
 
 interface RawTask {
@@ -157,11 +178,12 @@ interface RawTask {
   consumed_credits?: number
   model_urls?: { glb?: string; fbx?: string; obj?: string; mtl?: string } | null
   texture_urls?: { base_color?: string }[] | null
+  thumbnail_url?: string
   task_error?: { message?: string } | null
 }
 
-export async function getMeshyTask(taskId: string, signal?: AbortSignal): Promise<MeshyTask> {
-  const raw = ((await call(`/image-to-3d/${encodeURIComponent(taskId)}`, { method: "GET" }, signal)) ?? {}) as RawTask
+export async function getMeshyTask(taskId: string, kind: ModelTaskKind, signal?: AbortSignal): Promise<MeshyTask> {
+  const raw = ((await call(`${TASK_PATH[kind]}/${encodeURIComponent(taskId)}`, { method: "GET" }, signal)) ?? {}) as RawTask
   const status: MeshyTaskStatus =
     raw.status === "SUCCEEDED"
       ? "succeeded"
@@ -183,6 +205,7 @@ export async function getMeshyTask(taskId: string, signal?: AbortSignal): Promis
       obj: raw.model_urls?.obj || undefined,
       mtl: raw.model_urls?.mtl || undefined,
       texture: raw.texture_urls?.[0]?.base_color || undefined,
+      thumbnail: raw.thumbnail_url || undefined,
     },
     error:
       raw.task_error?.message ||
@@ -273,6 +296,12 @@ export async function downloadMeshyModel(task: MeshyTask, format: ModelFormat, s
     throw new MeshyError("unavailable", "Meshy отдал файл, который не является GLB.")
   }
   return bytes
+}
+
+/** Превью готовой модели (рендер Meshy) — плитка библиотеки моделей. */
+export async function downloadMeshyThumbnail(task: MeshyTask, signal?: AbortSignal): Promise<Uint8Array> {
+  if (!task.urls.thumbnail) throw new MeshyError("not_found", "У этой задачи нет превью.")
+  return downloadMeshyFile(task.urls.thumbnail, "превью", signal)
 }
 
 /** Текст ошибки для карточки модели. */

@@ -7,6 +7,8 @@
 
 import type { RegionPayload } from "@/lib/render-regions"
 import type { AlbumCopy, AlbumFormat, AlbumTheme } from "@/shared/album"
+import type { ModelSettings, ModelTaskKind, ModelViewRole } from "@/shared/model3d"
+
 export interface Project {
   id: string
   title: string
@@ -305,6 +307,14 @@ export interface Model3D extends GalleryItemMeta {
    * FBX и OBJ ещё забираются; страница повторит попытку при следующем открытии.
    */
   formats?: ModelFormat[]
+  /** С какими настройками считалась модель (`src/shared/model3d.ts`); у старых записей поля нет. */
+  settings?: ModelSettings
+  /** Какой эндпоинт Meshy считает задачу — нужен опросу и скачиванию. Нет поля — одно фото. */
+  taskKind?: ModelTaskKind
+  /** Дополнительные ракурсы, приложенные к главному фото: блобы `${id}:view-<роль>`. */
+  views?: ModelViewRole[]
+  /** Сколько кредитов Meshy списал за задачу. */
+  credits?: number
 }
 
 /* ── Альбом-презентация ── */

@@ -2275,3 +2275,263 @@ select.field option { background: var(--bg-overlay); color: var(--fg-1); }
 }
 .model-downloads button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.12); }
 .model-downloads button:disabled { opacity: 0.45; cursor: default; }
+
+/* ============================================================
+   «ФОТО → 3D»: экран по образцу рабочего пространства Meshy
+   Панель генерации (ModelDock) лежит над композером — у Meshy она слева, у
+   нас слева сайдбар. Сцена модели (ModelStage) — в центре, библиотека
+   (ModelLibrary) — в правой панели.
+   ============================================================ */
+.model-dock { display: flex; flex-direction: column; }
+.model-dock-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 14px 0 8px;
+}
+.model-dock-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  color: var(--fg-3);
+  transition: background var(--dur-fast) var(--ease-std);
+}
+.model-dock-toggle:hover { background: var(--hover-1); }
+.model-dock-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--fg-4);
+}
+.model-dock-cost {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-3);
+}
+.model-dock-cost-sep { width: 1px; height: 12px; margin: 0 4px; background: var(--line-strong); }
+.model-dock-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  max-height: 46dvh;
+  overflow-y: auto;
+  padding: 2px 16px 14px;
+  border-top: 1px solid var(--line);
+}
+@media (min-width: 768px) {
+  .model-dock-body {
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 1fr);
+    gap: 20px;
+    max-height: none;
+    overflow: visible;
+  }
+}
+.model-dock-body.is-off { opacity: 0.55; }
+.model-dock-section { display: flex; min-width: 0; flex-direction: column; gap: 7px; padding-top: 10px; }
+.model-dock-label {
+  font-size: var(--fs-micro);
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
+  color: var(--fg-4);
+}
+.model-dock-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--fg-1);
+}
+.model-dock-row-hint {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--fg-5);
+}
+.model-dock-row > span:first-child { min-width: 0; }
+
+/* Слоты фото: главный вид крупнее, три ракурса рядом; выключенные — приглушены. */
+.model-slots { display: grid; grid-template-columns: 1.5fr repeat(3, 1fr); gap: 6px; }
+.model-slot { position: relative; min-width: 0; }
+.model-slot-pick {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 88px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  overflow: hidden;
+  border-radius: var(--r-sm);
+  border: 1px dashed var(--line-strong);
+  background: var(--bg-raised);
+  color: var(--fg-4);
+  transition: border-color var(--dur-fast) var(--ease-std), color var(--dur-fast) var(--ease-std);
+}
+.model-slot-pick:hover:not(:disabled) { border-color: var(--fg-4); color: var(--fg-2); }
+.model-slot-pick:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.model-slot.is-filled .model-slot-pick { border-style: solid; }
+.model-slot.is-disabled .model-slot-pick { opacity: 0.35; cursor: not-allowed; }
+.model-slot-pick img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.model-slot-label { position: relative; font-size: 11px; line-height: 1; }
+.model-slot.is-filled .model-slot-label {
+  position: absolute;
+  inset: auto 4px 4px 4px;
+  overflow: hidden;
+  border-radius: 6px;
+  padding: 3px 5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: rgba(16, 16, 18, 0.7);
+  color: rgba(255, 255, 255, 0.88);
+}
+.model-slot-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(16, 16, 18, 0.7);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+/* Выбор модели — список карточек, как выпадающий список моделей у Meshy. */
+.model-ai-list { display: flex; flex-direction: column; gap: 4px; }
+.model-ai {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 8px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  background: var(--bg-raised);
+  text-align: left;
+  transition: border-color var(--dur-fast) var(--ease-std), background var(--dur-fast) var(--ease-std);
+}
+.model-ai:hover:not(:disabled) { background: var(--hover-1); }
+.model-ai:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.model-ai.is-active { border-color: var(--accent); background: var(--bg-surface); }
+.model-ai:disabled { cursor: not-allowed; }
+.model-ai-name { flex-shrink: 0; font-size: 12.5px; line-height: 28px; color: var(--fg-1); }
+.model-ai-hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--fg-5); }
+
+/* Сцена модели: углы с плашками поверх вьюера, тулбар по центру снизу. */
+.model-stage { position: relative; overflow: hidden; border-radius: var(--r-xl); transition: background var(--dur-base) var(--ease-std); }
+.model-stage-corner { position: absolute; z-index: 1; display: flex; flex-direction: column; gap: 6px; }
+.model-stage-chip,
+.model-stage-stats,
+.model-stage-caption,
+.model-stage-swatches {
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(16, 16, 18, 0.62);
+}
+.model-stage-chip { display: flex; align-items: center; gap: 6px; padding: 4px; }
+.model-stage-thumb { width: 44px; height: 44px; flex-shrink: 0; border-radius: 7px; object-fit: cover; background: rgba(255, 255, 255, 0.06); }
+.model-stage-micro { font-size: 11px; letter-spacing: 0.02em; color: rgba(255, 255, 255, 0.55); }
+.model-stage-stats { display: flex; min-width: 168px; flex-direction: column; gap: 5px; padding: 9px 11px; font-size: 11.5px; }
+.model-stage-stats > div { display: flex; justify-content: space-between; gap: 16px; }
+.model-stage-stats dt { color: rgba(255, 255, 255, 0.55); }
+.model-stage-stats dd { font-variant-numeric: tabular-nums; color: rgba(255, 255, 255, 0.92); }
+.model-stage-swatches { display: flex; align-items: center; gap: 6px; height: 36px; padding: 0 8px; }
+.model-stage-swatches button {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  transition: box-shadow var(--dur-fast) var(--ease-std);
+}
+.model-stage-swatches button.is-active { box-shadow: 0 0 0 2px var(--accent); }
+.model-stage-action { background: rgba(16, 16, 18, 0.62); }
+.model-stage-toolbar {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  z-index: 1;
+  display: flex;
+  transform: translateX(-50%);
+  align-items: center;
+  gap: 4px;
+}
+.model-stage-caption {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  display: none;
+  max-width: 34%;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  pointer-events: none;
+}
+@media (min-width: 900px) {
+  .model-stage-caption { display: flex; }
+}
+.model-stage-progress { width: 180px; height: 3px; overflow: hidden; border-radius: 2px; background: rgba(255, 255, 255, 0.14); }
+.model-stage-progress > span { display: block; height: 100%; border-radius: 2px; background: var(--accent); transition: width 600ms var(--ease-std); }
+
+/* Плитка библиотеки моделей: поверх .tray-thumb — статус задачи, дата, удаление. */
+.model-tile.is-pending img { opacity: 0.4; }
+.model-tile-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.9);
+}
+.model-tile-state.is-error { color: #ff7a6b; }
+.model-tile-date {
+  position: absolute;
+  inset: 0 0 auto 0;
+  padding: 5px 0;
+  text-align: center;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.9);
+  background: linear-gradient(rgba(16, 16, 18, 0.72), transparent);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-std);
+}
+.model-tile:hover .model-tile-date { opacity: 1; }
+.model-tile-remove {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  display: flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(16, 16, 18, 0.7);
+  color: rgba(255, 255, 255, 0.92);
+}
+.model-tile-remove:hover { color: #ff7a6b; }

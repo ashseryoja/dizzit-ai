@@ -21,7 +21,16 @@ import type { Model3D, ModelFormat } from "@/types"
  * Пока файл едет с сервера или потерян — общий `StoredAssetNotice`, как у
  * картинок.
  */
-export function ModelViewer({ modelId, className }: { modelId: string; className?: string }) {
+export function ModelViewer({
+  modelId,
+  className,
+  autoRotate = true,
+}: {
+  modelId: string
+  className?: string
+  /** Медленный автоповорот; пользователь выключает его кнопкой на сцене. */
+  autoRotate?: boolean
+}) {
   const asset = useStoredBlobUrl([modelKey(modelId)])
   const [ready, setReady] = useState(false)
 
@@ -50,7 +59,7 @@ export function ModelViewer({ modelId, className }: { modelId: string; className
     // Модель — главное на сцене: грузим сразу, не дожидаясь попадания во вьюпорт.
     loading: "eager",
     "camera-controls": "",
-    "auto-rotate": "",
+    ...(autoRotate ? { "auto-rotate": "" } : {}),
     "auto-rotate-delay": "600",
     "rotation-per-second": "18deg",
     "interaction-prompt": "none",

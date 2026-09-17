@@ -78,6 +78,8 @@ export function ToolComposer<T extends string>({
   notice,
   extras,
   dock,
+  dockLabel = "Выбранный стиль",
+  settingsInDock = false,
   attentionKey,
 }: {
   attachments: AttachedRender[]
@@ -135,6 +137,14 @@ export function ToolComposer<T extends string>({
    * Панель настроек раскрывается выше неё.
    */
   dock?: ReactNode
+  /** Подпись секции `dock` для скринридера. */
+  dockLabel?: string
+  /**
+   * Все настройки инструмента уже лежат в `dock` («Фото → 3D»: панель
+   * генерации с фото и параметрами модели). Шестерёнки, панели настроек и
+   * чипа приложенных файлов тогда нет — они дублировали бы панель.
+   */
+  settingsInDock?: boolean
   /**
    * Каждое новое значение прогоняет подсветку по всем кнопкам панели настроек —
    * чтобы человек увидел, что выбирать. Панель к этому моменту должна быть открыта.
@@ -212,7 +222,7 @@ export function ToolComposer<T extends string>({
   return (
     <div ref={containerRef} className="pointer-events-auto relative w-full max-w-[880px]">
       {/* Панель настроек — над композером, той же ширины. */}
-      {settings.present ? (
+      {settings.present && !settingsInDock ? (
         <div
           ref={panelRef}
           data-state={settings.state}
@@ -353,7 +363,7 @@ export function ToolComposer<T extends string>({
 
       {/* Пристыкованная секция над композером (см. dock). */}
       {dock ? (
-        <div className="overlay-surface rise-in mb-2 flex flex-col" role="region" aria-label="Выбранный стиль">
+        <div className="overlay-surface rise-in mb-2 flex flex-col" role="region" aria-label={dockLabel}>
           {dock}
         </div>
       ) : null}
@@ -403,7 +413,7 @@ export function ToolComposer<T extends string>({
             <span className="max-w-[180px] truncate">{selectionLabel}</span>
           </span>
           ) : null
-        ) : attachments.length > 0 ? (
+        ) : attachments.length > 0 && !settingsInDock ? (
           <span
             className="flex h-10 shrink-0 items-center gap-2 rounded-[var(--r-sm)] pl-1.5 pr-2"
             style={{ background: "var(--bg-raised)", border: "1px solid var(--line-strong)" }}
@@ -458,16 +468,18 @@ export function ToolComposer<T extends string>({
           </button>
         </span>
 
-        <button
-          type="button"
-          onClick={() => setSettingsOpen((value) => !value)}
-          aria-label="Настройки"
-          aria-expanded={settingsOpen}
-          className="btn-icon h-10 w-10 shrink-0"
-          style={settingsOpen ? { background: "var(--hover-2)", color: "var(--fg-1)" } : undefined}
-        >
-          <Settings2 className="h-4 w-4" strokeWidth={1.7} />
-        </button>
+        {settingsInDock ? null : (
+          <button
+            type="button"
+            onClick={() => setSettingsOpen((value) => !value)}
+            aria-label="Настройки"
+            aria-expanded={settingsOpen}
+            className="btn-icon h-10 w-10 shrink-0"
+            style={settingsOpen ? { background: "var(--hover-2)", color: "var(--fg-1)" } : undefined}
+          >
+            <Settings2 className="h-4 w-4" strokeWidth={1.7} />
+          </button>
+        )}
       </div>
       </div>
     </div>

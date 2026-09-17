@@ -33,6 +33,7 @@ export function ToolShell({
   intake,
   dropLabel,
   composerOpen,
+  composerSpace = "pb-32",
   trayOpen = false,
   trayMargin = "lg:mr-[296px]",
   layers,
@@ -44,6 +45,8 @@ export function ToolShell({
   dropLabel?: string
   /** Внизу есть композер — контент получает отступ, чтобы не уходить под него. */
   composerOpen: boolean
+  /** Класс нижнего отступа под композер; выше обычного, когда над ним постоянная секция (`dock`). */
+  composerSpace?: string
   /** Справа открыта панель-галерея пачки — контент получает отступ под неё. */
   trayOpen?: boolean
   /** Класс отступа под правые панели; у переноса стиля их две. */
@@ -69,7 +72,7 @@ export function ToolShell({
       {...intake?.dropProps}
       className={cn(
         "page-shell transition-[margin] duration-300",
-        composerOpen && "pb-32",
+        composerOpen && composerSpace,
         // Справа — место под панель-галерею, зеркально отступу под сайдбар.
         trayOpen && trayMargin
       )}
