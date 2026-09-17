@@ -362,6 +362,10 @@ id записи («Повторить» рисует то же).
   и рендерит документ `src/server/album-document.tsx`
   через **@react-pdf/renderer** — чистый JS без Chromium, работает в serverless;
   шрифты проекта (Unbounded, Garet) встраиваются с диска (`public/fonts`);
+  в функцию `/api/album` на Vercel вручную включены и они, и стандартные
+  шрифты pdfkit (`outputFileTracingIncludes` в `next.config.js`): pdfkit грузит
+  Helvetica через `createRequire('#standard-fonts/…')`, трассировщик Next этого
+  не видит, и без включения PDF на проде не собирается;
 - тексты (`POST /api/album/copy`, `src/server/album-copy.ts`) пишет та же
   чат-модель, что разбирает сцену: она видит обложку, комментарии дизайнера,
   брифы кадров и инвентарь сцены и возвращает JSON — подзаголовок, концепцию,

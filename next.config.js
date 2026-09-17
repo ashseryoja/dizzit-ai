@@ -8,9 +8,16 @@ const nextConfig = {
   // Альбом-презентация (src/server/album-*): @react-pdf/renderer — ESM-пакет
   // с pdfkit и fontkit внутри, в бандл сервера его не тянем, а шрифты из
   // public/fonts должны попасть в функцию /api/album на Vercel.
+  //
+  // Стандартные шрифты pdfkit — туда же вручную: при создании любого документа
+  // pdfkit грузит Helvetica через createRequire('#standard-fonts/Helvetica')
+  // (алиас из поля imports его package.json), а трассировщик файлов Next такой
+  // require не видит. Без этой строки на Vercel сборка PDF падает с
+  // «Cannot find module …/pdfkit/js/standard-fonts/Helvetica.cjs», хотя локально
+  // всё работает (node_modules целиком на месте).
   serverExternalPackages: ["@react-pdf/renderer"],
   outputFileTracingIncludes: {
-    "/api/album": ["./public/fonts/**/*"],
+    "/api/album": ["./public/fonts/**/*", "./node_modules/pdfkit/js/standard-fonts/**/*"],
     "/api/album/copy": ["./public/fonts/**/*"],
   },
   experimental: {
