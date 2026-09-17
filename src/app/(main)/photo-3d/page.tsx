@@ -321,15 +321,15 @@ export default function PhotoTo3DPage() {
           onPick={() => slots.pick("main")}
           label={slots.main ? "Заменить фото" : "Добавить фото"}
           armed={Boolean(slots.main)}
-          visual={<FurnitureMorph showLabel className={cn("relative w-full max-w-[520px]", dockOpen ? "h-[180px] sm:h-[210px]" : "h-[300px] sm:h-[340px]")} />}
+          visual={<FurnitureMorph showLabel className={cn("relative w-full max-w-[520px]", dockOpen ? "h-[120px] sm:h-[clamp(110px,calc(100dvh-36rem),220px)]" : "h-[300px] sm:h-[340px]")} />}
           title={slots.main ? "Фото приложено" : "Что построим сегодня?"}
           description={
             slots.main
               ? `«${slots.main.file.name}» — проверьте параметры внизу и нажмите «${LABELS.submitLabel}».`
               : "Один предмет в кадре — стул, стол, лампа, диван — и получите его 3D-модель. Нажмите, перетащите сюда или вставьте из буфера. PNG, JPG или WEBP до 32 МБ."
           }
-          caption="Модель строится по фото за 1–5 минут: GLB — крутить прямо здесь, FBX и OBJ — в 3ds Max, ArchiCAD и AutoCAD."
-          className="max-w-[760px] gap-2 px-6 pb-8 pt-4 sm:pb-10"
+          caption="GLB · FBX · OBJ — для 3ds Max, ArchiCAD, AutoCAD"
+          className={cn("max-w-[760px] gap-2 px-6", dockOpen ? "pb-6 pt-3" : "pb-8 pt-4 sm:pb-10")}
         />
       ) : (
         <div className="flex flex-col gap-3">
