@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useRef } from "react"
 import { Download, FileText, RefreshCw } from "lucide-react"
 
 import { ThinkingGlyph } from "@/components/glyphs"
@@ -113,6 +114,18 @@ export function AlbumBuildPanel({
 }) {
   const result = albumBuildResult(state)
   const last = plan.pages[plan.pages.length - 1]
+
+  // Панель бывает выше окна (ноутбук, ~780 px): тогда она прокручивается
+  // сама (`.album-build`), а превью уходит под нижний край. Со стартом сборки
+  // и по её итогу докручиваем до превью — прогресс и результат видны без
+  // поиска. На узких экранах так же подъезжает страница: кнопка там в полосе
+  // внизу, а панель — под шагами.
+  const previewRef = useRef<HTMLDivElement>(null)
+  const status = state.status
+  useEffect(() => {
+    if (status === "idle") return
+    previewRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" })
+  }, [status])
   const hasContacts = plan.sections.some((section) => section.kind === "contacts")
   const rows: { key: string; number: string; title: string; detail?: string; pages: string }[] = [
     { key: "cover", number: "", title: "Обложка", detail: coverLabel, pages: "1" },
@@ -167,16 +180,18 @@ export function AlbumBuildPanel({
                 : `Собран в ${formatTime(state.result.builtAt)} · ${formatBytes(state.result.blob.size)}${state.result.missing.length ? ` · ${state.result.missing.length} ${plural(state.result.missing.length, ["картинка", "картинки", "картинок"])} не найдено, на их месте заглушки` : ""}`}
       </p>
 
-      <AlbumPreview
-        blob={result?.blob ?? null}
-        status={state.status}
-        error={state.status === "error" ? state.message : null}
-        progress={state.status === "building" ? state.progress : null}
-        stale={stale}
-        format={format}
-        idleText="Превью появится после сборки — это тот же PDF, что уходит клиенту."
-        onRetry={onBuild}
-      />
+      <div ref={previewRef} className="album-build-preview">
+        <AlbumPreview
+          blob={result?.blob ?? null}
+          status={state.status}
+          error={state.status === "error" ? state.message : null}
+          progress={state.status === "building" ? state.progress : null}
+          stale={stale}
+          format={format}
+          idleText="Превью появится после сборки — это тот же PDF, что уходит клиенту."
+          onRetry={onBuild}
+        />
+      </div>
     </Panel>
   )
 }
