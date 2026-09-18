@@ -58,6 +58,21 @@ function navItemClass(large: boolean, active: boolean) {
   )
 }
 
+/** One persistent surface per list; interrupted transitions continue from their current position. */
+function SelectionHighlight({ index, large }: { index: number; large: boolean }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="nav-selection"
+      style={{
+        height: large ? 48 : 40,
+        transform: `translate3d(0, ${Math.max(0, index) * (large ? 52 : 44)}px, 0)`,
+        visibility: index < 0 ? "hidden" : "visible",
+      }}
+    />
+  )
+}
+
 /** Квадратик-«аватар» проекта: первая буква названия (паттерн UpSound,
     только вместо фото артиста — инициал). */
 function ProjectAvatar({ title, large }: { title: string; large: boolean }) {
@@ -97,6 +112,12 @@ function ProjectSwitcher({ large, onNavigate }: { large: boolean; onNavigate?: (
   // создания, по завершении (как угодно) закрываем дропдаун и идём в проект.
   const [createdId, setCreatedId] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const selectionTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const cancelPendingSelection = () => {
+    if (selectionTimer.current !== null) clearTimeout(selectionTimer.current)
+    selectionTimer.current = null
+  }
+  useEffect(() => () => cancelPendingSelection(), [])
   // Дропдаун живёт в DOM, пока доигрывает анимация закрытия.
   const menu = usePresence(open)
 
@@ -141,6 +162,7 @@ function ProjectSwitcher({ large, onNavigate }: { large: boolean; onNavigate?: (
   // переименование ДОВОДИТ: набранное имя не должно молча теряться.
   useEffect(() => {
     if (!open) {
+      cancelPendingSelection()
       setQuery("")
       finishEditing(true)
     }
@@ -181,6 +203,8 @@ function ProjectSwitcher({ large, onNavigate }: { large: boolean; onNavigate?: (
           role="menu"
           data-state={menu.state}
           className="popover popover-stagger overlay-surface absolute inset-x-0 top-[calc(100%+8px)] z-50 p-2"
+          onPointerDownCapture={cancelPendingSelection}
+          onKeyDownCapture={cancelPendingSelection}
         >
           <div className="relative mb-2">
             <Search
@@ -199,93 +223,112 @@ function ProjectSwitcher({ large, onNavigate }: { large: boolean; onNavigate?: (
             />
           </div>
 
-          <div className="no-scrollbar flex max-h-[280px] flex-col gap-1 overflow-y-auto">
-            {filtered.length === 0 ? (
-              <p className="px-3 py-2 text-[12px]" style={{ color: "var(--fg-5)" }}>
-                {projects.length === 0 ? "Проектов пока нет" : "Ничего не найдено"}
-              </p>
-            ) : (
-              filtered.map((project) => {
-                if (project.id === editingId) {
+          <div className="no-scrollbar max-h-[280px] overflow-y-auto">
+            <div className="nav-selection-list flex flex-col gap-1">
+              <SelectionHighlight
+                index={filtered.findIndex((project) => project.id === activeProjectId)}
+                large={large}
+              />
+              {filtered.length === 0 ? (
+                <p className="px-3 py-2 text-[12px]" style={{ color: "var(--fg-5)" }}>
+                  {projects.length === 0 ? "Проектов пока нет" : "Ничего не найдено"}
+                </p>
+              ) : (
+                filtered.map((project) => {
+                  if (project.id === editingId) {
+                    return (
+                      <input
+                        key={project.id}
+                        autoFocus
+                        value={draft}
+                        onChange={(event) => setDraft(event.target.value)}
+                        onFocus={(event) => event.currentTarget.select()}
+                        onBlur={() => finishEditing(true)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") finishEditing(true)
+                          if (event.key === "Escape") {
+                            // Не даём Escape долететь до document — иначе вместе
+                            // с отменой правки закроется весь дропдаун.
+                            event.stopPropagation()
+                            finishEditing(false)
+                          }
+                        }}
+                        aria-label="Название проекта"
+                        className={cn("field relative shrink-0 w-full text-[13px]", large ? "h-12" : "h-10")}
+                      />
+                    )
+                  }
+
                   return (
-                    <input
+                    <div
                       key={project.id}
-                      autoFocus
-                      value={draft}
-                      onChange={(event) => setDraft(event.target.value)}
-                      onFocus={(event) => event.currentTarget.select()}
-                      onBlur={() => finishEditing(true)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") finishEditing(true)
-                        if (event.key === "Escape") {
-                          // Не даём Escape долететь до document — иначе вместе
-                          // с отменой правки закроется весь дропдаун.
-                          event.stopPropagation()
-                          finishEditing(false)
-                        }
-                      }}
-                      aria-label="Название проекта"
-                      className={cn("field w-full text-[13px]", large ? "h-12" : "h-10")}
-                    />
-                  )
-                }
-
-                return (
-                  <div key={project.id} className="relative">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        selectProject(project.id)
-                        router.push("/")
-                        setOpen(false)
-                        onNavigate?.()
-                      }}
-                      className={cn(navItemClass(large, project.id === activeProjectId), "pr-[68px]")}
-                      aria-current={project.id === activeProjectId ? "true" : undefined}
+                      className="project-option relative shrink-0"
+                      data-active={project.id === activeProjectId}
                     >
-                      <ProjectAvatar title={project.title} large={false} />
-                      <span className="min-w-0 flex-1 truncate text-left">{project.title}</span>
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          selectProject(project.id)
+                          cancelPendingSelection()
+                          const finishSelection = () => {
+                            selectionTimer.current = null
+                            router.push("/")
+                            setOpen(false)
+                            onNavigate?.()
+                          }
+                          const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+                            || document.documentElement.dataset.motion === "reduce"
+                          // Let the shared surface arrive before dismissing the list.
+                          if (reduceMotion || project.id === activeProjectId) finishSelection()
+                          else selectionTimer.current = setTimeout(finishSelection, 420)
+                        }}
+                        className={cn(navItemClass(large, project.id === activeProjectId), "pr-[68px]")}
+                        aria-current={project.id === activeProjectId ? "true" : undefined}
+                      >
+                        <ProjectAvatar title={project.title} large={false} />
+                        <span className="min-w-0 flex-1 truncate text-left">{project.title}</span>
+                      </button>
 
-                    <div className="absolute right-1.5 top-1/2 flex -translate-y-1/2 gap-0.5">
-                      <button
-                        type="button"
-                        aria-label={`Переименовать проект «${project.title}»`}
-                        onClick={() => {
-                          setEditingId(project.id)
-                          setDraft(project.title)
-                        }}
-                        className="btn-icon h-7 w-7"
-                      >
-                        <Pencil className="h-3.5 w-3.5" strokeWidth={1.7} />
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`Удалить проект «${project.title}»`}
-                        onClick={() => {
-                          const confirmed = window.confirm(
-                            `Удалить проект «${project.title}» вместе с его обработками и материалами? Действие необратимо.`
-                          )
-                          if (!confirmed) return
-                          // Сначала данные инструментов (метаданные + блобы
-                          // IndexedDB), потом сам проект — иначе сироты.
-                          useEnhanceStore.getState().removeByProject(project.id)
-                          useMaterialStore.getState().removeByProject(project.id)
-                          useModelStore.getState().removeByProject(project.id)
-                          useViewsStore.getState().removeByProject(project.id)
-                          useRestyleStore.getState().removeByProject(project.id)
-                          useAlbumStore.getState().removeByProject(project.id)
-                          deleteProject(project.id)
-                        }}
-                        className="btn-icon h-7 w-7"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" strokeWidth={1.7} />
-                      </button>
+                      <div className="project-actions absolute right-1.5 top-1/2 flex -translate-y-1/2 gap-0.5">
+                        <button
+                          type="button"
+                          aria-label={`Переименовать проект «${project.title}»`}
+                          onClick={() => {
+                            setEditingId(project.id)
+                            setDraft(project.title)
+                          }}
+                          className="btn-icon h-7 w-7"
+                        >
+                          <Pencil className="h-3.5 w-3.5" strokeWidth={1.7} />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Удалить проект «${project.title}»`}
+                          onClick={() => {
+                            const confirmed = window.confirm(
+                              `Удалить проект «${project.title}» вместе с его обработками и материалами? Действие необратимо.`
+                            )
+                            if (!confirmed) return
+                            // Сначала данные инструментов (метаданные + блобы
+                            // IndexedDB), потом сам проект — иначе сироты.
+                            useEnhanceStore.getState().removeByProject(project.id)
+                            useMaterialStore.getState().removeByProject(project.id)
+                            useModelStore.getState().removeByProject(project.id)
+                            useViewsStore.getState().removeByProject(project.id)
+                            useRestyleStore.getState().removeByProject(project.id)
+                            useAlbumStore.getState().removeByProject(project.id)
+                            deleteProject(project.id)
+                          }}
+                          className="btn-icon h-7 w-7"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" strokeWidth={1.7} />
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                )
-              })
-            )}
+                  )
+                })
+              )}
+            </div>
           </div>
 
           <hr className="ds-divider my-2" />
@@ -442,7 +485,8 @@ function SidebarBody({
 
       <div className="min-h-0 flex-1 overflow-y-auto no-scrollbar px-4">
         <span className="ds-micro mb-1.5 block px-3">инструменты</span>
-        <div className="flex flex-col gap-1 pb-4">
+        <div className="nav-selection-list flex flex-col gap-1 pb-4">
+          <SelectionHighlight index={TOOL_LINKS.findIndex((link) => isActive(link.href))} large={large} />
           {TOOL_LINKS.map((link) => (
             <Link
               key={link.href}
@@ -503,16 +547,11 @@ export function AppSidebar() {
     <>
       {/* Десктоп: плавающая панель со скруглением и отступом 16px от краёв. */}
       <aside
-        className="fixed left-4 top-4 bottom-4 z-40 hidden w-[264px] flex-col overflow-hidden lg:flex"
-        style={{
-          background: "var(--bg-surface)",
-          border: "1px solid var(--line)",
-          borderRadius: "var(--r-xl)",
-          boxShadow: "0 16px 40px rgba(0, 0, 0, 0.35)",
-        }}
+        className="glass-surface app-sidebar fixed left-4 top-4 bottom-4 z-40 hidden w-[264px] flex-col overflow-hidden lg:flex"
       >
         <div className="flex h-16 shrink-0 items-center justify-center">
           <Logo />
+          <span className="studio-caption">AI DESIGN WORKSPACE</span>
         </div>
         <SidebarBody large={false} />
       </aside>
@@ -549,13 +588,10 @@ export function AppSidebar() {
         // иначе Tab уводит каретку в невидимое меню за краем экрана.
         inert={!openMobile}
         className={cn(
-          "fixed bottom-2 left-2 top-2 z-50 flex w-[300px] max-w-[88vw] flex-col overflow-hidden transition-transform duration-300 lg:hidden",
+          "glass-surface app-sidebar fixed bottom-2 left-2 top-2 z-50 flex w-[300px] max-w-[88vw] flex-col overflow-hidden transition-transform duration-300 lg:hidden",
           openMobile ? "translate-x-0" : "-translate-x-[110%]"
         )}
         style={{
-          background: "var(--bg-surface)",
-          border: "1px solid var(--line)",
-          borderRadius: "var(--r-xl)",
           transitionTimingFunction: "var(--ease-out)",
         }}
       >

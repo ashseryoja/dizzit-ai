@@ -5,7 +5,7 @@ import { useEffect } from "react"
 import { useSettingsStore } from "@/stores/settings-store"
 
 /** Фон системной строки браузера под каждую тему (метатег theme-color). */
-const THEME_COLOR = { dark: "#3c3c41", light: "#ededf0" } as const
+const THEME_COLOR = { dark: "#292929", light: "#eeeeee" } as const
 
 /**
  * Переносит настройки внешнего вида на <html>: data-theme (конкретная тема,

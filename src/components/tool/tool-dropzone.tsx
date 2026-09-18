@@ -44,7 +44,7 @@ export function ToolDropzone({
         style={{ borderRadius: "var(--r-xl)" }}
       >
         <svg className="dropzone-outline" aria-hidden>
-          <rect width="100%" height="100%" rx="23" />
+          <rect width="100%" height="100%" rx="29" />
         </svg>
 
         {visual}

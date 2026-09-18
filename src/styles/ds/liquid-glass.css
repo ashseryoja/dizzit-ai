@@ -1,0 +1,221 @@
+/* Approved Dizzit / Liquid Glass. Materials only: tool geometry and behaviour
+   stay in surfaces.css and the shared React components. */
+:root {
+  --glass-fill: radial-gradient(ellipse at 0% 0%, #ffffff16, transparent 55%), linear-gradient(130deg, #ffffff18, #ffffff07 47%, #ffffff10);
+  --glass-base: #ffffff03;
+  --glass-edge: #ffffff38;
+  --glass-shadow: 0 22px 48px #00000030, 0 5px 14px #00000016,
+    inset 0 1px 1px var(--glass-edge), inset 0 -1px 1px #ffffff08;
+  --glass-blur: 36px;
+  --glass-control: linear-gradient(140deg, #ffffff13, #ffffff07);
+  --glass-selected: linear-gradient(145deg, #fffffff5, #dcdcdcf0);
+  --glass-selected-ink: #202020;
+  --glass-selected-shadow: 0 5px 14px #0000001c, inset 0 1px 1px #ffffff;
+  --ambient-background: radial-gradient(ellipse at 20% -10%, #ffffff23, transparent 56%),
+    radial-gradient(ellipse at 96% 86%, #ffffff0d, transparent 45%);
+}
+:root[data-theme="light"] {
+  --glass-fill: linear-gradient(135deg, #ffffffb8, #ffffff65 48%, #ffffff91);
+  --glass-base: #f1f1f1c2;
+  --glass-edge: #ffffff;
+  --glass-shadow: 0 18px 42px #0000000d, 0 4px 12px #00000005,
+    inset 0 1px 1px var(--glass-edge);
+  --glass-control: linear-gradient(140deg, #ffffffb0, #ffffff50);
+  --glass-selected: linear-gradient(145deg, #414141, #252525);
+  --glass-selected-ink: #ffffff;
+  --glass-selected-shadow: 0 5px 14px #00000015, inset 0 1px 1px #ffffff25;
+  --ambient-background: radial-gradient(ellipse at 19% 0%, #ffffff, transparent 65%);
+}
+
+/* No filters on page/layout wrappers: fixed composers, menus and canvases
+   must keep the viewport as their containing block. */
+.glass-surface, .panel {
+  background: var(--glass-fill), var(--glass-base);
+  border: 0;
+  border-radius: var(--r-xl);
+  box-shadow: var(--glass-shadow);
+  -webkit-backdrop-filter: grayscale(1) blur(var(--glass-blur));
+  backdrop-filter: grayscale(1) blur(var(--glass-blur));
+}
+.app-sidebar { border-radius: 32px; }
+.app-sidebar > div:first-child { height: 92px; }
+.tool-aside { border-radius: 32px; }
+.tool-composer { padding: 0; border-radius: 30px; }
+.composer-dock { border-radius: 24px; background: var(--glass-fill), var(--bg-surface); }
+
+/* Popovers need a dense backing for readable text above photos. */
+.overlay-surface, .sheet-bottom, .folder-editor {
+  background: var(--glass-control), var(--bg-overlay);
+  border-color: transparent;
+  box-shadow: var(--glass-shadow);
+}
+.card {
+  background: var(--glass-control), var(--bg-surface);
+  border-color: transparent;
+  box-shadow: inset 0 1px var(--line);
+}
+.card-interactive:hover { background: var(--raised-hover); border-color: transparent; }
+
+.nav-item { border-radius: 18px; }
+.nav-item, .seg-item { transition: background-color var(--dur-fast) var(--ease-std), box-shadow var(--dur-fast) var(--ease-std); }
+.nav-item.is-active, .nav-item.is-active:hover,
+.seg-item.is-active, .seg-item.is-active:hover {
+  background: var(--glass-selected);
+  color: var(--glass-selected-ink);
+  border-color: transparent;
+  box-shadow: var(--glass-selected-shadow);
+  font-weight: 600;
+}
+.nav-item.is-active:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+/* A single moving surface keeps selection continuous across route/project changes. */
+.nav-selection-list { position: relative; isolation: isolate; }
+.nav-selection {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: 18px;
+  background: var(--glass-selected);
+  box-shadow: var(--glass-selected-shadow);
+  transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.nav-selection-list .nav-item { transition: color 180ms ease, background-color 180ms ease; }
+.nav-selection-list .nav-item.is-active,
+.nav-selection-list .nav-item.is-active:hover {
+  background: transparent;
+  box-shadow: none;
+}
+.project-option[data-active="true"] .project-actions .btn-icon {
+  color: var(--glass-selected-ink);
+}
+.project-option[data-active="true"] .project-actions .btn-icon:hover {
+  color: var(--glass-selected-ink);
+  background: color-mix(in srgb, var(--glass-selected-ink) 12%, transparent);
+}
+.project-actions .btn-icon:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: -2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .nav-selection, .nav-selection-list .nav-item { transition: none; }
+}
+
+.seg { border-color: transparent; background: var(--hover-1); border-radius: 22px; padding: 4px; }
+.seg-item { border-radius: 18px; }
+.seg-item.aspect-choice.is-active .aspect-glyph,
+.seg-item.aspect-choice.is-active .album-theme-glyph { border-color: currentColor; }
+.seg-item.aspect-choice.is-active .aspect-hint { color: inherit; opacity: 0.72; }
+
+.btn-primary {
+  border-radius: 999px;
+  background: var(--glass-selected);
+  color: var(--glass-selected-ink);
+  box-shadow: var(--glass-selected-shadow);
+  font-weight: 600;
+  /* Keep an opaque base under the gradient in EVERY state. Interpolating
+     transparent -> solid background-color caused the dark hover flash. */
+  background-color: var(--accent);
+  transition: box-shadow 180ms var(--ease-std), opacity 180ms var(--ease-std);
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--glass-selected) var(--accent);
+  color: var(--glass-selected-ink);
+  box-shadow: 0 9px 24px #00000035, inset 0 1px 2px #ffffff, 0 0 16px #ffffff0a;
+}
+.btn-primary:active:not(:disabled) {
+  background: var(--glass-selected) var(--accent);
+  color: var(--glass-selected-ink);
+  box-shadow: 0 3px 9px #00000025, inset 0 1px 2px #ffffff80;
+}
+.btn-outline, .btn-secondary {
+  border-radius: 999px;
+  border-color: transparent;
+  background: var(--glass-control);
+  box-shadow: inset 0 1px var(--line-strong), 0 3px 10px #0000000a;
+}
+.btn-secondary:hover:not(:disabled), .btn-outline:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--hover-2);
+}
+.btn-icon { border-radius: 50%; }
+.btn-ghost { border-radius: 999px; }
+.field { border-radius: var(--r-sm); border-color: var(--line); box-shadow: inset 0 1px var(--line); }
+.chip { border-radius: 999px; background: var(--glass-control); }
+.chip-accent { border-color: var(--line-strong); }
+
+/* Preserve the full render and exact region-editor coordinate system.
+   No padding/transform/filters on the image or its measured frame. */
+.stage { border: 0; background: var(--glass-fill), var(--bg-page); box-shadow: var(--glass-shadow); }
+.batch-tile { border-color: transparent; background: var(--glass-fill), var(--bg-surface); }
+.stage-badge, .stage-nav, .rg-pill, .model-downloads,
+.model-stage-chip, .model-stage-stats, .model-stage-caption, .model-stage-swatches {
+  background: linear-gradient(145deg, #ffffff35, #ffffff12 55%, #ffffff20), #30303055;
+  border-color: transparent;
+  box-shadow: inset 0 1px 2px #ffffff65, inset 0 -1px #ffffff18, 0 8px 22px #00000030;
+  -webkit-backdrop-filter: grayscale(1) blur(22px) brightness(.85);
+  backdrop-filter: grayscale(1) blur(22px) brightness(.85);
+}
+.stage-badge { border-radius: 999px; }
+.stage-nav:hover { background: #4a4a4ade; }
+.rg-tool.is-active { background: #ffffffe6; color: #202020; }
+.rg-tool.is-active:hover:not(:disabled) { color: #202020; }
+
+/* Selected content keeps a visible selection indicator without thick frames.
+   Picking/focus remain distinct in multi-selection and keyboard navigation. */
+.tray-thumb { border-color: transparent; }
+.tray-thumb.is-active { border-color: #ffffff55; box-shadow: 0 3px 12px #00000020; }
+.tray-thumb.is-active.is-focus { box-shadow: 0 0 0 1px var(--fg-3), 0 3px 12px #00000020; }
+.tray-thumb:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.style-row.is-active { background: var(--hover-2); border-color: transparent; box-shadow: inset 0 1px var(--line-strong); }
+.dropzone { background: var(--glass-fill), var(--glass-base); box-shadow: var(--glass-shadow); }
+.dropzone::before { display: none; }
+.dropzone-outline rect { stroke-width: 1; stroke: var(--line-strong); }
+.add-bar, .tray-add { border-radius: 999px; }
+.add-tile { border-radius: var(--r-xl); }
+
+@media (max-width: 767px) {
+  :root { --glass-blur: 18px; }
+  .tool-composer { padding: 2px; border-radius: 24px; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .glass-surface, .panel, .dropzone { background: var(--bg-surface); backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+
+/* Composition matches the approved studio mockup: title, full image, roomy
+   composer. Controls keep their existing handlers and accessible names. */
+.tool-heading { flex: none; margin-bottom: 24px; }
+.tool-breadcrumb { display: flex; align-items: center; gap: 10px; color: var(--fg-4); font-size: 11px; margin-bottom: 12px; }
+.tool-heading h1 { margin: 0; font-size: clamp(24px, 2.2vw, 36px); font-weight: 550; }
+.tool-heading p { margin-top: 10px; font-size: 13px; color: var(--fg-3); }
+.composer-position { padding-inline: 24px; }
+.composer-stack { max-width: 1320px; }
+.composer-row { display: grid; grid-template-columns: 1fr auto 44px; grid-template-areas: "context context settings" "input input input" "hint action action"; gap: 10px; padding: 14px 18px 16px; }
+.composer-selection { grid-area: context; justify-self: start; height: 30px; }
+.composer-row::before { content: "Пожелания к результату"; grid-area: context; align-self: center; font-size: 12px; color: var(--fg-3); }
+.composer-row:has(.composer-selection)::before { display: none; }
+.composer-input { grid-area: input; width: 100%; min-width: 0; height: 62px; resize: none; background: transparent; border: 0; padding: 12px 0 0; border-top: 1px solid var(--line); font-size: 15px; line-height: 1.5; outline: none; }
+.composer-input:focus-visible { box-shadow: inset 0 1px var(--line-strong); }
+.composer-submit { grid-area: action; justify-self: end; }
+.composer-submit .btn-primary { height: 46px; padding-inline: 24px; }
+.composer-settings { grid-area: settings; justify-self: end; height: 32px; width: 32px; }
+.composer-shortcut { grid-area: hint; align-self: end; padding-bottom: 6px; color: var(--fg-4); font-size: 11px; }
+/* 3D has a sizeable dedicated settings dock: keep its input compact. */
+.composer-stack:has(.composer-dock) .composer-row { grid-template-areas: "context input action"; grid-template-columns: auto 1fr auto; padding: 10px; gap: 8px; }
+.composer-stack:has(.composer-dock) .composer-input { height: 44px; padding: 10px; border: 0; }
+.composer-stack:has(.composer-dock) .composer-shortcut,
+.composer-stack:has(.composer-dock) .composer-row::before { display: none; }
+.tray-heading { font-family: var(--font-display); font-size: 17px; font-weight: 500; text-transform: capitalize; color: var(--fg-1); }
+.app-sidebar .studio-logo { font-size: 26px; }
+.app-sidebar > div:first-child:has(.studio-caption) { height: 116px; flex-direction: column; gap: 12px; }
+.studio-caption { color: var(--fg-4); font-size: 8px; letter-spacing: 0.27em; }
+@media (max-width: 767px) {
+  .composer-position { padding-inline: 0; }
+  .composer-row { padding: 10px 12px; gap: 6px; }
+  .composer-input { font-size: 16px; height: 58px; }
+  .composer-shortcut { display: none; }
+  .tool-heading { margin-bottom: 18px; }
+  .tool-heading h1 { font-size: 24px; }
+}
+
+.studio-logo { font-size: 17px; }

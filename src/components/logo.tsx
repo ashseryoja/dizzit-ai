@@ -7,10 +7,9 @@ import { cn } from "@/lib/utils"
 export function Logo({ className }: { className?: string }) {
   return (
     <span
-      className={cn("inline-flex items-baseline gap-[3px] leading-none", className)}
+      className={cn("studio-logo inline-flex items-baseline gap-[3px] leading-none", className)}
       style={{
         fontFamily: "var(--font-display)",
-        fontSize: "17px",
         fontWeight: 500,
         letterSpacing: "-0.02em",
         color: "var(--fg-1)",

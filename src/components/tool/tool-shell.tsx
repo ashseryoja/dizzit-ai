@@ -1,6 +1,8 @@
 "use client"
 
 import type { ReactNode } from "react"
+import { usePathname } from "next/navigation"
+import { useActiveProject } from "@/stores/project-store"
 
 import { PageLoader } from "@/components/page-loader"
 import { useBlobGc } from "@/lib/blob-gc"
@@ -8,6 +10,14 @@ import type { AttachmentIntake } from "@/lib/use-attachments"
 import { useMounted } from "@/lib/use-mounted"
 import { usePresence, type PresenceState } from "@/lib/use-presence"
 import { cn } from "@/lib/utils"
+
+const TOOL_HEADINGS: Record<string, readonly [string, string]> = {
+  "/enhance": ["Редактор рендера", "Превратите хороший рендер в впечатляющий."],
+  "/views": ["Ракурсы и детали", "Новые точки зрения. Больше выразительных деталей."],
+  "/restyle": ["Перенос стиля", "Ваше пространство — в новом прочтении."],
+  "/photo-3d": ["Фото → 3D", "От фотографии предмета — к объёмной модели."],
+  "/materials": ["Генерация материала", "Фактуры, которые хочется рассматривать."],
+}
 
 /** Результат usePresence — слои каркаса принимают его целиком. */
 export interface Presence {
@@ -33,7 +43,7 @@ export function ToolShell({
   intake,
   dropLabel,
   composerOpen,
-  composerSpace = "pb-32",
+  composerSpace = "pb-60",
   trayOpen = false,
   trayMargin = "lg:mr-[296px]",
   layers,
@@ -55,6 +65,9 @@ export function ToolShell({
   children: ReactNode
 }) {
   const mounted = useMounted()
+  const pathname = usePathname()
+  const project = useActiveProject()
+  const heading = TOOL_HEADINGS[pathname]
   // GC общего хранилища блобов — после гидрации сторов ВСЕХ инструментов.
   useBlobGc()
   const dragLayer = usePresence(intake?.dragOver ?? false)
@@ -105,7 +118,16 @@ export function ToolShell({
         </div>
       ) : null}
 
-      <div className="page-content-wide flex flex-1 flex-col">{children}</div>
+      <div className="page-content-wide flex flex-1 flex-col">
+        {heading ? (
+          <header className="tool-heading">
+            <div className="tool-breadcrumb"><span>{project?.title ?? "Рабочее пространство"}</span><span aria-hidden="true">›</span><span>Инструменты</span></div>
+            <h1>{heading[0]}</h1>
+            <p>{heading[1]}</p>
+          </header>
+        ) : null}
+        {children}
+      </div>
 
       {layers}
     </div>
@@ -134,7 +156,7 @@ export function ComposerDock({
     <div
       data-state={presence?.state}
       className={cn(
-        "presence-rise pointer-events-none fixed inset-x-3 bottom-3 z-30 flex justify-center lg:left-[312px] lg:bottom-5",
+        "composer-position presence-rise pointer-events-none fixed inset-x-3 bottom-3 z-30 flex justify-center lg:left-[312px] lg:bottom-5",
         trayOpen ? trayRight : "lg:right-8"
       )}
     >
@@ -172,13 +194,7 @@ export function ToolAside({
     >
       {rail}
       <div
-        className="flex min-h-0 flex-1 flex-col overflow-hidden"
-        style={{
-          background: "var(--bg-surface)",
-          border: "1px solid var(--line)",
-          borderRadius: "var(--r-xl)",
-          boxShadow: "0 16px 40px rgba(0, 0, 0, 0.35)",
-        }}
+        className="glass-surface tool-aside flex min-h-0 flex-1 flex-col overflow-hidden"
       >
         {children}
       </div>

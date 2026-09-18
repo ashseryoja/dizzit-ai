@@ -3,6 +3,7 @@ node_modules
 .next-preview
 .next-solo
 .next-build
+.next-design-review
 out
 build
 .DS_Store

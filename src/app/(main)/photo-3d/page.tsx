@@ -337,7 +337,7 @@ export default function PhotoTo3DPage() {
             <ModelStage
               model={selected}
               progress={progress[selected.id]}
-              className={dockOpen ? "h-[calc(100dvh-24.5rem)] min-h-[300px]" : "h-[calc(100dvh-12.5rem)] min-h-[360px]"}
+              className={dockOpen ? "h-[calc(100dvh-33rem)] min-h-[220px]" : "h-[calc(100dvh-21rem)] min-h-[300px]"}
               onRetry={() => retry(selected)}
               onDelete={() => deleteModel(selected)}
             />

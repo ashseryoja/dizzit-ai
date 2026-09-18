@@ -220,7 +220,7 @@ export function ToolComposer<T extends string>({
   const OptionsIcon = labels.optionsIcon
 
   return (
-    <div ref={containerRef} className="pointer-events-auto relative w-full max-w-[880px]">
+    <div ref={containerRef} className="composer-stack pointer-events-auto relative w-full">
       {/* Панель настроек — над композером, той же ширины. */}
       {settings.present && !settingsInDock ? (
         <div
@@ -363,13 +363,13 @@ export function ToolComposer<T extends string>({
 
       {/* Пристыкованная секция над композером (см. dock). */}
       {dock ? (
-        <div className="overlay-surface rise-in mb-2 flex flex-col" role="region" aria-label={dockLabel}>
+        <div className="glass-surface composer-dock rise-in mb-2 flex flex-col" role="region" aria-label={dockLabel}>
           {dock}
         </div>
       ) : null}
 
       {/* Сам композер. */}
-      <div className="overlay-surface flex flex-col">
+      <div className="glass-surface tool-composer flex flex-col">
       {regionTags && regionTags.length > 0 ? (
         <div
           className="no-scrollbar flex items-center gap-1.5 overflow-x-auto px-2.5 pt-2.5"
@@ -400,12 +400,12 @@ export function ToolComposer<T extends string>({
           <span>{notice}</span>
         </div>
       ) : null}
-      <div className="flex items-center gap-1.5 p-2 sm:gap-2">
+      <div className="composer-row">
         {selectionMode ? (
           selectionLabel ? (
           /* Индикатор рабочего набора — что именно уйдёт в обработку. */
           <span
-            className="flex h-10 shrink-0 items-center gap-2 rounded-[var(--r-sm)] px-3 text-[12px] tabular-nums"
+            className="composer-selection flex h-10 shrink-0 items-center gap-2 rounded-[var(--r-sm)] px-3 text-[12px] tabular-nums"
             style={{ background: "var(--bg-raised)", border: "1px solid var(--line-strong)", color: "var(--fg-2)" }}
             aria-live="polite"
           >
@@ -415,7 +415,7 @@ export function ToolComposer<T extends string>({
           ) : null
         ) : attachments.length > 0 && !settingsInDock ? (
           <span
-            className="flex h-10 shrink-0 items-center gap-2 rounded-[var(--r-sm)] pl-1.5 pr-2"
+            className="composer-selection flex h-10 shrink-0 items-center gap-2 rounded-[var(--r-sm)] pl-1.5 pr-2"
             style={{ background: "var(--bg-raised)", border: "1px solid var(--line-strong)" }}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -442,26 +442,32 @@ export function ToolComposer<T extends string>({
           </span>
         ) : null}
 
-        <input
+        <textarea
+          rows={2}
           value={note}
           onChange={(event) => onNoteChange(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === "Enter" && !blockedReason) onSubmit()
+            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+              event.preventDefault()
+              if (!blockedReason) onSubmit()
+            }
           }}
           placeholder={placeholder ?? labels.inputPlaceholder}
           aria-label={placeholder ?? labels.inputPlaceholder}
-          className="h-10 min-w-0 flex-1 bg-transparent px-2 text-[13.5px] outline-none"
+          className="composer-input"
           style={{ color: "var(--fg-1)", caretColor: "var(--accent)" }}
         />
 
+        <span className="composer-shortcut">Enter — отправить · Shift + Enter — новая строка</span>
+
         {/* Обёртка держит подсказку: disabled-кнопка указатель не получает. */}
-        <span className="flex shrink-0" title={blockedReason ?? undefined}>
+        <span className="composer-submit flex shrink-0" title={blockedReason ?? undefined}>
           <button
             type="button"
             onClick={onSubmit}
             disabled={Boolean(blockedReason)}
             aria-label={blockedReason ? `${labels.submitLabel}: ${blockedReason}` : undefined}
-            className="btn-outline h-10 shrink-0 px-4 sm:px-5"
+            className="btn-primary h-10 shrink-0 px-4 sm:px-5"
           >
             <Sparkles className="h-4 w-4" strokeWidth={1.8} />
             <span className="hidden sm:inline">{labels.submitLabel}</span>
@@ -474,7 +480,7 @@ export function ToolComposer<T extends string>({
             onClick={() => setSettingsOpen((value) => !value)}
             aria-label="Настройки"
             aria-expanded={settingsOpen}
-            className="btn-icon h-10 w-10 shrink-0"
+            className="composer-settings btn-icon shrink-0"
             style={settingsOpen ? { background: "var(--hover-2)", color: "var(--fg-1)" } : undefined}
           >
             <Settings2 className="h-4 w-4" strokeWidth={1.7} />

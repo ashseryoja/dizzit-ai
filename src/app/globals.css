@@ -1,5 +1,6 @@
 @import "../styles/ds/colors_and_type.css";
 @import "../styles/ds/surfaces.css";
+@import "../styles/ds/liquid-glass.css";
 
 @tailwind base;
 @tailwind components;
@@ -27,19 +28,19 @@
 @layer base {
   :root {
     /* shadcn-совместимые переменные — тёмно-серая тема */
-    --background: 240 5% 12%;          /* #1e1e21 */
+    --background: 0 0% 16%;          /* #1e1e21 */
     --foreground: 0 0% 100%;
 
-    --card: 240 5% 15%;                /* #26262a */
+    --card: 0 0% 22%;                /* #26262a */
     --card-foreground: 0 0% 100%;
 
     --primary: 0 0% 100%;              /* чистый белый акцент */
-    --primary-foreground: 240 6% 10%;
+    --primary-foreground: 0 0% 12%;
 
-    --secondary: 240 5% 19%;
+    --secondary: 0 0% 26%;
     --secondary-foreground: 0 0% 100%;
 
-    --muted: 240 4% 24%;
+    --muted: 0 0% 30%;
     --muted-foreground: 0 0% 66%;
 
     --destructive: 3 70% 60%;
@@ -61,10 +62,11 @@
   }
 
   body {
-    @apply font-sans;
+    font-family: var(--font-sans);
     color: var(--fg-1);
-    /* Плоская заливка. Никаких радиальных пятен и attachment: fixed. */
-    background: var(--bg-page);
+    /* Нейтральная основа; световой фон задаёт liquid-glass.css. */
+    background: var(--ambient-background), var(--bg-page);
+    background-attachment: fixed;
     min-height: 100vh;
     min-height: 100dvh;
     -webkit-font-smoothing: antialiased;

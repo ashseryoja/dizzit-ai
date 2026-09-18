@@ -13,11 +13,11 @@ const config = {
     },
     extend: {
       fontFamily: {
-        sans: ['"Garet-Book"', "system-ui", "-apple-system", "Segoe UI", "Roboto", "sans-serif"],
+        sans: ["var(--font-sans)"],
         heading: ['"Unbounded"', "system-ui", "-apple-system", "sans-serif"],
         // Моноширинного в системе нет. Ключ переопределён основным шрифтом,
         // чтобы preflight не вернул системный моно на голые <pre>/<code>.
-        mono: ['"Garet-Book"', "system-ui", "-apple-system", "sans-serif"],
+        mono: ["var(--font-sans)"],
       },
       colors: {
         border: "hsl(var(--border))",
