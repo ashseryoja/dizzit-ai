@@ -30,6 +30,7 @@
 | Сцена: рендер во весь экран, бейджи имени/размера и «2 / 7», стрелки; поверхность во время восстановления | `src/components/tool/stage.tsx` | `Stage`, `StagePlaceholder` |
 | Пакетный грид с заголовком «Пакетное …» и кнопкой «К просмотру» | `stage.tsx` | `BatchGrid` |
 | Пустой экран — дропзона с пунктиром, приглашением, заголовком и подписью | `src/components/tool/tool-dropzone.tsx` | `ToolDropzone` |
+| Пустой экран редактора рендера — стеклянная карточка с интерьером, значком глаза и открытием примера | `src/components/tool/render-empty-state.tsx`; `.dropzone-glass*`, `.render-welcome-*` в `surfaces.css` | `RenderEmptyState`, `ToolDropzone variant="glass"` |
 | Слой «Отпустите, чтобы приложить…», скрытый `<input type="file">`, отступы под композер и панель, скелет до гидрации | `tool-shell.tsx` | `ToolShell` |
 | Положение композера внизу (отступ под сайдбар и панель, анимация появления) | `tool-shell.tsx` | `ComposerDock` |
 | Галерея результатов: масонри колонками, широкие карточки одна под другой (`layout="stack"` у сетов кадров) или сетка по три квадратных тайла в ряд по центру (`layout="tiles"` у материалов, ширина — `TILE_GALLERY_WIDTH`) | `tool-shell.tsx` | `ToolGallery`, `TILE_GALLERY_WIDTH` |
@@ -312,7 +313,20 @@ refresh. Удаление пары из пачки
 Пустой экран: кнопка-дропзона с SVG-пунктиром, внутри `visual`
 (приглашение инструмента: `RenderReveal`, `StyleSwap`, `ViewsInvite`,
 `FurnitureMorph`), заголовок, описание и подпись под зоной. `armed` —
-файл уже приложен (фото → 3D). `className` — ширина и поля кнопки.
+файл уже приложен (фото → 3D). `className` — ширина и поля обычной кнопки.
+`variant="glass"` — утверждённая стеклянная карточка без пунктира;
+`actionLabel` и `hint` добавляют визуальную кнопку и подсказку форматов,
+`footer` — отдельное действие под подписью, вне кнопки загрузки.
+
+### `RenderEmptyState` — `src/components/tool/render-empty-state.tsx`
+
+Собирает `ToolDropzone variant="glass"` для редактора рендера: локальное
+изображение `public/images/render-example.jpg`, статический стеклянный ScanEye,
+загрузка через `onPick` и ссылка «Посмотреть на примере». Ссылка загружает
+пример через общий `onAttachFiles` (`useAttachments.attachFiles`) и открывает
+обычный редактор; генерацию не запускает. Есть состояние загрузки и ошибка
+с повтором. При смене проекта компонент перемонтируется и отменяет запрос.
+Приём файлов переносом, выбором и вставкой остаётся в `ToolShell` / `useAttachments`.
 
 ### `ToolCard`, `ViewSetCard` — карточки результата
 
@@ -355,6 +369,7 @@ refresh. Удаление пары из пачки
 | `material-swatch.tsx` | `MaterialSwatch` | плашка материала (дерево, камень, ткань…) для стилей |
 | `material-preview-grid.tsx` | `MaterialPreviewGrid` | пустой экран «Материалов»: сетка заготовок |
 | `render-reveal.tsx` | `RenderReveal` | приглашение «Редактора рендера»: живое «до/после» |
+| `render-empty-state.tsx` | `RenderEmptyState` | стеклянный пустой экран редактора с интерьером и открытием примера |
 | `views-invite.tsx` | `ViewsInvite` | приглашение «Ракурсов»: общий план и кадры из него |
 | `room-sketch.tsx` | `RoomSketch` | эскиз комнаты (SVG) для приглашений |
 | `furniture-morph.tsx` | `FurnitureMorph` | каркасы мебели, перетекающие друг в друга («Фото → 3D») |
@@ -394,7 +409,7 @@ refresh. Удаление пары из пачки
 | `useBatchSelection`, `RenderTray`/`RenderStrip`, `ToolAside` | ✓ | ✓ | ✓ (+ панель стилей) | — | — |
 | `Stage` | ✓ с `overlay` (RegionEditor) | ✓ | ✓ `aspect-[4/3]` | — | — (своя `ModelStage`) |
 | `BatchGrid` | ✓ | ✓ | ✓ `compact` | — | — |
-| `ToolDropzone` | ✓ RenderReveal | ✓ ViewsInvite | ✓ StyleSwap | — (MaterialPreviewGrid) | ✓ FurnitureMorph, `armed` |
+| `ToolDropzone` | ✓ `glass`, RenderEmptyState | ✓ ViewsInvite | ✓ StyleSwap | — (MaterialPreviewGrid) | ✓ FurnitureMorph, `armed` |
 | `ToolGallery` + карточка | — (результат остаётся на Stage) | ✓ `layout="stack"`, ViewSetCard | ✓ ToolCard | ✓ `layout="tiles"`, ToolCard | — (сцена + лента) |
 | `AddTile` («добавить ещё» в галерее результатов) | — (пачка остаётся в панели) | ✓ полоса «Добавить кадр» над сетами | ✓ полоса «Добавить интерьер» над результатами | — (композер всегда) | — |
 | Своё на странице | постоянная пара «исходник / новый» в `RenderTray`, результат на Stage, контекст, разбор сцены (инвентарь предметов) + качество GPT Image 2 + Lanczos 2000 px, заселение, пакетные функции, области правки, `notice` | выбор набора кадров, формат кадров (`AspectPicker` в `extras`, панель открывается сама, `submitBlockedReason` + `notice` до выбора), планировщик кадров перед генерацией, подпись под сценой | стили, док материалов, вторая панель, `notice` | референсы не обязательны; карточка с `tileable` («Повтор 2×2» — проверка шва) | одно фото, `ModelStage`/`ModelChip` |

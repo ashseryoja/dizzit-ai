@@ -11,13 +11,12 @@ import {
   QualityToggle,
 } from "@/components/tool/batch-tools"
 import { RegionEditor } from "@/components/tool/region-editor"
-import { RenderReveal } from "@/components/tool/render-reveal"
+import { RenderEmptyState } from "@/components/tool/render-empty-state"
 import { RenderStrip, RenderTray } from "@/components/tool/render-tray"
 import { FolderRail } from "@/components/tool/folder-rail"
 import { BatchGrid, Stage, StagePlaceholder } from "@/components/tool/stage"
 import { downloadStoredResult, StoredAssetNotice } from "@/components/tool/tool-card"
 import { ToolComposer, type ToolComposerLabels, type ToolOption } from "@/components/tool/tool-composer"
-import { ToolDropzone } from "@/components/tool/tool-dropzone"
 import { ComposerDock, ToolAside, ToolShell } from "@/components/tool/tool-shell"
 import {
   deleteBlobs,
@@ -977,13 +976,10 @@ export default function EnhancePage() {
           </div>
         </div>
       ) : !hasProjectRecords ? (
-        <ToolDropzone
+        <RenderEmptyState
+          key={activeProject?.id ?? "new-project"}
           onPick={intake.pickFiles}
-          label="Добавить рендер"
-          visual={<RenderReveal className="relative max-w-[440px]" />}
-          title="Добавить рендер"
-          description={`Нажмите, перетащите сюда или вставьте из буфера. PNG, JPG или WEBP до 32 МБ. В обработку за раз уходит до ${MAX_BATCH} рендеров.`}
-          caption="Получите более реалистичные и детальные версии — без единого изменения в самих сценах."
+          onAttachFiles={intake.attachFiles}
         />
       ) : folderEnhancements.length === 0 ? (
         /* Пустая папка: не ошибка синхронизации, а приглашение. На узких

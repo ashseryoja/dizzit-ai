@@ -1,6 +1,7 @@
 "use client"
 
 import type { ReactNode } from "react"
+import { Plus } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
@@ -19,6 +20,10 @@ export function ToolDropzone({
   title,
   description,
   caption,
+  variant = "default",
+  actionLabel,
+  hint,
+  footer,
   className = "max-w-[720px] gap-5 px-6 py-16 sm:py-20",
 }: {
   onPick: () => void
@@ -30,26 +35,34 @@ export function ToolDropzone({
   title: string
   description: ReactNode
   /** Обещание инструмента под зоной. */
-  caption: string
+  caption: ReactNode
+  /** Стеклянная карточка без пунктирного контура. */
+  variant?: "default" | "glass"
+  actionLabel?: string
+  hint?: ReactNode
+  /** Дополнительное действие за пределами кнопки загрузки. */
+  footer?: ReactNode
   /** Ширина, промежутки и поля кнопки — у приглашений разная высота. */
   className?: string
 }) {
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-4 py-6">
+    <div className={cn("flex flex-1 flex-col items-center justify-center gap-4 py-6", variant === "glass" && "tool-dropzone-glass")}>
       <button
         type="button"
         onClick={onPick}
         aria-label={label}
-        className={cn("dropzone flex w-full flex-col items-center justify-center", armed && "is-armed", className)}
-        style={{ borderRadius: "var(--r-xl)" }}
+        className={cn("flex w-full flex-col items-center justify-center", variant === "glass" ? "dropzone-glass" : "dropzone", armed && "is-armed", variant === "default" && className)}
+        style={variant === "default" ? { borderRadius: "var(--r-xl)" } : undefined}
       >
-        <svg className="dropzone-outline" aria-hidden>
-          <rect width="100%" height="100%" rx="29" />
-        </svg>
+        {variant === "default" ? (
+          <svg className="dropzone-outline" aria-hidden>
+            <rect width="100%" height="100%" rx="29" />
+          </svg>
+        ) : null}
 
         {visual}
 
-        <span className="relative flex flex-col items-center gap-1.5">
+        <span className={cn("relative flex flex-col items-center gap-1.5", variant === "glass" && "dropzone-glass-copy")}>
           <span className="ds-h2" style={{ color: "var(--fg-1)" }}>
             {title}
           </span>
@@ -57,8 +70,11 @@ export function ToolDropzone({
             {description}
           </span>
         </span>
+        {actionLabel ? <span className="dropzone-glass-action"><Plus size={19} strokeWidth={2.2} aria-hidden />{actionLabel}</span> : null}
+        {hint ? <span className="dropzone-glass-hint">{hint}</span> : null}
       </button>
       <p className="ds-caption max-w-md text-center">{caption}</p>
+      {footer}
     </div>
   )
 }
