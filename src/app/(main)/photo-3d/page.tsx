@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { Box } from "lucide-react"
 
 import { FurnitureMorph } from "@/components/tool/furniture-morph"
+import { showToast } from "@/components/ui/toast"
 import { ModelDock } from "@/components/tool/model-dock"
 import { ModelLibrary, ModelLibraryStrip } from "@/components/tool/model-library"
 import { ModelStage } from "@/components/tool/model-stage"
@@ -144,6 +145,7 @@ export default function PhotoTo3DPage() {
           credits: credits || undefined,
           ...stats,
         })
+        showToast({ title: "3D-модель готова", detail: meta.sourceName })
       } catch (error) {
         update(meta.id, {
           status: "error",
@@ -321,12 +323,17 @@ export default function PhotoTo3DPage() {
           onPick={() => slots.pick("main")}
           label={slots.main ? "Заменить фото" : "Добавить фото"}
           armed={Boolean(slots.main)}
-          visual={<FurnitureMorph showLabel className={cn("relative w-full max-w-[520px]", dockOpen ? "h-[120px] sm:h-[clamp(110px,calc(100dvh-36rem),220px)]" : "h-[300px] sm:h-[340px]")} />}
+          visual={<FurnitureMorph showLabel={!dockOpen} className={cn("relative w-full max-w-[520px]", dockOpen ? "h-[120px] sm:h-[clamp(116px,calc(100dvh-40rem),220px)]" : "h-[300px] sm:h-[340px]")} />}
           title={slots.main ? "Фото приложено" : "Что построим сегодня?"}
           description={
             slots.main
               ? `«${slots.main.file.name}» — проверьте параметры внизу и нажмите «${LABELS.submitLabel}».`
-              : "Один предмет в кадре — стул, стол, лампа, диван — и получите его 3D-модель. Нажмите, перетащите сюда или вставьте из буфера. PNG, JPG или WEBP до 32 МБ."
+              : (
+                  /* На невысоком экране панель параметров занимает пол-окна — описание уступает ей место. */
+                  <span className={cn(dockOpen && "[@media(max-height:860px)]:hidden")}>
+                    Один предмет в кадре — стул, стол, лампа, диван — и получите его 3D-модель.
+                  </span>
+                )
           }
           caption="GLB · FBX · OBJ — для 3ds Max, ArchiCAD, AutoCAD"
           className={cn("max-w-[760px] gap-2 px-6", dockOpen ? "pb-6 pt-3" : "pb-8 pt-4 sm:pb-10")}

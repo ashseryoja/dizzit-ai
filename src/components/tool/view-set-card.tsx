@@ -3,6 +3,7 @@
 import { Download, RefreshCw, Sparkles, Trash2 } from "lucide-react"
 
 import { ThinkingGlyph } from "@/components/glyphs"
+import { ProcessingVeil } from "@/components/tool/processing-veil"
 import { StoredAssetNotice } from "@/components/tool/tool-card"
 import { openLightbox, ZoomHit, type LightboxItem } from "@/components/ui/lightbox"
 import { getBlob, sourceKey, thumbSourceKey } from "@/lib/blob-store"
@@ -109,11 +110,11 @@ export function ViewSetCard({
     [
       item.sceneInventory ? "разбор сцены" : null,
       item.planned
-        ? "кадры подобрала vision-модель по этому рендеру"
+        ? "кадры подобраны под этот рендер"
         : item.planned === false || status !== "processing"
           ? "кадры по составу набора"
           : null,
-      item.status === "done" && item.engine && item.engine !== "preview" ? "4K · Lanczos 3840 px" : null,
+      item.status === "done" && item.engine && item.engine !== "preview" ? "4K" : null,
     ]
       .filter(Boolean)
       .join(" · ") + previewCaption(item)
@@ -204,9 +205,10 @@ export function ViewSetCard({
 
         {/* Кадры сета — в формате, выбранном для сета. */}
         <div className={cn("view-set-frames", tall ? "is-tall" : "is-wide")}>
-          {frames.map((frame) => (
+          {frames.map((frame, order) => (
             <ViewTile
               key={frame.key}
+              order={order}
               item={item}
               frame={frame}
               ready={ready.has(frame.key)}
@@ -226,12 +228,15 @@ function ViewTile({
   item,
   frame,
   ready,
+  order,
   sourceAsset,
   onDownload,
   onOpen,
 }: {
   item: ViewSet
   frame: ViewFrame
+  /** Номер плитки в сете: сдвигает фазу ожидания, чтобы кадры не мигали синхронно. */
+  order: number
   ready: boolean
   sourceAsset: StoredBlobUrlState
   onDownload: () => void
@@ -278,12 +283,7 @@ function ViewTile({
           className="absolute inset-0"
         />
       ) : pending ? (
-        <div className="fade-in absolute inset-0 flex flex-col items-center justify-center gap-2" style={{ background: "rgba(16,16,18,0.45)" }}>
-          <ThinkingGlyph size={16} className="text-white/80" />
-          <span className="text-[10.5px]" style={{ color: "rgba(255,255,255,0.85)" }}>
-            строим кадр…
-          </span>
-        </div>
+        <ProcessingVeil label="строим кадр…" order={order} compact />
       ) : null}
 
       {showingSourceFallback ? (

@@ -20,6 +20,7 @@ import {
 } from "lucide-react"
 
 import { AddTile } from "@/components/tool/add-tile"
+import { showToast } from "@/components/ui/toast"
 import { RenderStrip, RenderTray } from "@/components/tool/render-tray"
 import { BatchGrid, Stage } from "@/components/tool/stage"
 import { StyleDock } from "@/components/tool/style-dock"
@@ -29,7 +30,7 @@ import { ToolCard } from "@/components/tool/tool-card"
 import { ToolComposer, type ToolComposerLabels, type ToolOption } from "@/components/tool/tool-composer"
 import { ToolDropzone } from "@/components/tool/tool-dropzone"
 import { ComposerDock, ToolAside, ToolGallery, ToolShell } from "@/components/tool/tool-shell"
-import { getBlob, resultKey, sourceKey } from "@/lib/blob-store"
+import { getBlob, resultKey, sourceKey, thumbResultKey } from "@/lib/blob-store"
 import { MAX_BATCH } from "@/lib/enhance-engine"
 import {
   STYLES,
@@ -206,6 +207,7 @@ export default function RestylePage() {
           generationUncertain: undefined,
           error: undefined,
         })
+        showToast({ title: "Перенос стиля готов", detail: `${meta.sourceName} · ${describeStyle(meta.style, meta.note)}`, imageKeys: [thumbResultKey(meta.id), resultKey(meta.id)] })
       } catch (error) {
         update(meta.id, {
           status: "error",
@@ -313,8 +315,8 @@ export default function RestylePage() {
   const styleLabel = STYLE_LABEL[style]
   const placeholder =
     style === "auto"
-      ? "Опишите свой стиль: эпоха, материалы, настроение…"
-      : `Уточнения к стилю «${styleLabel.toLowerCase()}»: без кирпича, светлее пол…`
+      ? "Опишите свой стиль…"
+      : `Уточнения: без кирпича, светлее пол…`
 
   return (
     <ToolShell
@@ -430,9 +432,10 @@ export default function RestylePage() {
           label="Добавить интерьер"
           visual={<StyleSwap className="relative w-full max-w-[520px]" />}
           title="Добавить интерьер"
-          description={`Рендер или фото помещения — и тот же интерьер в другом стиле: скандинавский, неоклассика, джапанди, лофт и ещё десяток. Нажмите, перетащите сюда или вставьте из буфера. PNG, JPG или WEBP до 32 МБ, до ${MAX_BATCH} файлов за раз.`}
+          description="Рендер или фото помещения — и тот же интерьер в другом стиле: скандинавский, лофт, джапанди и ещё десяток."
+          hint={`нажмите, перетащите или вставьте из буфера · PNG, JPG, WEBP · до 32 МБ · до ${MAX_BATCH} файлов`}
           caption="Планировка, окна и расстановка остаются — меняются отделка, цвета и мебель."
-          className="max-w-[720px] gap-5 px-6 py-12 sm:py-14"
+          className="max-w-[720px] gap-4 px-6 py-7 sm:py-8"
         />
       ) : (
         <ToolGallery>
@@ -446,10 +449,13 @@ export default function RestylePage() {
             hint="ещё один рендер или фото — и новый перенос стиля"
             className="mb-4"
           />
-          {visible.map((item) => (
+          {visible.map((item, order) => (
             <ToolCard
               key={item.id}
               item={item}
+              order={order}
+              title={STYLE_LABEL[resolveStyle(item.style, item.note)]}
+              compare="slider"
               caption={`${(item.status === "done" && item.resultWidth) || item.sourceWidth}×${
                 (item.status === "done" && item.resultHeight) || item.sourceHeight
               } · ${describeStyle(item.style, item.note)}${

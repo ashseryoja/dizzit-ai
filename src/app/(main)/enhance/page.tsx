@@ -10,6 +10,8 @@ import {
   PopulateToggle,
   QualityToggle,
 } from "@/components/tool/batch-tools"
+import { ProcessingVeil } from "@/components/tool/processing-veil"
+import { showToast } from "@/components/ui/toast"
 import { RegionEditor } from "@/components/tool/region-editor"
 import { RenderEmptyState } from "@/components/tool/render-empty-state"
 import { RenderStrip, RenderTray } from "@/components/tool/render-tray"
@@ -57,15 +59,19 @@ const LABELS: ToolComposerLabels = {
   filesTitle: "Рендеры",
   filesQuality: "исходники",
   uploadTitle: "Загрузить рендеры",
-  filesCaption: `GPT Image 2 + разбор сцены и света · результат 4K (3840 px) · ≈ ${ENHANCE_PRICE_LABEL} за рендер`,
+  filesCaption: `результат в 4K, в кадре исходника · ≈ ${ENHANCE_PRICE_LABEL} за рендер`,
   optionsTitle: "Контекст",
   optionsIcon: Layers,
   footer:
-    "Содержимое кадра не меняется: геометрия, материалы и композиция остаются вашими. Перед обработкой vision-модель распознаёт предметы кадра — телевизор, шторы, светильники, — чтобы каждый стал реальнее, а не другим предметом.",
+    "Содержимое кадра не меняется: геометрия, материалы и композиция остаются вашими. Каждый предмет становится реальнее, а не другим предметом.",
   inputPlaceholder: "Комментарий к обработке…",
-  submitLabel: `Улучшить · ${ENHANCE_PRICE_LABEL}`,
+  submitLabel: "Улучшить",
+  submitHint: `≈ ${ENHANCE_PRICE_LABEL} за рендер`,
   batchNoun: ["рендер", "рендера", "рендеров"],
 }
+
+/** Этапы ожидания на сцене — по времени, без процентов (см. ProcessingVeil). */
+const ENHANCE_STEPS = ["разбираем сцену…", "выстраиваем свет…", "прорабатываем материалы…", "доводим до 4K…"]
 
 /** Серверная запись может приехать на другое устройство чуть раньше блоба. */
 async function getWorkspaceSource(id: string): Promise<Blob | null> {
@@ -150,11 +156,7 @@ function EnhancementVersionThumb({
           className="absolute inset-0"
         />
       ) : null}
-      {enhancement.status === "processing" ? (
-        <span className="absolute inset-0 flex items-center justify-center bg-black/25 text-white/90">
-          <ThinkingGlyph size={18} />
-        </span>
-      ) : null}
+      {enhancement.status === "processing" ? <ProcessingVeil label="улучшаем рендер…" compact /> : null}
       {enhancement.status === "error" ? (
         <span className="absolute inset-0 flex items-center justify-center bg-black/45 px-2 text-center text-[10px] text-white/90">
           ошибка · нажмите для деталей
@@ -337,6 +339,8 @@ export default function EnhancePage() {
   const enhancementById = useMemo(() => new Map(visible.map((item) => [item.id, item])), [visible])
   const currentEnhancement = current ? enhancementById.get(current.id) : undefined
   const [stageChoice, setStageChoice] = useState<{ id: string; version: "source" | "result" } | null>(null)
+  // Только что готовый результат проявляется шторкой поверх исходника — один раз.
+  const [revealId, setRevealId] = useState<string | null>(null)
   const stageVersion =
     stageChoice && current && stageChoice.id === current.id
       ? stageChoice.version
@@ -640,7 +644,9 @@ export default function EnhancePage() {
           generationUncertain: undefined,
           error: undefined,
         })
+        showToast({ title: "Рендер готов", detail: `${meta.sourceName} · 4K`, imageKeys: [thumbResultKey(meta.id), resultKey(meta.id)] })
         setStageChoice({ id: meta.id, version: "result" })
+        setRevealId(meta.id)
       } catch (error) {
         update(meta.id, {
           status: "error",
@@ -903,6 +909,18 @@ export default function EnhancePage() {
               count={attachments.length}
               onPrev={batch.selectPrev}
               onNext={batch.selectNext}
+              compare={stageAttachment !== current && resultUrl ? { before: current.previewUrl } : undefined}
+              reveal={Boolean(resultUrl) && stageAttachment !== current && revealId === current.id}
+              onRevealEnd={() => setRevealId(null)}
+              onDownload={
+                currentEnhancement?.status === "done" && stageVersion === "result" && resultUrl
+                  ? () =>
+                      void downloadStoredResult(
+                        currentEnhancement,
+                        `${fileBaseName(currentEnhancement.sourceName, "render")}-enhanced`
+                      )
+                  : undefined
+              }
               overlay={
                 <>
                   {/* Тот же редактор остаётся поверх исходника и результата.
@@ -915,10 +933,7 @@ export default function EnhancePage() {
                   />
 
                   {currentEnhancement?.status === "processing" ? (
-                    <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-2.5 bg-black/35 text-white/90 backdrop-blur-[2px]">
-                      <ThinkingGlyph size={24} />
-                      <span className="text-[12px]">улучшаем рендер…</span>
-                    </div>
+                    <ProcessingVeil key={currentEnhancement.id} label="улучшаем рендер…" steps={ENHANCE_STEPS} />
                   ) : null}
 
                   {currentEnhancement?.status === "done" &&
@@ -945,22 +960,6 @@ export default function EnhancePage() {
                         Проверить снова
                       </button>
                     </div>
-                  ) : null}
-
-                  {currentEnhancement?.status === "done" && stageVersion === "result" && resultUrl ? (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void downloadStoredResult(
-                          currentEnhancement,
-                          `${fileBaseName(currentEnhancement.sourceName, "render")}-enhanced`
-                        )
-                      }
-                      className="btn-outline absolute bottom-3 right-3 z-30 h-9 bg-black/55 px-3 text-[12px] text-white backdrop-blur-md"
-                    >
-                      <Download className="h-3.5 w-3.5" strokeWidth={1.8} />
-                      Скачать
-                    </button>
                   ) : null}
 
                   {currentEnhancement?.status === "error" && stageVersion === "result" ? (

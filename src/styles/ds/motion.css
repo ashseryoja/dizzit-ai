@@ -351,6 +351,8 @@
   -webkit-backdrop-filter: grayscale(1) blur(22px) brightness(0.85);
   backdrop-filter: grayscale(1) blur(22px) brightness(0.85);
 }
+/* На сцене уголок виден всегда: рядом стоит «До / после», и пустое место слева выглядело бы дырой. */
+.stage-zoom { opacity: 1; transform: none; }
 .stage-zoom svg { width: 15px; height: 15px; }
 .stage-zoom:hover { background: #4a4a4ade; }
 
@@ -434,6 +436,9 @@
   overflow: hidden;
   padding: 0 78px;
 }
+/* Шторка «до / после» — ровно по картинке (бокс считает LightboxFrame). */
+.lb-compare { position: absolute; z-index: 2; border-radius: 10px; overflow: hidden; }
+.lb-action.is-active { background: #ffffffe6; color: #202020; }
 .lb-viewport.is-zoomed { overflow: auto; padding: 0; cursor: grab; scrollbar-width: none; }
 .lb-viewport.is-zoomed::-webkit-scrollbar { display: none; }
 .lb-viewport.is-zoomed:active { cursor: grabbing; }
@@ -505,3 +510,70 @@
 @media (prefers-reduced-motion: reduce) and (min-width: 768px) {
   .lb-nav { transform: translateY(-50%) !important; }
 }
+
+/* ============================================================
+   ТОСТЫ «ГОТОВО» (ui/toast.tsx)
+   Правый верхний угол, над панелями; карточка — плотное стекло.
+   ============================================================ */
+.toast-stack {
+  position: fixed;
+  z-index: 90;
+  top: 20px;
+  right: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(340px, calc(100vw - 32px));
+  pointer-events: none;
+}
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px;
+  border-radius: 22px;
+  pointer-events: auto;
+  animation: toast-in 520ms var(--ease-spring) both;
+}
+.toast-body { display: flex; flex: 1; min-width: 0; align-items: center; gap: 12px; text-align: left; border-radius: 16px; }
+.toast-body:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.toast-thumb {
+  position: relative;
+  flex: none;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  overflow: visible;
+  background: var(--hover-2);
+}
+.toast-thumb img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; display: block; }
+.toast-check {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  box-shadow: 0 2px 8px #00000040;
+}
+.toast-title { display: block; font-size: 13.5px; color: var(--fg-1); }
+.toast-detail { display: block; margin-top: 2px; font-size: 12px; color: var(--fg-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.toast-close { flex: none; display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 999px; color: var(--fg-4); transition: background-color var(--dur-fast) var(--ease-std), color var(--dur-fast) var(--ease-std); }
+.toast-close:hover { background: var(--hover-2); color: var(--fg-1); }
+@keyframes toast-in { from { opacity: 0; transform: translateY(-10px) scale(0.97); } to { opacity: 1; transform: none; } }
+@media (max-width: 1023px) { .toast-stack { top: 64px; right: 12px; } }
+@media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
+:root[data-motion="reduce"] .toast { animation: none; }
+
+/* Вход страницы инструмента: контент приезжает снизу. Только transform. */
+/* backwards: после конца анимация не держит transform — обёртка не становится
+   контекстом для стекла и fixed-слоёв внутри. */
+.page-enter { animation: page-enter 520ms var(--ease-out) backwards; }
+@keyframes page-enter { from { transform: translateY(14px); } to { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .page-enter { animation: none; } }
+:root[data-motion="reduce"] .page-enter { animation: none; }

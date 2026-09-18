@@ -4,10 +4,11 @@ import { useCallback, useState } from "react"
 import { Cog, Layers, Mountain, Shirt, Sparkles, TreePine } from "lucide-react"
 
 import { MaterialPreviewGrid } from "@/components/tool/material-preview-grid"
+import { showToast } from "@/components/ui/toast"
 import { ToolCard } from "@/components/tool/tool-card"
 import { ToolComposer, type ToolComposerLabels, type ToolOption } from "@/components/tool/tool-composer"
 import { ComposerDock, TILE_GALLERY_WIDTH, ToolGallery, ToolShell } from "@/components/tool/tool-shell"
-import { getBlob, resultKey, sourceKey } from "@/lib/blob-store"
+import { getBlob, resultKey, sourceKey, thumbResultKey } from "@/lib/blob-store"
 import { MAX_BATCH } from "@/lib/enhance-engine"
 import { generateMaterial } from "@/lib/material-engine"
 import { runGalleryQueue, saveSourceFile } from "@/lib/tool-jobs"
@@ -132,6 +133,7 @@ export default function MaterialsPage() {
           generationUncertain: undefined,
           error: undefined,
         })
+        showToast({ title: "Материал готов", detail: meta.note || undefined, imageKeys: [thumbResultKey(meta.id), resultKey(meta.id)] })
       } catch (error) {
         update(meta.id, {
           status: "error",
@@ -255,7 +257,7 @@ export default function MaterialsPage() {
       }
     >
       {visible.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-5 py-4">
+        <div className="flex flex-1 flex-col items-start gap-5 pb-4">
           {/* Заготовки будущей галереи вместо заголовка: сразу видно, какого
               рода тайлы здесь получают. Клики по заготовкам ничего не
               генерируют — галерея сменяет их только после собственной
@@ -267,11 +269,13 @@ export default function MaterialsPage() {
         </div>
       ) : (
         <ToolGallery layout="tiles">
-          {visible.map((material) => (
+          {visible.map((material, order) => (
             <ToolCard
               key={material.id}
               item={material}
-              caption={`${CATEGORY_LABEL[material.category] ?? "авто"}${material.note ? ` · ${material.note}` : ""}`}
+              order={order}
+              title={material.note || CATEGORY_LABEL[material.category] || "материал"}
+              caption={CATEGORY_LABEL[material.category] ?? "авто"}
               processingLabel="генерируем материал…"
               tileable
               downloadBaseName={`material-${CATEGORY_LABEL[material.category] ?? "auto"}-${material.id.slice(0, 4)}`}

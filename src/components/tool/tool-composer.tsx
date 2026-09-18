@@ -44,6 +44,8 @@ export interface ToolComposerLabels {
   footer: string
   inputPlaceholder: string
   submitLabel: string
+  /** Тихая подпись рядом с главной кнопкой: цена запуска («≈ $0,05 за рендер»). На кнопке её нет. */
+  submitHint?: string
   /** Формы слова для чипа пачки: [рендер, рендера, рендеров]. */
   batchNoun: [string, string, string]
 }
@@ -470,6 +472,8 @@ export function ToolComposer<T extends string>({
           className="composer-input"
           style={{ color: "var(--fg-1)", caretColor: "var(--accent)" }}
         />
+
+        {labels.submitHint ? <span className="composer-hint">{labels.submitHint}</span> : null}
 
         {/* Обёртка держит подсказку: disabled-кнопка указатель не получает. */}
         <span className="composer-submit flex shrink-0" title={blockedReason ?? undefined}>

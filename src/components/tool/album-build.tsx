@@ -4,11 +4,12 @@ import { useEffect, useRef } from "react"
 import { Download, FileText, RefreshCw } from "lucide-react"
 
 import { ThinkingGlyph } from "@/components/glyphs"
+import { AlbumPageStrip } from "@/components/tool/album-pages"
 import { AlbumPreview } from "@/components/tool/album-preview"
 import { Panel } from "@/components/ui/panel"
 import type { AlbumProgress } from "@/lib/album-engine"
 import { cn, plural } from "@/lib/utils"
-import type { AlbumFormat, AlbumPlan } from "@/shared/album"
+import type { AlbumFormat, AlbumPlan, AlbumSpec } from "@/shared/album"
 
 /** Собранный PDF: файл, время и состав, для которого он собран. */
 export interface AlbumBuildResult {
@@ -85,12 +86,13 @@ function BuildAction({ state, stale, onBuild, onDownload, compact = false }: { s
 
 /**
  * Панель сборки — правая колонка страницы альбома: что войдёт в PDF
- * (структура по плану `planAlbum` с номерами страниц — та же, что в
- * содержании самого PDF), главная кнопка, превью и итог сборки. Сборка
+ * (лента живых миниатюр страниц и структура по плану `planAlbum` с номерами
+ * страниц — та же, что в содержании самого PDF), главная кнопка, превью и итог сборки. Сборка
  * начинается только по кнопке; когда состав меняется после сборки, панель
  * говорит об этом и предлагает собрать заново.
  */
 export function AlbumBuildPanel({
+  spec,
   plan,
   format,
   styleLabel,
@@ -100,6 +102,8 @@ export function AlbumBuildPanel({
   onBuild,
   onDownload,
 }: {
+  /** Состав альбома — для живых миниатюр страниц. */
+  spec: AlbumSpec
   plan: AlbumPlan
   format: AlbumFormat
   /** «A4 альбомный · тёмная». */
@@ -150,6 +154,9 @@ export function AlbumBuildPanel({
           </p>
         </div>
       </div>
+
+      {/* Живые миниатюры страниц: альбом виден ещё до сборки. */}
+      <AlbumPageStrip spec={spec} plan={plan} />
 
       <ol className="album-outline" aria-label="Структура альбома">
         {rows.map((row) => (

@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { BookOpen, Plus, Sparkles, Trash2 } from "lucide-react"
 
-import { PageHeader } from "@/components/page-header"
 import { AlbumBuildBar, AlbumBuildPanel, albumBuildResult, type AlbumBuildState } from "@/components/tool/album-build"
 import { AlbumPicker, type AlbumPickItem } from "@/components/tool/album-picker"
 import { AlbumSection } from "@/components/tool/album-section"
@@ -134,27 +133,24 @@ export default function AlbumPage() {
   }
 
   return (
-    <ToolShell composerOpen={narrow && Boolean(album && sources)}>
+    <ToolShell
+      composerOpen={narrow && Boolean(album && sources)}
+      headingActions={
+        album ? (
+          <>
+            <button type="button" className="btn-secondary" onClick={() => void createAlbum()} disabled={available === 0}>
+              <Plus className="h-4 w-4" strokeWidth={1.7} />
+              {LABELS.another}
+            </button>
+            <button type="button" className="btn-secondary is-danger" onClick={() => deleteAlbum(album)}>
+              <Trash2 className="h-4 w-4" strokeWidth={1.7} />
+              {LABELS.remove}
+            </button>
+          </>
+        ) : null
+      }
+    >
       <div className="flex flex-col gap-5">
-        <PageHeader
-          title={LABELS.title}
-          description={LABELS.description}
-          actions={
-            album ? (
-              <>
-                <button type="button" className="btn-secondary" onClick={() => void createAlbum()} disabled={available === 0}>
-                  <Plus className="h-4 w-4" strokeWidth={1.7} />
-                  {LABELS.another}
-                </button>
-                <button type="button" className="btn-secondary is-danger" onClick={() => deleteAlbum(album)}>
-                  <Trash2 className="h-4 w-4" strokeWidth={1.7} />
-                  {LABELS.remove}
-                </button>
-              </>
-            ) : null
-          }
-        />
-
         {visible.length > 1 ? (
           <div className="seg w-fit max-w-full overflow-x-auto no-scrollbar" role="tablist" aria-label="Альбомы проекта">
             {visible.map((item) => (
@@ -435,7 +431,7 @@ function AlbumEditor({ album, sources, studio, onChange }: { album: Album; sourc
         </div>
 
         <div className="xl:sticky xl:top-6">
-          <AlbumBuildPanel plan={plan} format={album.format} styleLabel={styleLabel} coverLabel={coverLabel} state={build} stale={stale} onBuild={startBuild} onDownload={download} />
+          <AlbumBuildPanel spec={spec} plan={plan} format={album.format} styleLabel={styleLabel} coverLabel={coverLabel} state={build} stale={stale} onBuild={startBuild} onDownload={download} />
         </div>
       </div>
 

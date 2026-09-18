@@ -13,18 +13,29 @@
   --glass-selected-shadow: 0 5px 14px #0000001c, inset 0 1px 1px #ffffff;
   --ambient-background: radial-gradient(ellipse at 20% -10%, #ffffff23, transparent 56%),
     radial-gradient(ellipse at 96% 86%, #ffffff0d, transparent 45%);
+  /* Плотное стекло — слои с текстом НАД фотографией (панель настроек, меню):
+     тёмная подложка и приглушённая яркость фона, иначе светлый рендер светит
+     сквозь панель белым пятном и подписи не читаются. */
+  --grain-opacity: 0.22;
+  --glass-dense: linear-gradient(140deg, #ffffff14, #ffffff05 52%, #ffffff0c), #262626d6;
+  --glass-dense-filter: grayscale(0.4) blur(40px) saturate(1.15) brightness(0.62);
 }
 :root[data-theme="light"] {
-  --glass-fill: linear-gradient(135deg, #ffffffb8, #ffffff65 48%, #ffffff91);
-  --glass-base: #f1f1f1c2;
+  --glass-fill: linear-gradient(135deg, #ffffffd6, #ffffff8f 48%, #ffffffb8);
+  --glass-base: #f6f6f6d9;
   --glass-edge: #ffffff;
-  --glass-shadow: 0 18px 42px #0000000d, 0 4px 12px #00000005,
+  /* На белом стекло теряет край: тень плотнее и тонкая линия по контуру. */
+  --glass-shadow: 0 22px 48px #0000001c, 0 4px 12px #0000000d, 0 0 0 1px #0000000f,
     inset 0 1px 1px var(--glass-edge);
+  --grain-opacity: 0.3;
   --glass-control: linear-gradient(140deg, #ffffffb0, #ffffff50);
   --glass-selected: linear-gradient(145deg, #414141, #252525);
   --glass-selected-ink: #ffffff;
   --glass-selected-shadow: 0 5px 14px #00000015, inset 0 1px 1px #ffffff25;
-  --ambient-background: radial-gradient(ellipse at 19% 0%, #ffffff, transparent 65%);
+  --ambient-background: radial-gradient(ellipse at 19% 0%, #ffffff, transparent 62%),
+    radial-gradient(ellipse at 100% 100%, #dcdcdc, transparent 55%);
+  --glass-dense: linear-gradient(140deg, #ffffffd9, #ffffffb8 52%, #ffffffcc), #f4f4f4d9;
+  --glass-dense-filter: grayscale(0.4) blur(40px) saturate(1.1) brightness(1.12);
 }
 
 /* No filters on page/layout wrappers: fixed composers, menus and canvases
@@ -49,10 +60,11 @@
   border-color: transparent;
   box-shadow: var(--glass-shadow);
 }
-.composer-stack > .overlay-surface {
-  background: var(--glass-fill), var(--glass-base);
-  -webkit-backdrop-filter: grayscale(1) blur(var(--glass-blur));
-  backdrop-filter: grayscale(1) blur(var(--glass-blur));
+.composer-stack > .overlay-surface,
+.glass-dense {
+  background: var(--glass-dense);
+  -webkit-backdrop-filter: var(--glass-dense-filter);
+  backdrop-filter: var(--glass-dense-filter);
 }
 .card {
   background: var(--glass-control), var(--bg-surface);
@@ -184,7 +196,7 @@
   .tool-composer { padding: 2px; border-radius: 24px; }
 }
 @media (prefers-reduced-transparency: reduce) {
-  .glass-surface, .panel, .dropzone, .composer-stack > .overlay-surface { background: var(--bg-surface); backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .glass-surface, .panel, .dropzone, .glass-dense, .composer-stack > .overlay-surface { background: var(--bg-surface); backdrop-filter: none; -webkit-backdrop-filter: none; }
 }
 
 /* Composition matches the approved studio mockup: title, full image, roomy
@@ -230,3 +242,102 @@
 }
 
 .studio-logo { font-size: 17px; }
+
+/* Тихая подпись цены рядом с главной кнопкой: на самой кнопке только действие. */
+.composer-hint { flex: none; font-size: 12px; color: var(--fg-4); white-space: nowrap; font-variant-numeric: tabular-nums; }
+@media (max-width: 767px) { .composer-hint { display: none; } }
+
+/* Контент затухает, уходя под композер: галерея не обрывается о стеклянную
+   полосу, а подписи карточек не читаются сквозь неё. Только в колонке композера. */
+.composer-position:has(.tool-composer)::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -72px 0 -24px;
+  background: linear-gradient(to top, var(--bg-page) 38%, color-mix(in srgb, var(--bg-page) 72%, transparent) 62%, transparent);
+  /* Края затухания тоже растворяются: иначе по бокам колонки видна граница прямоугольника. */
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 56px, #000 calc(100% - 56px), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 56px, #000 calc(100% - 56px), transparent);
+  pointer-events: none;
+}
+
+/* Заголовок страницы и действия справа от него (альбом) — на одной базовой линии. */
+.tool-heading-row { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; }
+.tool-heading-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+/* Неактивная главная кнопка — тихое стекло, а не выцветшая белая плашка: так она
+   читается «пока нельзя», а не «сломано». */
+.btn-primary:disabled {
+  opacity: 1;
+  background: var(--glass-control);
+  background-color: transparent;
+  color: var(--fg-4);
+  box-shadow: inset 0 1px var(--line-strong);
+}
+
+/* Экран входа: рендер в расфокусе за стеклянной карточкой. */
+.login-screen { position: relative; overflow: hidden; isolation: isolate; }
+.login-backdrop {
+  position: absolute;
+  z-index: -1;
+  inset: -6%;
+  width: 112%;
+  height: 112%;
+  /* preflight ограничивает img в 100% ширины — фон не дотягивался бы до правого края. */
+  max-width: none;
+  object-fit: cover;
+  filter: blur(26px) saturate(1.1) brightness(0.55);
+  pointer-events: none;
+  user-select: none;
+}
+:root[data-theme="light"] .login-backdrop { filter: blur(34px) saturate(1.05) brightness(1.05); opacity: 0.75; }
+
+/* Кнопка меню на узких экранах: пилюля «≡ Dizzit AI.» — плотное стекло, потому
+   что под ней прокручивается контент с картинками. */
+.mobile-menu-button {
+  background: var(--glass-dense);
+  -webkit-backdrop-filter: var(--glass-dense-filter);
+  backdrop-filter: var(--glass-dense-filter);
+  box-shadow: var(--glass-shadow);
+}
+.mobile-menu-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Список проектов: карандаш и корзина появляются по наведению и фокусу — в покое
+   название проекта занимает всю строку и не обрезается раньше времени. */
+.project-actions { opacity: 0; pointer-events: none; transition: opacity var(--dur-fast) var(--ease-std); }
+.project-option:hover .project-actions,
+.project-option:focus-within .project-actions { opacity: 1; pointer-events: auto; }
+.project-option:hover .project-option-btn,
+.project-option:focus-within .project-option-btn { padding-right: 68px; }
+@media (hover: none) {
+  .project-actions { opacity: 1; pointer-events: auto; }
+  .project-option-btn { padding-right: 68px; }
+}
+
+/* Вкладки папок — из того же стекла, что и панель, к которой они приклеены:
+   активная продолжает её поверхность, остальные — тихие, без рамок. «+» — маленький
+   круг, а не вторая пунктирная коробка. */
+.folder-rail { gap: 4px; margin-right: 0; }
+.folder-tab {
+  border: 0;
+  background: transparent;
+  border-radius: 16px 0 0 16px;
+}
+.folder-tab:hover { background: var(--hover-1); }
+.folder-tab.is-active {
+  border: 0;
+  background: var(--glass-fill), var(--glass-base);
+  box-shadow: -10px 10px 26px #00000024, inset 1px 1px 1px var(--glass-edge);
+  -webkit-backdrop-filter: grayscale(1) blur(var(--glass-blur));
+  backdrop-filter: grayscale(1) blur(var(--glass-blur));
+}
+.folder-tab-add {
+  width: 26px;
+  min-height: 26px;
+  height: 26px;
+  margin: 4px 4px 0 auto;
+  padding: 0;
+  border: 1px dashed var(--line-strong);
+  border-radius: 999px;
+}
+.folder-tab-add:hover { border-color: var(--fg-4); background: var(--hover-1); }

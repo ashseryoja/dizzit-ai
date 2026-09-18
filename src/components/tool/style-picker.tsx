@@ -12,15 +12,14 @@ import type { RestyleStyle } from "@/types"
 
 /** Пауза до превью: при прокрутке списка окошки не должны мелькать. */
 const PREVIEW_DELAY_MS = 220
-const PREVIEW_HEIGHT = 226
+const PREVIEW_WIDTH = 300
+const PREVIEW_HEIGHT = 300
+const PREVIEW_GAP = 14
 
 interface Preview {
   style: StyleInfo
   left: number
-  width: number
-  /** Показывать под строкой (top) или над ней (bottom) — куда есть место. */
-  top?: number
-  bottom?: number
+  top: number
 }
 
 /**
@@ -30,8 +29,8 @@ interface Preview {
  * описанию словами. Клик выбирает стиль (он же — выбор в панели композера);
  * уточнения к выбранному — «лофт, но без кирпича» — пишут в комментарий внизу.
  *
- * При наведении (и фокусе с клавиатуры) под строкой — или над ней, если внизу
- * нет места — появляется окошко с примером интерьера в этом стиле: фото из
+ * При наведении (и фокусе с клавиатуры) сбоку от панели, над сценой, появляется
+ * окошко с примером интерьера в этом стиле (список под ним не закрывается): фото из
  * каталога, а пока его нет — нарисованная сцена. Окошко живёт порталом в
  * body: панель анимируется transform-ом, и fixed внутри неё считался бы от
  * панели.
@@ -51,14 +50,16 @@ export function StylePicker({
   const show = (style: StyleInfo, node: HTMLElement) => {
     window.clearTimeout(timer.current)
     timer.current = window.setTimeout(() => {
+      // Окошко встаёт СБОКУ от панели, над сценой: список под ним остаётся виден
+      // целиком (раньше превью закрывало соседние строки, и текст торчал из-под него).
       const rect = node.getBoundingClientRect()
-      const below = rect.bottom + PREVIEW_HEIGHT + 12 < window.innerHeight
+      const fitsLeft = rect.left - PREVIEW_WIDTH - PREVIEW_GAP > 8
+      const left = fitsLeft ? rect.left - PREVIEW_WIDTH - PREVIEW_GAP : Math.max(8, rect.left)
+      const wantedTop = fitsLeft ? rect.top + rect.height / 2 - PREVIEW_HEIGHT / 2 : rect.bottom + 6
       setPreview({
         style,
-        left: rect.left,
-        width: rect.width,
-        top: below ? rect.bottom + 6 : undefined,
-        bottom: below ? undefined : window.innerHeight - rect.top + 6,
+        left,
+        top: Math.min(Math.max(12, wantedTop), window.innerHeight - PREVIEW_HEIGHT - 12),
       })
     }, PREVIEW_DELAY_MS)
   }
@@ -136,7 +137,7 @@ export function StylePicker({
             <div
               className="style-preview fade-in"
               role="tooltip"
-              style={{ left: preview.left, width: preview.width, top: preview.top, bottom: preview.bottom }}
+              style={{ left: preview.left, top: preview.top, width: PREVIEW_WIDTH }}
             >
               <StylePreviewImage style={preview.style} />
               <span className="style-preview-caption">

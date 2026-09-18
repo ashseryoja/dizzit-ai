@@ -935,10 +935,8 @@ select.field option { background: var(--bg-overlay); color: var(--fg-1); }
 
 /* ============================================================
    ПРЕВЬЮ-СЕТКА МАТЕРИАЛОВ (пустой экран «Генерация материала»)
-   Пять живых заготовок в раскладке будущей галереи. Все циклы бесшовные:
-   либо alternate (туда-обратно), либо путь замыкается в исходную точку,
-   либо элемент уезжает за кадр и вторая копия встаёт на его место.
-   Общего «скелетного» проблеска нет намеренно — живут только сами узоры.
+   Пять настоящих тайлов сервиса в раскладке будущей галереи: фото медленно
+   приближается под курсором, подпись лежит на градиенте.
    ============================================================ */
 .mp-tile {
   /* backwards: после появления transform возвращается к CSS-значению,
@@ -948,48 +946,30 @@ select.field option { background: var(--bg-overlay); color: var(--fg-1); }
   will-change: transform;
 }
 .mp-tile:hover { transform: translateY(-4px) scale(1.012); box-shadow: 0 20px 48px rgba(0, 0, 0, 0.34); }
-.mp-svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-
-/* Дерево: волокна плывут туда-обратно. */
-.mp-drift { animation: mp-drift 16s ease-in-out infinite alternate; }
-@keyframes mp-drift { to { transform: translateX(-70px); } }
-
-/* Мрамор: облака дышат, прожилки дорисовываются и мягко тают. */
-.mp-breathe { transform-origin: 100px 100px; animation: mp-breathe 10s ease-in-out infinite alternate; }
-@keyframes mp-breathe { to { transform: scale(1.12) translate(-6px, 4px); } }
-.mp-vein {
-  stroke-dasharray: 1;
-  stroke-dashoffset: 1;
-  animation: mp-vein 7s var(--ease-std) infinite;
+.mp-photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  transition: transform 1200ms var(--ease-out);
 }
-@keyframes mp-vein {
-  0%   { stroke-dashoffset: 1; opacity: 0; }
-  12%  { opacity: 1; }
-  55%  { stroke-dashoffset: 0; opacity: 1; }
-  80%  { stroke-dashoffset: 0; opacity: 1; }
-  100% { stroke-dashoffset: 0; opacity: 0; }
+.mp-tile:hover .mp-photo { transform: scale(1.06); }
+.mp-caption {
+  position: absolute;
+  inset: auto 0 0 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 30px 12px 10px;
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.92);
+  background: linear-gradient(to top, rgba(8, 8, 10, 0.86), rgba(8, 8, 10, 0.5) 55%, transparent);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
 }
-
-/* Сталь: блики едут ровно на ширину кадра, вторая копия встаёт на место. */
-.mp-glide { animation: mp-glide 9s linear infinite; }
-@keyframes mp-glide { to { transform: translateX(-200px); } }
-
-/* Бархат: пятно света ходит по замкнутому кругу. */
-.mp-velvet-glow { animation: mp-velvet 14s ease-in-out infinite; }
-@keyframes mp-velvet {
-  0%   { transform: translate(60px, 60px); }
-  25%  { transform: translate(150px, 50px); }
-  50%  { transform: translate(140px, 150px); }
-  75%  { transform: translate(50px, 140px); }
-  100% { transform: translate(60px, 60px); }
-}
-
-/* Терраццо: крошка проявляется волнами. */
-.mp-chip { animation: mp-chip 4.5s ease-in-out infinite; }
-@keyframes mp-chip {
-  0%, 100% { transform: scale(0.82); opacity: 0.35; }
-  30%, 70% { transform: scale(1); opacity: 0.9; }
-}
+.mp-caption-tag { flex: none; font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: rgba(255, 255, 255, 0.55); }
 
 /* Слот «ваш материал»: пунктир ползёт, искра мерцает. */
 .mp-slot {
@@ -1027,12 +1007,8 @@ select.field option { background: var(--bg-overlay); color: var(--fg-1); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .mp-tile, .mp-drift, .mp-breathe, .mp-vein, .mp-glide, .mp-velvet-glow, .mp-chip,
-  .mp-slot-outline rect, .mp-slot-spark { animation: none; }
-  .mp-vein { stroke-dashoffset: 0; opacity: 1; }
-  .mp-velvet-glow { transform: translate(90px, 80px); }
-  .mp-chip { opacity: 0.85; }
-  .mp-tile:hover { transform: none; }
+  .mp-tile, .mp-slot-outline rect, .mp-slot-spark { animation: none; }
+  .mp-tile:hover, .mp-tile:hover .mp-photo { transform: none; }
 }
 
 /* ============================================================
@@ -1141,10 +1117,14 @@ select.field option { background: var(--bg-overlay); color: var(--fg-1); }
 .tray-add:hover { color: var(--fg-1); border-color: var(--fg-4); background: var(--hover-1); }
 .tray-add:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-/* Сцена: выбранный рендер во весь доступный экран, вписан целиком. */
+/* Сцена: выбранный рендер во весь доступный экран, вписан целиком.
+   Сама .stage ничего не обрезает — за ней лежит свечение кадра (.stage-glow);
+   обрезает .stage-clip. Поля вокруг кадра заполняет размытая затемнённая копия
+   того же рендера (.stage-backdrop): она рисуется маленькой и растягивается
+   transform-ом — размытие считается по малой площади и не тормозит. Сцена
+   тёмная в обеих темах: это просмотровый бокс, как лайтбокс. */
 .stage {
   position: relative;
-  overflow: hidden;
   /* Слои сцены (панель областей, поповер, кнопки) спорят между собой, а не с
      композером и панелями страницы. */
   isolation: isolate;
@@ -1152,6 +1132,42 @@ select.field option { background: var(--bg-overlay); color: var(--fg-1); }
   border: 1px solid var(--line);
   background: var(--bg-surface);
 }
+.stage-clip {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  background: #1a1a1b;
+}
+.stage-backdrop {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 30%;
+  height: 30%;
+  object-fit: cover;
+  transform: translate(-50%, -50%) scale(4.2);
+  filter: blur(14px) saturate(1.2) brightness(0.46);
+  pointer-events: none;
+  user-select: none;
+}
+.stage-glow {
+  position: absolute;
+  z-index: -1;
+  left: 50%;
+  top: 56%;
+  width: 22%;
+  height: 22%;
+  object-fit: cover;
+  transform: translate(-50%, -50%) scale(4.1);
+  filter: blur(16px) saturate(1.35);
+  opacity: 0.3;
+  border-radius: 12px;
+  pointer-events: none;
+  user-select: none;
+}
+:root[data-theme="light"] .stage-glow { opacity: 0.42; }
+@media (prefers-reduced-transparency: reduce) { .stage-glow { display: none; } }
 
 /* Нижний отступ под плавающий композер: не меньше пола экрана (--composer-floor
    от ToolShell) и не меньше измеренной высоты композера (--composer-reserve от
@@ -1166,10 +1182,13 @@ select.field option { background: var(--bg-overlay); color: var(--fg-1); }
    и кадр с opacity 0 спрятал бы единственную картинку на экране. */
 .stage-frame {
   position: absolute;
-  overflow: hidden;
-  border-radius: 4px;
+  /* Свой контекст наложения: слои кадра (шторка, вуаль) не перекрывают бейджи сцены. */
+  z-index: 0;
+  border-radius: 14px;
+  box-shadow: 0 22px 54px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(255, 255, 255, 0.1);
 }
-.stage-frame img {
+.stage-frame > *, .stage-frame canvas { border-radius: inherit; }
+.stage-frame > img {
   display: block;
   width: 100%;
   height: 100%;
@@ -1177,6 +1196,189 @@ select.field option { background: var(--bg-overlay); color: var(--fg-1); }
   user-select: none;
   -webkit-user-drag: none;
 }
+/* Панель областей: на широкой сцене поднята в полосу над кадром (--rg-lift
+   задаёт Stage), на узкой остаётся на кадре. */
+.rg-toolbar-top { top: calc(12px - var(--rg-lift, 0px) * 1.115); }
+
+/* Действия на сцене («До / после», «Скачать») — то же стекло, что у .stage-zoom:
+   сцена тёмная в обеих темах, поэтому цвета здесь не токены темы. */
+.stage-action {
+  position: absolute;
+  z-index: 31;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.92);
+  background: linear-gradient(145deg, #ffffff35, #ffffff12 55%, #ffffff20), #30303055;
+  box-shadow: inset 0 1px 2px #ffffff65, inset 0 -1px #ffffff18, 0 8px 22px #00000030;
+  -webkit-backdrop-filter: grayscale(1) blur(22px) brightness(0.85);
+  backdrop-filter: grayscale(1) blur(22px) brightness(0.85);
+  transition: background-color var(--dur-fast) var(--ease-std), color var(--dur-fast) var(--ease-std);
+}
+.stage-action:hover { background: #4a4a4ade; }
+.stage-action:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.stage-compare { left: 56px; bottom: 12px; }
+.stage-download { right: 12px; bottom: 12px; }
+.stage-compare.is-active { background: #ffffffe6; color: #202020; box-shadow: 0 8px 22px #00000030; }
+
+/* ============================================================
+   ШТОРКА «ДО / ПОСЛЕ» (CompareSlider)
+   Слой поверх результата: исходник обрезан справа по --cmp. Лежит на любой
+   картинке, поэтому цвета — не токены темы, а белая линия и тёмное стекло.
+   ============================================================ */
+.cmp {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  overflow: hidden;
+  border-radius: inherit;
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.cmp-before {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  clip-path: inset(0 calc(100% - var(--cmp)) 0 0);
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+.cmp-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--cmp);
+  width: 2px;
+  margin-left: -1px;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18), 0 0 22px rgba(255, 255, 255, 0.55);
+  pointer-events: none;
+}
+.cmp-handle {
+  position: absolute;
+  top: 50%;
+  left: var(--cmp);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  margin: -21px 0 0 -21px;
+  border-radius: 999px;
+  color: #202020;
+  background: linear-gradient(145deg, #ffffff, #dedede);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.4), inset 0 1px 1px #fff;
+  cursor: ew-resize;
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.cmp:active .cmp-handle { transform: scale(0.92); }
+.cmp-handle:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+.cmp-label {
+  position: absolute;
+  top: 12px;
+  height: 24px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(16, 16, 18, 0.62);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  pointer-events: none;
+}
+.cmp-label-before { left: 12px; }
+.cmp-label-after { right: 12px; }
+/* Проявление результата: шторка сама уезжает влево (CompareSlider, intro). */
+.cmp.is-intro { cursor: default; }
+.cmp.is-intro .cmp-before { transition: clip-path 1500ms cubic-bezier(0.65, 0, 0.35, 1); }
+.cmp.is-intro .cmp-line { transition: left 1500ms cubic-bezier(0.65, 0, 0.35, 1); }
+
+/* ============================================================
+   ОЖИДАНИЕ РЕЗУЛЬТАТА (ProcessingVeil)
+   Поверх размытого исходника: затемнение, проходящая световая полоса, зерно
+   и этап текстом. --pv-order (номер плитки) сдвигает фазу полосы и появление,
+   чтобы соседние плитки не мигали синхронно.
+   ============================================================ */
+.pv {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  overflow: hidden;
+  border-radius: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.92);
+  background: rgba(12, 12, 14, 0.46);
+  -webkit-backdrop-filter: blur(7px) saturate(0.85);
+  backdrop-filter: blur(7px) saturate(0.85);
+  animation: fade-in 420ms var(--ease-std) both;
+  animation-delay: calc(var(--pv-order, 0) * 90ms);
+}
+.pv-sweep {
+  position: absolute;
+  inset: -30% -80%;
+  background: linear-gradient(
+    105deg,
+    transparent 40%,
+    rgba(255, 255, 255, 0.06) 46%,
+    rgba(255, 255, 255, 0.2) 50%,
+    rgba(255, 255, 255, 0.06) 54%,
+    transparent 60%
+  );
+  transform: translateX(-45%);
+  animation: pv-sweep 3.2s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  animation-delay: calc(var(--pv-order, 0) * 380ms);
+  pointer-events: none;
+}
+.pv-grain {
+  position: absolute;
+  inset: -50%;
+  opacity: 0.16;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .9 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  animation: pv-grain 900ms steps(6) infinite;
+  pointer-events: none;
+}
+.pv-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  text-align: center;
+}
+.pv-text { font-size: 12.5px; letter-spacing: 0.01em; animation: rise-in 420ms var(--ease-out) both; }
+.pv-dots { display: inline-flex; gap: 5px; }
+.pv-dot { width: 14px; height: 2px; border-radius: 2px; background: rgba(255, 255, 255, 0.24); transition: background-color 400ms var(--ease-std); }
+.pv-dot.is-on { background: rgba(255, 255, 255, 0.9); }
+@keyframes pv-sweep { from { transform: translateX(-45%); } to { transform: translateX(45%); } }
+@keyframes pv-grain {
+  0% { transform: translate(0, 0); }
+  20% { transform: translate(-6%, 4%); }
+  40% { transform: translate(5%, -7%); }
+  60% { transform: translate(-3%, 8%); }
+  80% { transform: translate(7%, 2%); }
+  100% { transform: translate(0, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pv, .pv-sweep, .pv-grain, .pv-text { animation: none; }
+  .pv-sweep { display: none; }
+}
+:root[data-motion="reduce"] .pv, :root[data-motion="reduce"] .pv-grain, :root[data-motion="reduce"] .pv-text { animation: none; }
+:root[data-motion="reduce"] .pv-sweep { display: none; }
+
 .stage-badge {
   position: absolute;
   display: inline-flex;
@@ -1463,11 +1665,13 @@ select.field option { background: var(--bg-overlay); color: var(--fg-1); }
    ============================================================ */
 .vo {
   display: grid;
-  grid-template-columns: 1.55fr 1fr;
-  gap: 14px;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
   align-items: stretch;
+  margin-inline: auto;
   color: var(--fg-2);
 }
+.vo img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: cover; }
 .vo-overview, .vo-tile {
   position: relative;
   overflow: hidden;
@@ -1477,7 +1681,7 @@ select.field option { background: var(--bg-overlay); color: var(--fg-1); }
   transition: transform 260ms var(--ease-out), box-shadow 260ms var(--ease-std), border-color 200ms var(--ease-std);
 }
 .vo-overview {
-  aspect-ratio: 200 / 130;
+  aspect-ratio: 3 / 4;
   align-self: center;
   box-shadow: 0 14px 40px rgba(0, 0, 0, 0.24);
   animation: vo-hot 12s var(--ease-std) infinite;
@@ -1487,17 +1691,12 @@ select.field option { background: var(--bg-overlay); color: var(--fg-1); }
   grid-template-columns: 1fr 1fr;
   gap: 10px;
 }
-.vo-tile { aspect-ratio: 4 / 5; }
-.vo-tile .rs { display: block; width: 100%; height: 100%; }
+.vo-grid { align-content: space-between; }
+.vo-tile { aspect-ratio: 3 / 4; }
 .vo-t1 { animation: vo-hot 12s var(--ease-std) infinite 2.4s; }
 .vo-t2 { animation: vo-hot 12s var(--ease-std) infinite 4.8s; }
 .vo-t3 { animation: vo-hot 12s var(--ease-std) infinite 7.2s; }
 .vo-t4 { animation: vo-hot 12s var(--ease-std) infinite 9.6s; }
-/* Вид сверху: тот же эскиз, наклонённый в 3D и приближенный. */
-.vo-topview {
-  transform: perspective(320px) rotateX(32deg) scale(1.45);
-  transform-origin: 50% 62%;
-}
 @keyframes vo-hot {
   0%, 18% { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 14px 36px rgba(0, 0, 0, 0.3); }
   22%, 100% { border-color: var(--line-strong); box-shadow: 0 0 0 0 transparent, 0 0 0 rgba(0, 0, 0, 0); }
@@ -1547,25 +1746,25 @@ select.field option { background: var(--bg-overlay); color: var(--fg-1); }
 @keyframes vo-scan {
   /* 1/5 — общий план целиком */
   0%, 18%  { left: 2%; top: 3%; width: 96%; height: 94%; opacity: 0.55; }
-  /* 2/5 — деталь: диван и картина (viewBox 96 42 48 60) */
-  20%, 38% { left: 48%; top: 32.3%; width: 24%; height: 46.2%; opacity: 1; }
+  /* 2/5 — деталь: подвесные светильники */
+  20%, 38% { left: 12%; top: 26%; width: 26%; height: 30%; opacity: 1; }
   /* 3/5 — сверху: вся сцена */
   40%, 58% { left: 2%; top: 3%; width: 96%; height: 94%; opacity: 0.55; }
-  /* 4/5 — фрагмент: угол с торшером (viewBox 140 36 48 60) */
-  60%, 78% { left: 70%; top: 27.7%; width: 24%; height: 46.2%; opacity: 1; }
-  /* 5/5 — фактура: растение (viewBox 18 86 32 40) */
-  80%, 98% { left: 9%; top: 66.2%; width: 16%; height: 30.8%; opacity: 1; }
+  /* 4/5 — фрагмент: угол кровати */
+  60%, 78% { left: 8%; top: 70%; width: 40%; height: 25%; opacity: 1; }
+  /* 5/5 — фактура: плед */
+  80%, 98% { left: 34%; top: 56%; width: 40%; height: 20%; opacity: 1; }
   100%     { left: 2%; top: 3%; width: 96%; height: 94%; opacity: 0.55; }
 }
 @media (max-width: 560px) {
-  .vo { grid-template-columns: 1fr; gap: 10px; }
-  .vo-grid { grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .vo { gap: 8px; }
+  .vo-grid { gap: 8px; }
   .vo-chip { font-size: 9px; padding: 1px 5px; left: 5px; bottom: 5px; }
   .vo-count { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .vo-overview, .vo-tile, .vo-scan { animation: none; }
-  .vo-scan { left: 48%; top: 32.3%; width: 24%; height: 46.2%; opacity: 1; }
+  .vo-scan { left: 12%; top: 26%; width: 26%; height: 30%; opacity: 1; }
   .vo-t1 { border-color: var(--accent); }
   .dropzone:hover .vo-overview { transform: none; }
 }
@@ -1581,8 +1780,10 @@ select.field option { background: var(--bg-overlay); color: var(--fg-1); }
 .ss { color: var(--fg-2); }
 .ss-frame {
   position: relative;
-  width: 100%;
-  aspect-ratio: 200 / 130;
+  /* Вертикальный кадр: ширина привязана к высоте окна, чтобы экран помещался без прокрутки. */
+  width: min(100%, 300px, 34dvh);
+  margin-inline: auto;
+  aspect-ratio: 5 / 6;
   overflow: hidden;
   border-radius: var(--r-lg);
   background: var(--bg-surface);
@@ -1591,7 +1792,8 @@ select.field option { background: var(--bg-overlay); color: var(--fg-1); }
   transition: transform 260ms var(--ease-out), box-shadow 260ms var(--ease-std);
 }
 .dropzone:hover .ss-frame { transform: scale(1.02); box-shadow: 0 22px 56px rgba(0, 0, 0, 0.3); }
-.ss-layer { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.ss-layer { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: cover; }
+.ss-layer.is-preload { visibility: hidden; }
 /* Входящий стиль: наклонный клин, растущий слева направо. Верхняя точка
    опережает нижнюю на 18 % ширины — кромка идёт под наклоном валика. */
 .ss-layer.is-incoming {
@@ -1764,7 +1966,7 @@ select.field option { background: var(--bg-overlay); color: var(--fg-1); }
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
   pointer-events: none;
 }
-.style-preview-image { display: block; width: 100%; aspect-ratio: 200 / 130; object-fit: cover; }
+.style-preview-image { display: block; width: 100%; aspect-ratio: 5 / 4; object-fit: cover; }
 .style-preview-caption { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px 9px; }
 .style-preview-title { font-size: 12.5px; color: var(--fg-1); }
 .style-preview-hint { font-size: 10.5px; line-height: 1.3; color: var(--fg-5); }
@@ -2047,10 +2249,11 @@ select.field option { background: var(--bg-overlay); color: var(--fg-1); }
 .album-pick .chip.is-on { color: var(--fg-1); border-color: var(--line-strong); }
 .album-pick-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(124px, 1fr));
-  gap: 10px;
+  /* Крупные миниатюры: продукт визуальный, выбирать состав нужно по картинке, а не по подписи. */
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 12px;
 }
-.album-pick-grid.is-square { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
+.album-pick-grid.is-square { grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); }
 .album-pick-tile {
   position: relative;
   display: block;
@@ -2716,3 +2919,133 @@ select.field option { background: var(--bg-overlay); color: var(--fg-1); }
 @media (max-width: 360px) {
   .render-welcome-label { font-size: 5px; letter-spacing: .45px; padding: 6px 7px; left: 6px; }
 }
+
+/* ============================================================
+   КАРТОЧКА РЕЗУЛЬТАТА (ToolCard): действия и подпись
+   Лежат на картинке любого цвета — поэтому тёмное стекло, а не токены темы.
+   «Удалить» нейтральная и краснеет только под курсором: красная корзина в
+   покое перетягивала внимание с самой картинки.
+   ============================================================ */
+.card-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.92);
+  background: rgba(16, 16, 18, 0.58);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+.card-action:hover { background: rgba(16, 16, 18, 0.82); }
+.card-action.is-active { background: rgba(255, 255, 255, 0.94); color: #111113; }
+.card-action.is-danger:hover { color: #ff8a84; border-color: rgba(255, 138, 132, 0.45); }
+.card-action:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+.card-caption {
+  position: absolute;
+  inset: auto 0 0 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 34px 14px 12px;
+  color: rgba(255, 255, 255, 0.94);
+  background: linear-gradient(to top, rgba(8, 8, 10, 0.72), rgba(8, 8, 10, 0.36) 52%, transparent);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease-std);
+}
+.card-caption.has-title, .group:hover .card-caption, .group:focus-within .card-caption { opacity: 1; }
+.card-caption-title {
+  flex: none;
+  max-width: 70%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+}
+.card-caption-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.72);
+}
+.card-caption.has-title .card-caption-meta { opacity: 0; transition: opacity var(--dur-base) var(--ease-std); }
+.group:hover .card-caption.has-title .card-caption-meta,
+.group:focus-within .card-caption.has-title .card-caption-meta { opacity: 1; }
+@media (hover: none) { .card-caption, .card-caption.has-title .card-caption-meta { opacity: 1; } }
+/* Пока открыта шторка, картинка под курсором не приближается: линия сравнения должна стоять на месте. */
+.card-media:has(.cmp) img { transform: none !important; }
+
+/* ============================================================
+   АЛЬБОМ: лента страниц в миниатюрах (AlbumPageStrip)
+   Страница — лист в пропорции формата и в теме альбома; внутри та же
+   композиция, что в PDF, без мелкого текста. Лента прокручивается вбок.
+   ============================================================ */
+.album-pages {
+  display: flex;
+  /* Панель сборки — колонка с прокруткой: без flex:none лента сжималась бы в полоску. */
+  flex: none;
+  gap: 12px;
+  margin-inline: calc(var(--space-2) * -1);
+  padding: 2px var(--space-2) 10px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+}
+.album-page-item { flex: none; width: 148px; margin: 0; scroll-snap-align: start; }
+.album-page-item figcaption { margin-top: 6px; font-size: 10.5px; color: var(--fg-4); white-space: nowrap; }
+.album-page {
+  position: relative;
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 6px;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  transition: transform 320ms var(--ease-out), box-shadow 320ms var(--ease-std);
+}
+.album-page.is-dark { background: #1d1d1f; color: #fff; --album-ink: rgba(255, 255, 255, 0.22); }
+.album-page.is-light { background: #f6f5f2; color: #1c1c1c; --album-ink: rgba(0, 0, 0, 0.16); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.08); }
+@media (hover: hover) { .album-page-item:hover .album-page { transform: translateY(-3px); box-shadow: 0 16px 34px rgba(0, 0, 0, 0.36), 0 0 0 1px rgba(255, 255, 255, 0.14); } }
+.album-page img, .album-page-blank { display: block; width: 100%; height: 100%; object-fit: cover; }
+.album-page-blank { background: var(--album-ink); }
+.album-page-cover, .album-page-full { position: absolute; inset: 0; }
+.album-page-full { inset: 9% 7%; width: 86%; height: 82%; border-radius: 2px; }
+.album-page-scrim { position: absolute; inset: 0; background: linear-gradient(to top, rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.1) 60%); }
+.album-page-title {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  bottom: 10%;
+  color: #fff;
+  font-family: var(--font-display);
+  font-size: 9.5px;
+  font-weight: 400;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.album-page-lines { position: absolute; inset: 22% 12%; display: flex; flex-direction: column; gap: 10%; }
+.album-page-lines span { display: block; height: 3px; border-radius: 2px; background: var(--album-ink); }
+.album-page-lines span:nth-child(2n) { width: 72%; }
+.album-page-lines.is-short { position: static; flex: 1; gap: 7px; }
+.album-page-concept { position: absolute; inset: 14% 9%; display: flex; gap: 8%; }
+.album-page-swatches { flex: 1; display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; align-content: start; }
+.album-page-swatches span { display: block; aspect-ratio: 1; border-radius: 2px; }
+.album-page-split { position: absolute; inset: 9% 6%; display: grid; grid-template-columns: 1fr 1fr; gap: 3%; }
+.album-page-split img, .album-page-split .album-page-blank { border-radius: 2px; }
+.album-page-views { position: absolute; inset: 8% 6%; display: flex; gap: 4%; }
+.album-page-views-main { flex: 0 0 34%; width: 34% !important; border-radius: 2px; }
+.album-page-grid { flex: 1; display: grid; grid-template-columns: repeat(var(--cols, 3), 1fr); gap: 3px; min-height: 0; }
+.album-page-grid.is-padded { position: absolute; inset: 12% 8%; align-content: center; }
+.album-page-grid.is-padded img, .album-page-grid.is-padded .album-page-blank { aspect-ratio: 1; height: auto; }
+.album-page-grid img, .album-page-grid .album-page-blank { border-radius: 2px; min-height: 0; }
+.album-page-dot { position: absolute; left: 50%; top: 50%; width: 7px; height: 7px; margin: -3.5px; border-radius: 999px; background: currentColor; opacity: 0.85; }
+@media (prefers-reduced-motion: reduce) { .album-page { transition: none; } }

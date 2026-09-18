@@ -1,9 +1,11 @@
 "use client"
 
 import { useState } from "react"
-import { Download, Eye, Grid2x2, ImageOff, RefreshCw, Trash2 } from "lucide-react"
+import { Download, Eye, Grid2x2, ImageOff, RefreshCw, SplitSquareHorizontal, Trash2 } from "lucide-react"
 
 import { ThinkingGlyph } from "@/components/glyphs"
+import { CompareSlider } from "@/components/tool/compare-slider"
+import { ProcessingVeil } from "@/components/tool/processing-veil"
 import { openLightbox, ZoomHit, type LightboxItem } from "@/components/ui/lightbox"
 import { getBlob, resultKey, sourceKey, thumbResultKey, thumbSourceKey } from "@/lib/blob-store"
 import { previewCaption } from "@/lib/image-generation"
@@ -46,6 +48,9 @@ export function ToolCard({
   processingLabel,
   downloadBaseName,
   tileable = false,
+  title,
+  compare = "hold",
+  order = 0,
   onRetry,
   onDelete,
 }: {
@@ -58,6 +63,16 @@ export function ToolCard({
   downloadBaseName: string
   /** Результат — бесшовный тайл: показать переключатель повтора 2×2. */
   tileable?: boolean
+  /** Подпись-название: у обычных карточек видна всегда (стиль), у тайлов — по наведению (узор не закрываем). */
+  title?: string
+  /**
+   * Как сравнивать с исходником: `hold` — показать исходник, пока кнопка нажата
+   * (референс материала — другая картинка), `slider` — шторка «до / после»
+   * (перенос стиля: тот же кадр).
+   */
+  compare?: "hold" | "slider"
+  /** Номер карточки в галерее: сдвигает появление и фазу ожидания. */
+  order?: number
   onRetry: () => void
   onDelete: () => void
 }) {
@@ -76,7 +91,8 @@ export function ToolCard({
     item.sourceName ? [thumbSourceKey(id), sourceKey(id)] : []
   )
   const preferredAsset = expectsSavedResult && resultAsset.url ? resultAsset : sourceAsset
-  const shownAsset = comparing && sourceAsset.url ? sourceAsset : preferredAsset
+  const sliding = compare === "slider"
+  const shownAsset = comparing && !sliding && sourceAsset.url ? sourceAsset : preferredAsset
   const shown = shownAsset.url
   const assetStatus = shown
     ? "ready"
@@ -104,6 +120,7 @@ export function ToolCard({
         alt: name,
         caption: name ? `${name} · результат` : "результат",
         downloadName: downloadBaseName,
+        compare: sliding && sourceAsset.url ? { keys: [sourceKey(id), thumbSourceKey(id)], preview: sourceAsset.url } : undefined,
       })
     }
     if (sourceAsset.url) {
@@ -120,7 +137,7 @@ export function ToolCard({
   return (
     <figure
       className="group card card-media rise-in relative mb-4 break-inside-avoid overflow-hidden"
-      style={{ borderRadius: "var(--r-lg)" }}
+      style={{ borderRadius: "var(--r-lg)", animationDelay: `${Math.min(order, 8) * 60}ms` }}
     >
       <div className="relative w-full" style={{ aspectRatio: `${width} / ${height}` }}>
         {shown && tileable && repeating && status === "done" && !comparing ? (
@@ -152,16 +169,12 @@ export function ToolCard({
         {/* Вся картинка открывает просмотр; действия карточки лежат выше и кликаются сами. */}
         {shown && status === "done" ? <ZoomHit onOpen={openViewer} /> : null}
 
+        {shown && status === "done" && sliding && comparing && sourceAsset.url ? (
+          <CompareSlider before={sourceAsset.url} alt={item.sourceName ?? ""} fit="cover" />
+        ) : null}
+
         {status === "processing" ? (
-          <div
-            className="fade-in absolute inset-0 flex flex-col items-center justify-center gap-2.5"
-            style={{ background: "rgba(16,16,18,0.45)" }}
-          >
-            <ThinkingGlyph size={22} className="text-white/80" />
-            <span className="text-[12px]" style={{ color: "rgba(255,255,255,0.85)" }}>
-              {processingLabel}
-            </span>
-          </div>
+          <ProcessingVeil label={processingLabel} order={order} />
         ) : status === "error" ? (
           <div
             className="fade-in absolute inset-0 flex flex-col items-center justify-center gap-3 p-4 text-center"
@@ -211,8 +224,8 @@ export function ToolCard({
             {/* Действия — по ховеру, как отметки на карточках нейрофотосессии. */}
             <div
               className={cn(
-                "card-actions absolute right-2 top-2 flex gap-1 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100",
-                repeating ? "opacity-100" : "opacity-0"
+                "card-actions absolute right-2 top-2 z-[41] flex gap-1 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100",
+                repeating || (sliding && comparing) ? "opacity-100" : "opacity-0"
               )}
             >
               {tileable && resultAsset.url ? (
@@ -225,15 +238,25 @@ export function ToolCard({
                 </CardAction>
               ) : null}
               {sourceAsset.url && resultAsset.url ? (
-                <CardAction
-                  label="Показать исходник (удерживайте)"
-                  onPointerDown={() => setComparing(true)}
-                  onPointerUp={() => setComparing(false)}
-                  onPointerLeave={() => setComparing(false)}
-                  active={comparing}
-                >
-                  <Eye className="h-3.5 w-3.5" strokeWidth={1.8} />
-                </CardAction>
+                sliding ? (
+                  <CardAction
+                    label={comparing ? "Скрыть сравнение" : "Сравнить «до / после»"}
+                    onClick={() => setComparing((value) => !value)}
+                    active={comparing}
+                  >
+                    <SplitSquareHorizontal className="h-3.5 w-3.5" strokeWidth={1.8} />
+                  </CardAction>
+                ) : (
+                  <CardAction
+                    label="Показать исходник (удерживайте)"
+                    onPointerDown={() => setComparing(true)}
+                    onPointerUp={() => setComparing(false)}
+                    onPointerLeave={() => setComparing(false)}
+                    active={comparing}
+                  >
+                    <Eye className="h-3.5 w-3.5" strokeWidth={1.8} />
+                  </CardAction>
+                )
               ) : null}
               <CardAction label="Скачать результат" onClick={() => void download()}>
                 <Download className="h-3.5 w-3.5" strokeWidth={1.8} />
@@ -243,7 +266,7 @@ export function ToolCard({
               </CardAction>
             </div>
 
-            {comparing ? (
+            {comparing && !sliding ? (
               <span className="chip absolute left-2 top-2" style={{ background: "rgba(16,16,18,0.7)", color: "rgba(255,255,255,0.9)" }}>
                 до
               </span>
@@ -253,14 +276,18 @@ export function ToolCard({
               </span>
             ) : null}
 
-            <figcaption
-              className="chip pointer-events-none absolute bottom-2 left-2 opacity-0 transition-opacity group-hover:opacity-100"
-              style={{ background: "rgba(16,16,18,0.7)", color: "rgba(255,255,255,0.85)", borderColor: "rgba(255,255,255,0.16)" }}
-            >
-              {/* Результат без ключа провайдера подписан честно: это canvas-предпросмотр. */}
-              {caption}
-              {previewCaption(item)}
-            </figcaption>
+            {/* Подпись: название — всегда, подробности — по наведению. Под ними
+                градиент, иначе на пёстром узоре (гусиная лапка) текст не читается. */}
+            {sliding && comparing ? null : (
+              <figcaption className={cn("card-caption", title && !tileable && "has-title")}>
+                {title ? <span className="card-caption-title">{title}</span> : null}
+                <span className="card-caption-meta">
+                  {/* Результат без ключа провайдера подписан честно: это canvas-предпросмотр. */}
+                  {caption}
+                  {previewCaption(item)}
+                </span>
+              </figcaption>
+            )}
           </>
         ) : null}
       </div>
@@ -356,12 +383,7 @@ function CardAction({
       onPointerUp={onPointerUp}
       onPointerLeave={onPointerLeave}
       onContextMenu={(event) => event.preventDefault()}
-      className="card-action flex h-8 w-8 items-center justify-center rounded-[8px]"
-      style={{
-        background: active ? "rgba(255,255,255,0.92)" : "rgba(16,16,18,0.66)",
-        border: "1px solid rgba(255,255,255,0.18)",
-        color: active ? "#111113" : danger ? "var(--danger)" : "rgba(255,255,255,0.92)",
-      }}
+      className={cn("card-action", active && "is-active", danger && "is-danger")}
     >
       {children}
     </button>

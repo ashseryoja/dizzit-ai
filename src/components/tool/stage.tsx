@@ -1,8 +1,9 @@
 "use client"
 
 import { useEffect, useRef, useState, type ReactNode } from "react"
-import { ChevronLeft, ChevronRight, LayoutGrid, X } from "lucide-react"
+import { ChevronLeft, ChevronRight, Download, LayoutGrid, SplitSquareHorizontal, X } from "lucide-react"
 
+import { CompareSlider } from "@/components/tool/compare-slider"
 import { openLightbox, ZoomButton, ZoomHit } from "@/components/ui/lightbox"
 import type { AttachedRender } from "@/lib/use-attachments"
 import { cn, plural } from "@/lib/utils"
@@ -16,14 +17,28 @@ export function StagePlaceholder({ children, className }: { children: ReactNode;
   )
 }
 
+/** Поля вокруг кадра и полоса над ним — под бейджи и панель областей. */
+const STAGE_PAD = 12
+const STAGE_BAND = 52
+/** Уже этого панель областей не помещается рядом с бейджами — остаётся на кадре. */
+const STAGE_WIDE = 640
+/** Ниже lg сцена не тянется на весь экран, а берёт высоту по пропорции кадра. */
+const STAGE_FIT_BELOW = 1024
+
 /**
  * Сцена: выбранный рендер пачки во весь доступный экран. В углах — имя и
  * размер, счётчик «2 / 7», по бокам стрелки (стили .stage-* в surfaces.css).
  *
- * С overlay (холст точечной правки у редактора рендера) картинка ложится в
- * бокс РОВНО по кадру: его позиция и размер считаются по пропорции картинки
- * от размера сцены, чтобы холст накрывал именно кадр. Без overlay —
- * просто object-contain на всю сцену.
+ * Кадр лежит в боксе РОВНО по пропорции картинки, со скруглёнными углами и
+ * полями; поля заполняет сильно размытая затемнённая копия того же кадра, так
+ * что вертикальный рендер не стоит в пустой серой коробке. Над кадром — полоса
+ * под бейджи и панель областей (`overlay`): инструменты не закрывают рендер.
+ * На узких экранах высота сцены считается по пропорции кадра.
+ *
+ * `compare` — исходник того же кадра: появляется кнопка «До / после» со шторкой
+ * (`CompareSlider`); удержание клавиши «\» показывает исходник целиком.
+ * `reveal` — разовое проявление только что готового результата той же шторкой.
+ * `onDownload` — кнопка «Скачать» в правом нижнем углу сцены.
  *
  * Просмотр во весь экран: кнопка-уголок внизу слева есть всегда; без overlay
  * его открывает и клик по самой картинке (с overlay клик занят рисованием).
@@ -37,6 +52,10 @@ export function Stage({
   itemLabel = "рендер",
   className = "min-h-[320px] flex-1",
   overlay,
+  compare,
+  reveal = false,
+  onRevealEnd,
+  onDownload,
 }: {
   attachment: AttachedRender
   index: number
@@ -48,103 +67,207 @@ export function Stage({
   /** Размер сцены: во всю высоту (по умолчанию) или фиксированная пропорция. */
   className?: string
   overlay?: ReactNode
+  /** Исходник кадра на сцене: включает шторку «до / после». */
+  compare?: { before: string }
+  /** Проявить результат шторкой один раз (только что закончилась обработка). */
+  reveal?: boolean
+  onRevealEnd?: () => void
+  /** Скачать то, что на сцене (готовый результат): кнопка в правом нижнем углу. */
+  onDownload?: () => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
-  const [size, setSize] = useState({ width: 0, height: 0 })
-  const measured = overlay !== undefined
+  const [size, setSize] = useState({ width: 0, height: 0, viewport: 0, viewportHeight: 0 })
+  const [comparing, setComparing] = useState(false)
+  const [peeking, setPeeking] = useState(false)
 
   // Размер сцены — чтобы посчитать бокс кадра по пропорции картинки.
   useEffect(() => {
-    if (!measured) return
     const node = ref.current
     if (!node || typeof ResizeObserver === "undefined") return
     const sync = () =>
       setSize((prev) =>
-        prev.width === node.clientWidth && prev.height === node.clientHeight
+        prev.width === node.clientWidth &&
+        prev.height === node.clientHeight &&
+        prev.viewport === window.innerWidth &&
+        prev.viewportHeight === window.innerHeight
           ? prev
-          : { width: node.clientWidth, height: node.clientHeight }
+          : { width: node.clientWidth, height: node.clientHeight, viewport: window.innerWidth, viewportHeight: window.innerHeight }
       )
     sync()
     const observer = new ResizeObserver(sync)
     observer.observe(node)
-    return () => observer.disconnect()
-  }, [measured])
+    window.addEventListener("resize", sync)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener("resize", sync)
+    }
+  }, [])
+
+  // Другой кадр — шторка закрывается: сравнение относится к одному рендеру.
+  const compareUrl = compare?.before ?? null
+  useEffect(() => {
+    setComparing(false)
+    setPeeking(false)
+  }, [compareUrl, attachment.previewUrl])
+
+  // «\» удерживается — на сцене исходник целиком (как в графических редакторах).
+  useEffect(() => {
+    if (!compareUrl) return
+    const typing = (target: EventTarget | null) =>
+      target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))
+    const down = (event: KeyboardEvent) => {
+      if (event.code !== "Backslash" || event.repeat || typing(event.target)) return
+      event.preventDefault()
+      setPeeking(true)
+    }
+    const up = (event: KeyboardEvent) => {
+      if (event.code === "Backslash") setPeeking(false)
+    }
+    const blur = () => setPeeking(false)
+    window.addEventListener("keydown", down)
+    window.addEventListener("keyup", up)
+    window.addEventListener("blur", blur)
+    return () => {
+      window.removeEventListener("keydown", down)
+      window.removeEventListener("keyup", up)
+      window.removeEventListener("blur", blur)
+    }
+  }, [compareUrl])
 
   const openViewer = (origin: HTMLElement) => {
     // Кадр вырастает из картинки на сцене, а не из кнопки.
-    const image = ref.current?.querySelector("img") ?? origin
+    const image = ref.current?.querySelector<HTMLElement>(".stage-frame img") ?? origin
     openLightbox(
-      { src: attachment.previewUrl, alt: attachment.file.name, caption: attachment.file.name },
+      {
+        src: attachment.previewUrl,
+        alt: attachment.file.name,
+        caption: attachment.file.name,
+        compare: compareUrl ? { src: compareUrl } : undefined,
+      },
       { origin: image }
     )
   }
 
+  const ratio = attachment.width / Math.max(1, attachment.height)
+  const wide = size.width >= STAGE_WIDE
+  const band = overlay !== undefined && wide ? STAGE_BAND : overlay !== undefined ? STAGE_BAND - 8 : STAGE_PAD
+  // Узкий экран: сцена ровно под кадр, но не выше двух третей окна.
+  const fitHeight =
+    size.width > 0 && size.viewport > 0 && size.viewport < STAGE_FIT_BELOW
+      ? Math.round(
+          Math.min((size.width - STAGE_PAD * 2) / ratio + band + STAGE_PAD, Math.max(260, size.viewportHeight * 0.66))
+        )
+      : null
+
   const frameBox = (() => {
-    if (!measured || size.width === 0 || size.height === 0) return null
-    const scale = Math.min(size.width / attachment.width, size.height / attachment.height)
+    if (size.width === 0 || size.height === 0) return null
+    const availWidth = Math.max(1, size.width - STAGE_PAD * 2)
+    const availHeight = Math.max(1, size.height - band - STAGE_PAD)
+    const scale = Math.min(availWidth / attachment.width, availHeight / attachment.height)
     const width = Math.floor(attachment.width * scale)
     const height = Math.floor(attachment.height * scale)
-    return { width, height, left: Math.floor((size.width - width) / 2), top: Math.floor((size.height - height) / 2) }
+    return {
+      width,
+      height,
+      left: Math.floor((size.width - width) / 2),
+      top: band + Math.floor((availHeight - height) / 2),
+    }
   })()
 
+  const showCompare = Boolean(compareUrl) && (comparing || reveal)
+
   return (
-    <div ref={ref} className={cn("stage zoom-host", className)}>
-      {measured ? (
-        frameBox ? (
-          <div className="stage-frame" style={frameBox}>
+    <div
+      ref={ref}
+      className={cn("stage zoom-host", className)}
+      style={fitHeight ? { height: fitHeight, flex: "none", minHeight: 0, aspectRatio: "auto" } : undefined}
+    >
+      {/* Свечение кадра за сценой и размытая копия в полях — одна и та же картинка. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={attachment.previewUrl} alt="" aria-hidden draggable={false} className="stage-glow" />
+      <div className="stage-clip">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={attachment.previewUrl} alt="" aria-hidden draggable={false} className="stage-backdrop" />
+        {frameBox ? (
+          <div
+            className="stage-frame"
+            style={{ ...frameBox, ["--rg-lift" as string]: overlay !== undefined && wide ? `${STAGE_BAND}px` : "0px" }}
+          >
             {/* Превью — object URL локального файла, next/image ни к чему. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={attachment.previewUrl} alt={attachment.file.name} draggable={false} />
+            <img src={peeking && compareUrl ? compareUrl : attachment.previewUrl} alt={attachment.file.name} draggable={false} />
+            {overlay === undefined ? <ZoomHit onOpen={openViewer} /> : null}
             {overlay}
+            {showCompare && compareUrl ? (
+              <CompareSlider
+                key={reveal ? "reveal" : "compare"}
+                before={compareUrl}
+                alt={attachment.file.name}
+                beforeLabel="исходник"
+                afterLabel="результат"
+                intro={reveal}
+                onIntroEnd={onRevealEnd}
+              />
+            ) : null}
           </div>
-        ) : null
-      ) : (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={attachment.previewUrl}
-          alt={attachment.file.name}
-          draggable={false}
-          className="absolute inset-0 h-full w-full select-none object-contain"
-        />
-      )}
-      {measured ? null : <ZoomHit onOpen={openViewer} />}
+        ) : null}
 
-      <span className="stage-badge left-3 top-3">
-        <span className="truncate">{attachment.file.name}</span>
-        <span style={{ color: "rgba(255,255,255,0.55)" }}>
-          {attachment.width}×{attachment.height}
+        <span className="stage-badge left-3 top-3">
+          <span className="truncate">{attachment.file.name}</span>
+          <span style={{ color: "rgba(255,255,255,0.55)" }}>
+            {attachment.width}×{attachment.height}
+          </span>
         </span>
-      </span>
-      {count > 1 ? (
-        <span className="stage-badge right-3 top-3 tabular-nums">
-          {index + 1} / {count}
-        </span>
-      ) : null}
+        {count > 1 ? (
+          <span className="stage-badge right-3 top-3 tabular-nums">
+            {index + 1} / {count}
+          </span>
+        ) : null}
 
-      <ZoomButton onOpen={openViewer} className="stage-zoom" />
-
-      {count > 1 ? (
-        <>
+        <ZoomButton onOpen={openViewer} className="stage-zoom" />
+        {compareUrl && !reveal ? (
           <button
             type="button"
-            onClick={onPrev}
-            disabled={index === 0}
-            aria-label={`Предыдущий ${itemLabel}`}
-            className="stage-nav left-3"
+            onClick={() => setComparing((value) => !value)}
+            aria-pressed={comparing}
+            title={"Сравнить с исходником · удерживайте «\\», чтобы увидеть исходник целиком"}
+            className={cn("stage-action stage-compare", comparing && "is-active")}
           >
-            <ChevronLeft className="h-4 w-4" strokeWidth={1.8} />
+            <SplitSquareHorizontal className="h-3.5 w-3.5" strokeWidth={1.8} />
+            {peeking ? "Исходник" : "До / после"}
           </button>
-          <button
-            type="button"
-            onClick={onNext}
-            disabled={index === count - 1}
-            aria-label={`Следующий ${itemLabel}`}
-            className="stage-nav right-3"
-          >
-            <ChevronRight className="h-4 w-4" strokeWidth={1.8} />
+        ) : null}
+
+        {onDownload ? (
+          <button type="button" onClick={onDownload} className="stage-action stage-download">
+            <Download className="h-3.5 w-3.5" strokeWidth={1.8} />
+            Скачать
           </button>
-        </>
-      ) : null}
+        ) : null}
+
+        {count > 1 ? (
+          <>
+            <button
+              type="button"
+              onClick={onPrev}
+              disabled={index === 0}
+              aria-label={`Предыдущий ${itemLabel}`}
+              className="stage-nav left-3"
+            >
+              <ChevronLeft className="h-4 w-4" strokeWidth={1.8} />
+            </button>
+            <button
+              type="button"
+              onClick={onNext}
+              disabled={index === count - 1}
+              aria-label={`Следующий ${itemLabel}`}
+              className="stage-nav right-3"
+            >
+              <ChevronRight className="h-4 w-4" strokeWidth={1.8} />
+            </button>
+          </>
+        ) : null}
+      </div>
     </div>
   )
 }

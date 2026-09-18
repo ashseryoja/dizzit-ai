@@ -312,7 +312,7 @@ function storageDescription(server: ReturnType<typeof useServerStatus>): string 
   if (server.persistence) {
     return `Вход выполнен, база подключена, картинки — в ${server.storage === "vercel-blob" ? "приватном Vercel Blob" : "хранилище на диске сервера"}. Галерея одна на всех устройствах.`
   }
-  if (!server.authConfigured) return "На сервере не задан пароль входа (AUTH_SECRET и APP_ACCESS_PASSWORD) — серверное хранение выключено."
+  if (!server.authConfigured) return "Вход по паролю не настроен, поэтому серверное хранение выключено: проекты живут только в этом браузере."
   if (!server.signedIn) return "Сессия не активна — войдите заново, чтобы синхронизация продолжилась."
   if (!server.database) return "Не задана база данных (DATABASE_URL)."
   if (!server.storage) return "Не настроено хранилище картинок (BLOB_STORE_ID)."

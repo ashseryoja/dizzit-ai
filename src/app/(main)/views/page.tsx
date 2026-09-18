@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { Camera, Crop, Images, Layers, Orbit, ZoomIn } from "lucide-react"
 
 import { AddTile } from "@/components/tool/add-tile"
+import { showToast } from "@/components/ui/toast"
 import { AspectPicker } from "@/components/tool/aspect-picker"
 import { RenderStrip, RenderTray } from "@/components/tool/render-tray"
 import { BatchGrid, Stage } from "@/components/tool/stage"
@@ -12,7 +13,7 @@ import { ToolDropzone } from "@/components/tool/tool-dropzone"
 import { ComposerDock, ToolAside, ToolGallery, ToolShell } from "@/components/tool/tool-shell"
 import { ViewSetCard } from "@/components/tool/view-set-card"
 import { ViewsInvite } from "@/components/tool/views-invite"
-import { getBlob, putBlobDurably, sourceKey } from "@/lib/blob-store"
+import { getBlob, putBlobDurably, sourceKey, thumbSourceKey } from "@/lib/blob-store"
 import { MAX_BATCH, makeThumb, readImageSize } from "@/lib/enhance-engine"
 import { closestFrameAspect } from "@/lib/frame-aspect"
 import { describeScene, hasMaterialsSection } from "@/lib/scene-analysis"
@@ -40,11 +41,11 @@ const LABELS: ToolComposerLabels = {
   filesTitle: "Общие планы",
   filesQuality: "исходники",
   uploadTitle: "Загрузить рендеры",
-  filesCaption: "по одному сету на каждый рендер · все кадры в выбранном формате · GPT Image 2 2K → Lanczos 4K (3840 px)",
+  filesCaption: "по одному сету на каждый рендер · все кадры в выбранном формате · результат в 4K",
   optionsTitle: "Что снять",
   optionsIcon: Camera,
   footer:
-    "Готовый сет — четыре действительно разные точки съёмки и три акцентные предметные виньетки: камера смотрит почти сверху, с высокого 3/4, сбоку и с низкого 3/4. Vision-модель сначала фиксирует предметы и материалы, затем ранжирует самые выразительные акценты; одинаковые полки, случайные подушки, голые стены и дубли отбрасываются. В новом ракурсе генератор видит и предмет крупно, и весь исходник: меняется только камера, не дизайн. Каждый кадр проходит Lanczos до 4K (3840 px по длинной стороне).",
+    "Готовый сет — четыре разные точки съёмки и три предметные детали. Кадры подбираются под этот интерьер: самые выразительные предметы, без дублей и пустых стен. Меняется только камера, не дизайн.",
   inputPlaceholder: "Что показать крупно: ваза, кресло, торшер…",
   submitLabel: "Построить",
   batchNoun: ["рендер", "рендера", "рендеров"],
@@ -222,6 +223,7 @@ export default function ViewsPage() {
           generationUncertain: undefined,
           error: undefined,
         })
+        showToast({ title: "Сет кадров готов", detail: `${meta.sourceName} · ${meta.frames.length} кадров`, imageKeys: [thumbSourceKey(meta.id), sourceKey(meta.id)] })
       } catch (error) {
         update(meta.id, {
           status: "error",
@@ -349,7 +351,7 @@ export default function ViewsPage() {
       ? "Ничего не выбрано — отметьте рендеры в панели справа."
       : `${PRESET_LABEL[preset]} — ${frameCount} ${
           workingSet.length === 1 ? "по рендеру на сцене" : `на каждый из ${workingSet.length} выбранных ${LABELS.batchNoun[2]}`
-        }: ${describeSlots(preset)}. ${aspect ? "Что именно снять, решит vision-модель по этому интерьеру." : "Формат кадров — в настройках композера."}`
+        }: ${describeSlots(preset)}. ${aspect ? "Что именно снять, сервис решит по этому интерьеру." : "Формат кадров — в настройках композера."}`
   const suggestedAspect = current ? closestFrameAspect(current.width, current.height) : null
 
   return (
@@ -418,11 +420,12 @@ export default function ViewsPage() {
         <ToolDropzone
           onPick={intake.pickFiles}
           label="Добавить рендер"
-          visual={<ViewsInvite className="relative w-full max-w-[600px]" />}
+          visual={<ViewsInvite className="relative w-full max-w-[min(520px,52dvh)]" />}
           title="Добавить рендер"
-          description={`Один общий план — и из него сет кадров для публикации: четыре разные точки съёмки и три выразительные детали, в формате сторис, квадрата или альбома. Нажмите, перетащите сюда или вставьте из буфера. PNG, JPG или WEBP до 32 МБ, до ${MAX_BATCH} файлов за раз.`}
-          caption="Как карусель дизайнера: vision-модель смотрит на рендер и подбирает кадры под него — по одному рендеру, без 3D-модели и повторного рендера."
-          className="max-w-[760px] gap-6 px-6 pb-10 pt-8 sm:pb-12 sm:pt-10"
+          description="Один общий план — и из него сет кадров для публикации: новые ракурсы и выразительные детали, в формате сторис, квадрата или альбома."
+          hint={`нажмите, перетащите или вставьте из буфера · PNG, JPG, WEBP · до 32 МБ · до ${MAX_BATCH} файлов`}
+          caption="Как карусель дизайнера: кадры подбираются под ваш рендер — без 3D-модели и повторного рендера."
+          className="max-w-[760px] gap-5 px-6 pb-7 pt-7 sm:pb-8 sm:pt-8"
         />
       ) : (
         <ToolGallery layout="stack">

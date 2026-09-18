@@ -55,8 +55,11 @@ function LoginForm() {
   }
 
   return (
-    <div className="flex min-h-dvh items-center justify-center px-4 py-10">
-      <Panel className="w-full max-w-[380px]">
+    <div className="login-screen flex min-h-dvh items-center justify-center px-4 py-10">
+      {/* Фон — фирменный рендер в расфокусе: вход выглядит дверью в студию, а не пустой страницей. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/images/render-example.jpg" alt="" aria-hidden draggable={false} className="login-backdrop" />
+      <Panel className="glass-dense relative w-full max-w-[380px]">
         <div className="mb-6 flex flex-col items-center gap-3 text-center">
           <Logo className="h-7" />
           <p className="ds-caption">Вход в рабочее пространство</p>

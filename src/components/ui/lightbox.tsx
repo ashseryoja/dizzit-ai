@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react"
 import { createPortal } from "react-dom"
-import { ChevronLeft, ChevronRight, Download, Maximize2, X, ZoomIn, ZoomOut } from "lucide-react"
+import { ChevronLeft, ChevronRight, Download, Maximize2, SplitSquareHorizontal, X, ZoomIn, ZoomOut } from "lucide-react"
 
 import { ThinkingGlyph } from "@/components/glyphs"
+import { CompareSlider } from "@/components/tool/compare-slider"
 import { usePresence } from "@/lib/use-presence"
 import { useStoredBlobUrl } from "@/lib/use-stored-blob"
 import { cn } from "@/lib/utils"
@@ -34,6 +35,11 @@ export interface LightboxItem {
   caption?: string
   /** Имя файла без расширения — включает кнопку «Скачать». */
   downloadName?: string
+  /**
+   * Исходник того же кадра: включает кнопку «До / после» со шторкой поверх
+   * картинки. Адрес — готовый (`src`) или ключами хранилища, как у самой картинки.
+   */
+  compare?: { src?: string; keys?: string[]; preview?: string | null }
 }
 
 interface LightboxState {
@@ -233,6 +239,11 @@ function LightboxFrame({
   const loading = !full && !item.src && stored.status === "loading"
   const failed = !url && !loading
 
+  const beforeStored = useStoredBlobUrl(item.compare && !item.compare.src ? (item.compare.keys ?? []) : [])
+  const beforeUrl = item.compare ? (item.compare.src ?? beforeStored.url ?? item.compare.preview ?? null) : null
+  const [comparing, setComparing] = useState(false)
+  const [compareBox, setCompareBox] = useState<{ left: number; top: number; width: number; height: number } | null>(null)
+
   const viewportRef = useRef<HTMLDivElement>(null)
   const imageRef = useRef<HTMLImageElement>(null)
   const [natural, setNatural] = useState<{ width: number; height: number } | null>(null)
@@ -295,6 +306,26 @@ function LightboxFrame({
     })
   }
 
+  // Шторка лежит ровно по картинке: её бокс пересчитывается при любом изменении размера.
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current
+    const image = imageRef.current
+    if (!comparing || !viewport || !image) {
+      setCompareBox(null)
+      return
+    }
+    const sync = () => {
+      const outer = viewport.getBoundingClientRect()
+      const rect = image.getBoundingClientRect()
+      setCompareBox({ left: rect.left - outer.left, top: rect.top - outer.top, width: rect.width, height: rect.height })
+    }
+    sync()
+    const observer = new ResizeObserver(sync)
+    observer.observe(image)
+    observer.observe(viewport)
+    return () => observer.disconnect()
+  }, [comparing, url])
+
   // Приближенный кадр таскается мышью; клик без сдвига — отдалить.
   const drag = useRef<{ x: number; y: number; left: number; top: number; moved: boolean } | null>(null)
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -343,7 +374,23 @@ function LightboxFrame({
         </span>
         <span className="lb-actions">
           {counter ? <span className="lb-counter">{counter}</span> : null}
-          {zoomable || zoom ? (
+          {beforeUrl && url ? (
+            <button
+              type="button"
+              className={cn("lb-action", comparing && "is-active")}
+              onClick={() => {
+                // Сравнение — на вписанном кадре: приближение сбрасывается.
+                setZoom(null)
+                setComparing((value) => !value)
+              }}
+              aria-pressed={comparing}
+              aria-label="До / после"
+              title="До / после"
+            >
+              <SplitSquareHorizontal className="h-4 w-4" strokeWidth={1.8} />
+            </button>
+          ) : null}
+          {(zoomable || zoom) && !comparing ? (
             <button
               type="button"
               className="lb-action"
@@ -387,7 +434,7 @@ function LightboxFrame({
             draggable={false}
             onLoad={onLoad}
             onClick={(event) => {
-              if (drag.current?.moved) return
+              if (drag.current?.moved || comparing) return
               if (zoom || zoomable) toggleZoom(event)
             }}
             data-direction={direction ?? undefined}
@@ -395,6 +442,11 @@ function LightboxFrame({
             className={cn("lb-image", !full && "is-preview", zoomable && "is-zoomable")}
             style={zoom ? { width: zoom.width, maxWidth: "none", maxHeight: "none" } : undefined}
           />
+        ) : null}
+        {comparing && beforeUrl && compareBox ? (
+          <div className="lb-compare" style={compareBox}>
+            <CompareSlider before={beforeUrl} alt={item.alt ?? ""} beforeLabel="исходник" afterLabel="результат" />
+          </div>
         ) : null}
         {loading ? (
           <span className="lb-status" role="status">

@@ -282,7 +282,7 @@ function ProjectSwitcher({ large, onNavigate }: { large: boolean; onNavigate?: (
                           if (reduceMotion || project.id === activeProjectId) finishSelection()
                           else selectionTimer.current = setTimeout(finishSelection, 420)
                         }}
-                        className={cn(navItemClass(large, project.id === activeProjectId), "pr-[68px]")}
+                        className={cn(navItemClass(large, project.id === activeProjectId), "project-option-btn")}
                         aria-current={project.id === activeProjectId ? "true" : undefined}
                       >
                         <ProjectAvatar title={project.title} large={false} />
@@ -562,14 +562,15 @@ export function AppSidebar() {
         type="button"
         onClick={() => setOpenMobile(true)}
         aria-label="Открыть меню"
-        className="fixed left-3 top-3 z-30 flex h-11 w-11 items-center justify-center rounded-full lg:hidden"
-        style={{ background: "var(--bg-surface)", border: "1px solid var(--line-strong)" }}
+        className="mobile-menu-button fixed left-3 top-3 z-30 flex h-11 items-center gap-3 rounded-full pl-[14px] pr-4 lg:hidden"
       >
         <span className="flex flex-col gap-[3.5px]" aria-hidden>
           <span className="block h-[1.5px] w-4 rounded-full" style={{ background: "var(--fg-2)" }} />
           <span className="block h-[1.5px] w-4 rounded-full" style={{ background: "var(--fg-2)" }} />
           <span className="block h-[1.5px] w-2.5 rounded-full" style={{ background: "var(--fg-2)" }} />
         </span>
+        {/* Логотип в шапке: на узком экране сайдбара не видно, а бренд нужен. */}
+        <Logo className="!text-[15px]" />
       </button>
 
       {/* Оверлей и шторка меню. Смонтированы всегда и ездят transition-ом:
@@ -588,7 +589,7 @@ export function AppSidebar() {
         // иначе Tab уводит каретку в невидимое меню за краем экрана.
         inert={!openMobile}
         className={cn(
-          "glass-surface app-sidebar fixed bottom-2 left-2 top-2 z-50 flex w-[300px] max-w-[88vw] flex-col overflow-hidden transition-transform duration-300 lg:hidden",
+          "glass-surface glass-dense app-sidebar fixed bottom-2 left-2 top-2 z-50 flex w-[300px] max-w-[88vw] flex-col overflow-hidden transition-transform duration-300 lg:hidden",
           openMobile ? "translate-x-0" : "-translate-x-[110%]"
         )}
         style={{

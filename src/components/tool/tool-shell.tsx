@@ -17,6 +17,7 @@ const TOOL_HEADINGS: Record<string, readonly [string, string]> = {
   "/restyle": ["Перенос стиля", "Ваше пространство — в новом прочтении."],
   "/photo-3d": ["Фото → 3D", "От фотографии предмета — к объёмной модели."],
   "/materials": ["Генерация материала", "Фактуры, которые хочется рассматривать."],
+  "/album": ["Альбом-презентация", "Всё готовое в проекте — в одном PDF для клиента."],
 }
 
 /** Результат usePresence — слои каркаса принимают его целиком. */
@@ -46,6 +47,7 @@ export function ToolShell({
   composerSpace = "7rem",
   trayOpen = false,
   trayMargin = "lg:mr-[296px]",
+  headingActions,
   layers,
   children,
 }: {
@@ -66,6 +68,8 @@ export function ToolShell({
   trayOpen?: boolean
   /** Класс отступа под правые панели; у переноса стиля их две. */
   trayMargin?: string
+  /** Действия справа от заголовка страницы: «Новый альбом», «Удалить». */
+  headingActions?: ReactNode
   layers?: ReactNode
   children: ReactNode
 }) {
@@ -123,12 +127,19 @@ export function ToolShell({
         </div>
       ) : null}
 
-      <div className="page-content-wide flex flex-1 flex-col">
+      {/* Вход страницы — только сдвиг, без прозрачности: в скрытой вкладке анимации
+          замирают, и контент с opacity 0 остался бы невидимым. */}
+      <div className="page-content-wide page-enter flex flex-1 flex-col">
         {heading ? (
           <header className="tool-heading">
             <div className="tool-breadcrumb"><span>{project?.title ?? "Рабочее пространство"}</span><span aria-hidden="true">›</span><span>Инструменты</span></div>
-            <h1>{heading[0]}</h1>
-            <p>{heading[1]}</p>
+            <div className="tool-heading-row">
+              <div className="min-w-0">
+                <h1>{heading[0]}</h1>
+                <p>{heading[1]}</p>
+              </div>
+              {headingActions ? <div className="tool-heading-actions">{headingActions}</div> : null}
+            </div>
           </header>
         ) : null}
         {children}
@@ -250,13 +261,15 @@ export function ToolGallery({
 }) {
   if (layout === "stack") return <div className="flex flex-col gap-8">{children}</div>
   if (layout === "tiles")
-    return <div className={cn(TILE_GALLERY_WIDTH, "grid grid-cols-2 gap-x-4 sm:grid-cols-3")}>{children}</div>
+    return <div className={cn(TILE_GALLERY_WIDTH, TILE_GALLERY_COLUMNS)}>{children}</div>
   return <div className="columns-1 gap-4 sm:columns-2 xl:columns-3">{children}</div>
 }
 
 /**
- * Ширина сетки тайлов: держит тайл ≈ 250 px и центрирует колонки. Тот же класс
- * берёт превью-сетка пустого экрана, чтобы после первой генерации раскладка
- * не прыгала.
+ * Сетка тайлов идёт от левого края контента — по той же оси, что заголовок
+ * страницы (раньше узкая колонка стояла по центру, а заголовок слева). Тайл
+ * ≈ 250 px: три колонки, на широком экране — четыре. Те же классы берёт
+ * превью-сетка пустого экрана, чтобы после первой генерации раскладка не прыгала.
  */
-export const TILE_GALLERY_WIDTH = "mx-auto w-full max-w-[780px]"
+export const TILE_GALLERY_WIDTH = "w-full"
+export const TILE_GALLERY_COLUMNS = "grid grid-cols-2 gap-x-4 sm:grid-cols-3 xl:grid-cols-4"

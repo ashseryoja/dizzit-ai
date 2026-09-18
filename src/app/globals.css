@@ -72,6 +72,24 @@
     min-height: 100dvh;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    /* У Garet одно начертание: без синтеза браузер не «утолщает» его искусственно. */
+    font-synthesis: none;
+    font-kerning: normal;
+    /* Garet широковат: лёгкое сжатие возвращает плотность строк, которая была у системного шрифта. */
+    letter-spacing: -0.012em;
+  }
+
+  /* Зерно поверх фона — глубина, как у плёнки; ниже любого контента и без событий. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    /* -1: фон body уходит на канвас, поэтому зерно ложится на него, но под весь контент. */
+    z-index: -1;
+    pointer-events: none;
+    opacity: var(--grain-opacity);
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   }
 
   h1, h2, h3, h4, h5, h6 {

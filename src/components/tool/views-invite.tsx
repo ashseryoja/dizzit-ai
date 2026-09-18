@@ -1,47 +1,45 @@
 "use client"
 
-import { RoomSketch } from "@/components/tool/room-sketch"
 import { cn } from "@/lib/utils"
+
+const BASE = "/images/invite"
+
+/** Кадры справа: подпись, файл и счётчик — как в карусели. */
+const TILES = [
+  { key: "t1", label: "деталь", src: `${BASE}/views-detail.jpg` },
+  { key: "t2", label: "сверху", src: `${BASE}/views-top.jpg` },
+  { key: "t3", label: "фрагмент", src: `${BASE}/views-fragment.jpg` },
+  { key: "t4", label: "фактура", src: `${BASE}/views-texture.jpg` },
+]
 
 /**
  * Приглашение пустого экрана «Ракурсы и детали» — карусель из одного рендера:
  * слева общий план, справа кадры, которые из него получают, — деталь крупно,
- * вид сверху, фрагмент и фактура. Кадры — вырезки того же эскиза (viewBox),
- * поэтому видно, что это одна сцена. По общему плану ходит рамка и показывает,
- * откуда вырезан кадр, подсвеченный в этот момент; счётчики «2/5» — как в
- * карусели. Анимации — в .vo-* (surfaces.css), там же отключаются при
- * reduced-motion.
+ * вид сверху, фрагмент и фактура. Это настоящий сет, построенный сервисом по
+ * рендеру спальни (`public/images/invite/views-*.jpg`): пустой экран показывает
+ * результат, а не схему. По общему плану ходит рамка и показывает, откуда взят
+ * кадр, подсвеченный в этот момент; счётчики «2/5» — как в карусели. Анимации —
+ * в .vo-* (surfaces.css), там же отключаются при reduced-motion.
  */
 export function ViewsInvite({ className }: { className?: string }) {
   return (
     <div className={cn("vo", className)} aria-hidden>
       <div className="vo-overview">
-        <RoomSketch mode="paint" />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={`${BASE}/views-overview.jpg`} alt="" draggable={false} />
         <span className="vo-scan" />
         <span className="vo-chip">общий план</span>
         <span className="vo-count">1/5</span>
       </div>
       <div className="vo-grid">
-        <div className="vo-tile vo-t1">
-          <RoomSketch mode="paint" viewBox="96 42 48 60" />
-          <span className="vo-chip">деталь</span>
-          <span className="vo-count">2/5</span>
-        </div>
-        <div className="vo-tile vo-t2">
-          <RoomSketch mode="paint" className="vo-topview" />
-          <span className="vo-chip">сверху</span>
-          <span className="vo-count">3/5</span>
-        </div>
-        <div className="vo-tile vo-t3">
-          <RoomSketch mode="paint" viewBox="140 36 48 60" />
-          <span className="vo-chip">фрагмент</span>
-          <span className="vo-count">4/5</span>
-        </div>
-        <div className="vo-tile vo-t4">
-          <RoomSketch mode="paint" viewBox="18 86 32 40" />
-          <span className="vo-chip">фактура</span>
-          <span className="vo-count">5/5</span>
-        </div>
+        {TILES.map((tile, index) => (
+          <div key={tile.key} className={cn("vo-tile", `vo-${tile.key}`)}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={tile.src} alt="" draggable={false} loading="lazy" />
+            <span className="vo-chip">{tile.label}</span>
+            <span className="vo-count">{index + 2}/5</span>
+          </div>
+        ))}
       </div>
     </div>
   )

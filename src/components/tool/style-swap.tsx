@@ -2,18 +2,22 @@
 
 import { useEffect, useState } from "react"
 
-import { StyleScene, type SceneStyle } from "@/components/tool/style-scenes"
-import { STYLE_LABEL } from "@/lib/restyle-engine"
 import { cn } from "@/lib/utils"
 
-const CYCLE: SceneStyle[] = ["scandi", "neoclassic", "japandi", "loft"]
+/** Одна и та же комната: исходный рендер и два настоящих переноса стиля. */
+const CYCLE = [
+  { key: "source", label: "Исходник", src: "/images/invite/restyle-source.jpg" },
+  { key: "loft", label: "Лофт", src: "/images/invite/restyle-loft.jpg" },
+  { key: "midcentury", label: "Мид-сенчури", src: "/images/invite/restyle-midcentury.jpg" },
+]
 /** Пауза на стиле и длительность прохода валика — те же, что в .ss-* (surfaces.css). */
 const HOLD_MS = 2600
 const WIPE_MS = 1100
 
 /**
  * Приглашение пустого экрана «Перенос стиля»: одна и та же комната, в которой
- * по кругу меняется интерьер — скандинавский → неоклассика → джапанди → лофт.
+ * по кругу меняется интерьер — исходник → лофт → мид-сенчури. Это настоящие
+ * результаты сервиса (`public/images/invite/restyle-*.jpg`), а не схема.
  * Смена идёт проходом малярного валика: светящаяся кромка едет слева направо,
  * и под ней старая отделка, мебель и свет превращаются в новые (clip-path
  * входящего слоя, см. .ss-* в surfaces.css). Планировка при этом на месте —
@@ -63,15 +67,24 @@ export function StyleSwap({ className }: { className?: string }) {
   }, [current, incoming, still])
 
   const active = incoming ?? current
-  const label = STYLE_LABEL[CYCLE[active]]
+  const label = CYCLE[active].label
 
   return (
     <div className={cn("ss", className)} aria-hidden>
       <div className="ss-frame">
-        <StyleScene style={CYCLE[current]} className="ss-layer" />
+        {/* Все кадры лежат в DOM сразу: к приходу валика следующий уже загружен. */}
+        {CYCLE.map((item, index) =>
+          index === current || index === incoming ? null : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img key={`preload-${item.key}`} src={item.src} alt="" className="ss-layer is-preload" />
+          )
+        )}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={CYCLE[current].src} alt="" draggable={false} className="ss-layer" />
         {incoming !== null ? (
           <>
-            <StyleScene key={`in-${incoming}`} style={CYCLE[incoming]} className="ss-layer is-incoming" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img key={`in-${incoming}`} src={CYCLE[incoming].src} alt="" draggable={false} className="ss-layer is-incoming" />
             <span key={`edge-${incoming}`} className="ss-edge" />
           </>
         ) : null}
@@ -80,9 +93,9 @@ export function StyleSwap({ className }: { className?: string }) {
         </span>
       </div>
       <div className="ss-strip">
-        {CYCLE.map((style, index) => (
-          <span key={style} className={cn("ss-chip", index === active && "is-active")}>
-            {STYLE_LABEL[style]}
+        {CYCLE.map((item, index) => (
+          <span key={item.key} className={cn("ss-chip", index === active && "is-active")}>
+            {item.label}
           </span>
         ))}
       </div>

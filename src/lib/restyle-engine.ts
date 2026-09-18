@@ -128,6 +128,7 @@ const sw = (material: SwatchMaterial, color: string, name: string): StyleSwatch 
 export const STYLES: StyleInfo[] = [
   {
     value: "scandi",
+    photo: "/images/invite/styles/scandi.jpg",
     label: "Скандинавский",
     hint: "белые стены, светлое дерево, серый текстиль, чёрные акценты",
     swatches: [
@@ -200,6 +201,7 @@ export const STYLES: StyleInfo[] = [
   },
   {
     value: "loft",
+    photo: "/images/invite/styles/loft.jpg",
     label: "Лофт",
     hint: "кирпич, бетон, кожа, чёрный металл, открытые трубы",
     swatches: [
@@ -244,6 +246,7 @@ export const STYLES: StyleInfo[] = [
   },
   {
     value: "midcentury",
+    photo: "/images/invite/styles/midcentury.jpg",
     label: "Мид-сенчури",
     hint: "орех, тик, горчица и бирюза, тонкие ножки",
     swatches: [
@@ -295,6 +298,7 @@ export const STYLES: StyleInfo[] = [
   },
   {
     value: "artdeco",
+    photo: "/images/invite/styles/artdeco.jpg",
     label: "Ар-деко",
     hint: "изумруд, чёрный мрамор, латунь, бархат, геометрия",
     swatches: [
@@ -319,6 +323,7 @@ export const STYLES: StyleInfo[] = [
   },
   {
     value: "mediterranean",
+    photo: "/images/invite/styles/mediterranean.jpg",
     label: "Средиземноморский",
     hint: "белёные стены, терракота, азулежу, лён, синий",
     swatches: [

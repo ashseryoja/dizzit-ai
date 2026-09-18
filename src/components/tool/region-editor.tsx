@@ -312,7 +312,8 @@ export function RegionEditor({
         }
         surface.globalCompositeOperation = "destination-over"
         surface.lineWidth = strokeWidth
-        surface.strokeStyle = `rgba(255,255,255,${(isActive ? 0.26 : 0.15).toFixed(2)})`
+        // Тело мазка заметно плотнее кромки: область читается пятном, а не пустой капсулой.
+        surface.strokeStyle = `rgba(255,255,255,${(isActive ? 0.36 : 0.24).toFixed(2)})`
         strokePass()
         surface.globalCompositeOperation = "source-over"
       } else {
@@ -619,12 +620,13 @@ export function RegionEditor({
           )
         })}
 
-      {/* Панель инструментов лежит на самом кадре; во время штриха гаснет. */}
+      {/* Панель инструментов: на широкой сцене — в полосе над кадром (сцена задаёт
+          --rg-lift), на узкой — на самом кадре; во время штриха гаснет. */}
       {!disabled ? (
         <div
           className={cn(
             "pointer-events-none absolute left-1/2 z-20 flex -translate-x-1/2 flex-col items-center gap-2 transition-all duration-300",
-            toolbarAtBottom ? "bottom-3 flex-col-reverse" : "top-3",
+            toolbarAtBottom ? "bottom-3 flex-col-reverse" : "rg-toolbar-top",
             drawing && "opacity-20"
           )}
         >

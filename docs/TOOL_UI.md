@@ -33,12 +33,14 @@
 | Пустой экран редактора рендера — стеклянная карточка с интерьером, значком глаза и открытием примера | `src/components/tool/render-empty-state.tsx`; `.dropzone-glass*`, `.render-welcome-*` в `surfaces.css` | `RenderEmptyState`, `ToolDropzone variant="glass"` |
 | Слой «Отпустите, чтобы приложить…», скрытый `<input type="file">`, отступы под композер и панель, скелет до гидрации | `tool-shell.tsx` | `ToolShell` |
 | Положение композера внизу (отступ под сайдбар и панель, анимация появления) | `tool-shell.tsx` | `ComposerDock` |
-| Галерея результатов: масонри колонками, широкие карточки одна под другой (`layout="stack"` у сетов кадров) или сетка по три квадратных тайла в ряд по центру (`layout="tiles"` у материалов, ширина — `TILE_GALLERY_WIDTH`) | `tool-shell.tsx` | `ToolGallery`, `TILE_GALLERY_WIDTH` |
+| Галерея результатов: масонри колонками, широкие карточки одна под другой (`layout="stack"` у сетов кадров) или сетка квадратных тайлов от левого края контента, три в ряд и четыре на широком экране (`layout="tiles"` у материалов, классы — `TILE_GALLERY_WIDTH` и `TILE_GALLERY_COLUMNS`) | `tool-shell.tsx` | `ToolGallery`, `TILE_GALLERY_WIDTH` |
 | «Добавить кадр» / «Добавить интерьер», когда дропзоны уже нет: узкая полоса над галереей (`variant="bar"`, без прокрутки к концу списка; в галерее-масонри занимает всю ширину над колонками) или плитка под последним результатом (`variant="tile"`) | `src/components/tool/add-tile.tsx`; `.add-bar`, `.add-tile*` в `surfaces.css` | `AddTile`, `onClick={intake.pickFiles}` |
 | Слот «Загрузить…» в панели настроек, когда пачка пуста, а композер остался (после отправки — над галереей результатов) | `tool-composer.tsx` | блок «Панель настроек», условие `selectionMode && attachments.length > 0` |
 | Прокрутка наверх при смене режима экрана: сцена ↔ галерея результатов | `src/lib/use-scroll-top.ts` | `useScrollTopOnChange(hasAttachments)` |
 | Выбор формата кадров (9:16, 3:4, 1:1, 4:3, 16:9) с глифами пропорций в панели настроек | `src/components/tool/aspect-picker.tsx` — секция; `src/lib/frame-aspect.ts` — список и пропорции; `src/styles/ds/surfaces.css` — `.aspect-*` | `AspectPicker`, слот `extras` композера |
 | Планировщик раскадровки: сначала `describeScene` фиксирует инвентарь, затем vision-модель получает его вместе с рендером, ранжирует выразительные предметные группы и составляет список без заполнителей и дублей (`ViewFrame.region`, `brief`); универсальный сет — четыре `vantage`, чередующиеся с тремя деталями. У `vantage` четыре сценария `ViewFrame.camera` и сторона `side`; генератор получает локальный кроп плюс полный исходник, меняет только камеру, а почти неизменный результат или визуальный дубль получает один контрольный повтор. Готовый кадр — Lanczos3 до 2000 px (`VIEW_LONG_SIDE`); без ключа — кадры по составу набора | `src/lib/shot-planning.ts` — клиент; `src/app/api/shots/route.ts` + `src/server/shot-planner.ts` — сервер; `src/lib/view-presets.ts` — состав наборов слотами и сборка кадров | `planViewFrames`; `buildShotListPrompt`, `parseShotList`, `planShotList`; `PRESET_SLOTS`, `assignShots`, `framesOf` |
+| Шторка «до / после» на настоящем результате: сцена редактора (кнопка «До / после» и разовое проявление готового рендера), карточка переноса стиля, просмотр во весь экран | `src/components/tool/compare-slider.tsx` — слой; `.cmp-*` в `surfaces.css` | `CompareSlider`; проп `compare` у `Stage`, `compare="slider"` у `ToolCard`, поле `compare` у `LightboxItem` |
+| Ожидание результата: затемнение, световая полоса, зерно, этапы текстом («разбираем сцену → свет → детали → 4K»), поочерёдное появление плиток | `src/components/tool/processing-veil.tsx` — слой; `.pv-*` в `surfaces.css` | `ProcessingVeil` (`steps`, `order`, `compact`); сцена редактора, `ToolCard`, `ViewSetCard`, плитка `RenderTray` |
 | Карточка результата: «до/после», скачать, удалить, статусы, повтор 2×2 для тайлов | `src/components/tool/tool-card.tsx` | `ToolCard` (у сетов кадров — своя `view-set-card.tsx`); проп `tileable`, рецепт `.tile-repeat` в `surfaces.css` |
 | Правила приёма файлов: форматы, лимит, предупреждения, перенос, вставка из буфера, замена вместо добавления | `src/lib/use-attachments.ts` | `useAttachments`; константы форматов и лимитов — `src/lib/enhance-engine.ts` |
 | Рабочий набор: режим «Выбрать», «Выбрать все», стрелки и Escape, «Редактировать все», что уходит в обработку | `src/lib/use-batch-selection.ts` | `useBatchSelection` |
@@ -49,8 +51,9 @@
 | «Фото → 3D»: экран как у Meshy — панель генерации внизу (фото и ракурсы, модель, детализация, текстура/PBR/улучшение фото, «время · кредиты»), сцена с вьюером в центре, библиотека моделей справа; какие настройки есть у какой модели и сколько они стоят | `src/shared/model3d.ts` — контракт настроек, возможности моделей, оценка кредитов (один на клиент и сервер); `src/components/tool/model-dock.tsx`, `model-stage.tsx`, `model-library.tsx`; `src/lib/use-view-slots.ts` — какой файл в каком слоте; `tool-composer.tsx` — пропсы `dock`, `dockLabel`, `settingsInDock`; `tool-shell.tsx` — `composerSpace`; `.model-dock*`, `.model-slot*`, `.model-ai*`, `.model-stage*`, `.model-tile*` в `surfaces.css` | `ModelSettings`, `MODEL_AI`, `normalizeModelSettings`, `estimateModelCost`, `describeModelSettings`; `ModelDock`, `ModelStage`, `ModelLibrary`, `ModelLibraryStrip`; `useViewSlots` |
 | «Фото → 3D»: куда уходит фото и откуда берётся модель — задача Meshy (Image to 3D), опрос готовности, GLB в своём хранилище под ключом `${id}:model`, возобновление опроса после перезагрузки, каркас-заглушка без ключа; три формата результата (`MODEL_FORMATS`: GLB — вьюер, FBX и OBJ-архив с материалом и текстурой — для 3ds Max/ArchiCAD/AutoCAD; докачиваются фоном, список готовых — `Model3D.formats`); просмотр GLB (вращение, зум, автоповорот; материалы без текстуры — Meshy отдаёт их без секции `materials`, и glTF подставляет белый металл — вьюер переводит в матовую серую «глину», чтобы модель не выгорала) и скачивание по форматам | `src/lib/model-engine.ts` — клиент; `src/app/api/models/route.ts`, `[taskId]/route.ts`, `[taskId]/file/route.ts` + `src/server/meshy.ts` — сервер (ключ `MESHY_API_KEY`, параметры задачи, перекладывание GLB в хранилище); `src/server/zip.ts` — архив OBJ; `src/components/tool/model-viewer.tsx` — вьюер и скачивание; `.model-viewer`, `.model-downloads` в `surfaces.css` | `modelProviderStatus`, `submitModelTask`, `awaitModelTask`, `fetchModelFile`, `readGlbStats`; `createMeshyTask`, `getMeshyTask`, `downloadMeshyModel`; `buildZip`; `ModelViewer`, `ModelDownloads`, `downloadStoredModel` |
 | В какой проект класть новые записи | `src/stores/project-store.ts` | `ensureActiveProject`, `useActiveProject` |
-| Альбом-презентация: из чего складывается PDF (обложка во весь лист с затемнением, содержание с номерами страниц, концепция с палитрой, общие планы и «до / после», сеты ракурсов, доска материалов, задняя страница), форматы страниц и темы, план страниц (что войдёт и сколько страниц — до сборки), тексты от ИИ, выбор состава миниатюрами, сборка по кнопке, превью PDF | `src/shared/album.ts` — контракт спецификации и **план страниц** (`planAlbum`, `splitBalanced`, `materialColumns`, `ALBUM_CAPACITY`, `MATERIAL_GRID`, `ALBUM_SECTION_TITLE`) — один на клиент и сервер; `src/lib/album-engine.ts` — сборка спецификации из записей, факты для ИИ, запросы, `formatAlbumDate`; `src/server/album-document.tsx` — вёрстка страниц (@react-pdf, страницы по плану), `album-render.ts` — шрифты (Unbounded Light/Medium — статические начертания, Garet) и картинки, `album-copy.ts` — промпт текстов, `album-images.ts` — откуда байты картинок и копии для PDF на сервере (`prepareAlbumAssets`; ключ копии `pdfKey` — в `shared/album.ts`; из кэша браузера копии выгружает `prepareAlbumImages` движка); роуты `src/app/api/album`, `/prepare` и `/copy`; `src/components/tool/album-section.tsx`, `album-picker.tsx`, `album-style-picker.tsx`, `album-build.tsx`, `album-preview.tsx`; `.album-*` в `surfaces.css` | `buildAlbumSpec`, `buildAlbumFacts`, `defaultAlbum`, `renderAlbum`, `requestAlbumCopy`, `planAlbum`; `AlbumDocument`, `loadAlbumImages`, `renderAlbumPdf`, `buildAlbumCopyPrompt`; `AlbumSection`, `AlbumPicker`, `AlbumFormatPicker`, `AlbumThemePicker`, `AlbumBuildPanel`, `AlbumBuildBar`, `AlbumPreview` |
+| Альбом-презентация: из чего складывается PDF (обложка во весь лист с затемнением, содержание с номерами страниц, концепция с палитрой, общие планы и «до / после», сеты ракурсов, доска материалов, задняя страница), форматы страниц и темы, план страниц (что войдёт и сколько страниц — до сборки), тексты от ИИ, выбор состава миниатюрами, сборка по кнопке, превью PDF | `src/shared/album.ts` — контракт спецификации и **план страниц** (`planAlbum`, `splitBalanced`, `materialColumns`, `ALBUM_CAPACITY`, `MATERIAL_GRID`, `ALBUM_SECTION_TITLE`) — один на клиент и сервер; `src/lib/album-engine.ts` — сборка спецификации из записей, факты для ИИ, запросы, `formatAlbumDate`; `src/server/album-document.tsx` — вёрстка страниц (@react-pdf, страницы по плану), `album-render.ts` — шрифты (Unbounded Light/Medium — статические начертания, Garet) и картинки, `album-copy.ts` — промпт текстов, `album-images.ts` — откуда байты картинок и копии для PDF на сервере (`prepareAlbumAssets`; ключ копии `pdfKey` — в `shared/album.ts`; из кэша браузера копии выгружает `prepareAlbumImages` движка); роуты `src/app/api/album`, `/prepare` и `/copy`; `src/components/tool/album-section.tsx`, `album-picker.tsx`, `album-style-picker.tsx`, `album-build.tsx`, `album-pages.tsx`, `album-preview.tsx`; `.album-*` в `surfaces.css` | `buildAlbumSpec`, `buildAlbumFacts`, `defaultAlbum`, `renderAlbum`, `requestAlbumCopy`, `planAlbum`; `AlbumDocument`, `loadAlbumImages`, `renderAlbumPdf`, `buildAlbumCopyPrompt`; `AlbumSection`, `AlbumPicker`, `AlbumFormatPicker`, `AlbumThemePicker`, `AlbumBuildPanel`, `AlbumBuildBar`, `AlbumPageStrip`, `AlbumPreview` |
 | Просмотр картинки во весь экран (модальное окно): затемнение, кадр вырастает из миниатюры, стрелки листают соседей, клик приближает, перетаскивание двигает, Esc закрывает, «Скачать» | `src/components/ui/lightbox.tsx` — слой и вызов; `.lb*`, `.zoom-hit`, `.zoom-btn` в `src/styles/ds/motion.css` | `LightboxHost` (один, в `(main)/layout.tsx`), `openLightbox(items, { index, origin })`; на картинке со свободным кликом — `ZoomHit`, с занятым (плитка выбирает, сцена рисует области) — уголок `ZoomButton` внутри родителя `.zoom-host` |
+| Уведомление «Рендер готов · 4K» с миниатюрой, когда генерация закончилась (в том числе пока открыт другой инструмент) | `src/components/ui/toast.tsx`; `.toast*` в `src/styles/ds/motion.css` | `ToastHost` (один, в `(main)/layout.tsx`), `showToast(...)` — страницы зовут его рядом с `status: "done"` |
 | Ховеры, нажатия и фокус всех контролов: подъём и тень кнопок, блик и искра главной кнопки, движение иконок, линия фокуса у полей ввода и композера, приближение картинок в плитках | `src/styles/ds/motion.css` | один файл на всё движение по наведению; геометрия и цвета остаются в `surfaces.css` / `liquid-glass.css` |
 | Внешний вид всего перечисленного (рецепты CSS) | `src/styles/ds/surfaces.css` | `.stage-*`, `.batch-tile`, `.tray-*`, `.dropzone`, `.popover`, `.presence-*`, `.composer-notice`, `.rg-tag`, `.style-dock` |
 
@@ -322,6 +325,7 @@ Lanczos3. У «Редактора рендера» провайдер к том�
 | `composerOpen` | внизу есть композер — контенту нужен отступ |
 | `composerSpace` | минимальный нижний отступ, CSS-длина (`7rem` по умолчанию). Настоящий резерв измеряет `ComposerDock` (`--composer-reserve`): композер с тегами областей, замечанием или секцией `dock` выше — и контент отодвигается сам (`.page-shell.has-composer` в `surfaces.css`), сцена не уходит под композер |
 | `trayOpen`, `trayMargin` | справа открыта панель; класс отступа (`lg:mr-[296px]`, у переноса стиля с двумя панелями — `lg:mr-[296px] xl:mr-[588px]`) |
+| `headingActions` | действия справа от заголовка страницы (альбом: «Новый альбом», «Удалить»); сам заголовок и хлебные крошки — `TOOL_HEADINGS` по адресу страницы |
 | `layers` | плавающие слои: `ComposerDock`, `ToolAside` |
 | `children` | содержимое экрана |
 
@@ -408,6 +412,15 @@ Lanczos3. У «Редактора рендера» провайдер к том�
   `className` — размер сцены (`aspect-[4/3] w-full` у переноса стиля).
   Кнопка-уголок внизу слева (`ZoomButton`, `.stage-zoom`) открывает кадр в
   просмотре во весь экран; без `overlay` его открывает и клик по картинке.
+  Кадр всегда лежит в боксе по своей пропорции: скруглённые углы, поля, в полях —
+  размытая затемнённая копия того же рендера (`.stage-backdrop`), за сценой —
+  его свечение (`.stage-glow`). С `overlay` над кадром остаётся полоса под бейджи
+  и панель областей (`--rg-lift`, на сцене уже 640 px панель возвращается на кадр).
+  Ниже `lg` высота сцены считается по пропорции кадра. `compare={{ before }}` —
+  исходник того же кадра: кнопка «До / после» включает `CompareSlider`, удержание
+  «\\» показывает исходник целиком, просмотр во весь экран получает ту же шторку.
+  `reveal` + `onRevealEnd` — разовое проявление только что готового результата.
+  `onDownload` — кнопка «Скачать» на сцене (`.stage-action`).
 - `StagePlaceholder` — та же большая поверхность без изображения: например,
   пока рабочая пара восстанавливается из серверного хранилища.
 - `BatchGrid` — грид рабочего набора с заголовком и «К просмотру»;
@@ -461,7 +474,10 @@ Lanczos3. У «Редактора рендера» провайдер к том�
 ### `ToolCard`, `ViewSetCard` — карточки результата
 
 `ToolCard` общая: миниатюры и полные файлы из IndexedDB/серверного хранилища,
-«до/после» по удержанию, скачать, удалить, повтор при ошибке. `tileable` —
+«до/после» (`compare="hold"` — по удержанию, `compare="slider"` — шторкой `CompareSlider`,
+у переноса стиля), скачать, удалить, повтор при ошибке. `title` — подпись-название на
+градиенте (у тайлов — по наведению), `order` — номер в галерее для появления по очереди;
+ожидание рисует общий `ProcessingVeil`. `tileable` —
 результат должен повторяться без шва (материалы): кнопка «Повтор 2×2» кладёт
 результат четырьмя копиями встык через `background-repeat` (`.tile-repeat`),
 стык — в центре карточки, шов виден сразу. `useStoredBlobUrl`
@@ -479,7 +495,7 @@ Lanczos3. У «Редактора рендера» провайдер к том�
 
 | Файл | Экспорт | Что это |
 | --- | --- | --- |
-| `tool-shell.tsx` | `ToolShell`, `ComposerDock`, `ToolAside`, `ToolGallery`, `TILE_GALLERY_WIDTH` | каркас экрана и плавающие слои (без `intake` — экран без приёма файлов: альбом); ширина сетки тайлов |
+| `tool-shell.tsx` | `ToolShell`, `ComposerDock`, `ToolAside`, `ToolGallery`, `TILE_GALLERY_WIDTH`, `TILE_GALLERY_COLUMNS` | каркас экрана и плавающие слои (без `intake` — экран без приёма файлов: альбом); ширина сетки тайлов |
 | `tool-composer.tsx` | `ToolComposer` | композер с панелью настроек |
 | `render-tray.tsx` | `RenderTray`, `RenderStrip` | панель-галерея пачки и полоска миниатюр |
 | `folder-rail.tsx` | `FolderRail` | папки рендеров: вкладки у правой панели, переименование и удаление |
@@ -487,6 +503,8 @@ Lanczos3. У «Редактора рендера» провайдер к том�
 | `tool-dropzone.tsx` | `ToolDropzone` | пустой экран-дропзона |
 | `tool-card.tsx` | `ToolCard`, `StoredAssetNotice`, `useBlobUrl`, `downloadStoredResult` | карточка результата (`tileable` — повтор 2×2 для бесшовных тайлов); стабильное состояние отсутствующего файла; совместимый хук «блоб → object URL»; скачивание полного результата |
 | `view-set-card.tsx` | `ViewSetCard` | карточка сета кадров («Ракурсы»): общий план слева, кадры справа |
+| `compare-slider.tsx` | `CompareSlider` | шторка «до / после» поверх результата: ручка тянется мышью, пальцем и стрелками; `intro` — разовое проявление готового рендера |
+| `processing-veil.tsx` | `ProcessingVeil` | слой ожидания результата: световая полоса, зерно, этапы текстом; `order` сдвигает фазу у соседних плиток |
 | `aspect-picker.tsx` | `AspectPicker` | выбор формата кадров с глифами пропорций — секция панели настроек |
 | `add-tile.tsx` | `AddTile` | «добавить ещё» в галерее результатов: полоса над списком (`variant="bar"`) или плитка (`tile`) — пунктир, плюс, подпись; по клику — выбор файла |
 | `src/lib/use-stored-blob.ts` | `useStoredBlobUrl` | загрузка с fallback-ключами, ограниченный автоповтор и ручная проверка серверного файла |
@@ -495,13 +513,12 @@ Lanczos3. У «Редактора рендера» провайдер к том�
 | `style-dock.tsx` | `StyleDock` | материалы выбранного стиля с галочками — секция над композером |
 | `style-picker.tsx` | `StylePicker` | список стилей рядом со сценой с окошком-превью |
 | `style-scenes.tsx` | `StyleScene` | нарисованная комната в заданном стиле (превью стиля, приглашение) |
-| `style-swap.tsx` | `StyleSwap` | приглашение «Переноса стиля»: комната, в которой меняется стиль |
+| `style-swap.tsx` | `StyleSwap` | приглашение «Переноса стиля»: одна комната, исходник → лофт → мид-сенчури, настоящие результаты (`public/images/invite/restyle-*.jpg`) |
 | `material-swatch.tsx` | `MaterialSwatch` | плашка материала (дерево, камень, ткань…) для стилей |
-| `material-preview-grid.tsx` | `MaterialPreviewGrid` | пустой экран «Материалов»: сетка заготовок |
+| `material-preview-grid.tsx` | `MaterialPreviewGrid` | пустой экран «Материалов»: сетка настоящих тайлов сервиса (`public/images/invite/material-*.jpg`) и слот «ваш материал» |
 | `render-reveal.tsx` | `RenderReveal` | приглашение «Редактора рендера»: живое «до/после» |
 | `render-empty-state.tsx` | `RenderEmptyState` | стеклянный пустой экран редактора с интерьером и открытием примера |
-| `views-invite.tsx` | `ViewsInvite` | приглашение «Ракурсов»: общий план и кадры из него |
-| `room-sketch.tsx` | `RoomSketch` | эскиз комнаты (SVG) для приглашений |
+| `views-invite.tsx` | `ViewsInvite` | приглашение «Ракурсов»: настоящий сет сервиса — общий план и кадры из него (`public/images/invite/views-*.jpg`) |
 | `furniture-morph.tsx` | `FurnitureMorph` | каркасы мебели, перетекающие друг в друга («Фото → 3D») |
 | `model-dock.tsx` | `ModelDock` | панель генерации «Фото → 3D» над композером (`dock`), по образцу левой панели Meshy: слоты фото «Главный вид / Слева / Сзади / Справа» с тумблером мульти-вида, выбор модели (Meshy 7 / 6 / 6 Lite) и детализации, тумблеры текстуры, PBR и улучшения фото, оценка «время · кредиты», сворачивание |
 | `model-stage.tsx` | `ModelStage` | сцена модели: вьюер GLB (или каркас-заглушка), фото-исходники, статистика сетки, свотчи фона и автоповорот, тулбар «скачать · повторить · удалить», ход задачи и ошибка |
@@ -511,6 +528,7 @@ Lanczos3. У «Редактора рендера» провайдер к том�
 | `album-picker.tsx` | `AlbumPicker` | выбор состава альбома: сетка миниатюр готовых записей с номерами порядка, «выбрать все / снять все»; режим `single` с плиткой «без картинки» — обложка |
 | `album-style-picker.tsx` | `AlbumFormatPicker`, `AlbumThemePicker`, `ALBUM_FORMAT_OPTIONS`, `ALBUM_THEME_OPTIONS` | формат страниц с глифами пропорции листа и тема с глифом тёмного/светлого листа |
 | `album-build.tsx` | `AlbumBuildPanel`, `AlbumBuildBar`, `albumBuildResult`, `AlbumBuildState` | панель сборки: структура будущего PDF по плану страниц, кнопка «Собрать PDF» → «Скачать PDF» → «Собрать заново», итог сборки, превью; компактная полоса для `ComposerDock` на узких экранах |
+| `album-pages.tsx` | `AlbumPageStrip` | лента страниц будущего PDF в миниатюрах — живая, до сборки: обложка с названием, развороты «до / после», сетки кадров и материалов по плану `planAlbum`; `.album-page*` в `surfaces.css` |
 | `album-preview.tsx` | `AlbumPreview` | превью альбома: собранный PDF во встроенном просмотрщике, вуаль состояния с прогрессом подготовки картинок, «показана прежняя версия» |
 
 Общие примитивы вне инструментов (`src/components/ui/` и рядом) — те же
@@ -523,6 +541,7 @@ Lanczos3. У «Редактора рендера» провайдер к том�
 | `ui/switch.tsx` | `Switch` | тумблер вкл/выкл |
 | `ui/empty-state.tsx` | `EmptyState` | пустой экран раздела с одним действием |
 | `ui/lightbox.tsx` | `LightboxHost`, `openLightbox`, `ZoomHit`, `ZoomButton`, `LightboxItem` | просмотр картинки во весь экран: слой (один на приложение), вызов из любого компонента, невидимая кнопка поверх картинки и кнопка-уголок для плиток с занятым кликом |
+| `ui/toast.tsx` | `ToastHost`, `showToast`, `ToastInput` | тост «готово» с миниатюрой результата: слой один (`(main)/layout.tsx`), вызов из любого места `showToast({ title, detail, imageKeys, onOpen })`; стили `.toast*` в `motion.css` |
 | `page-header.tsx` | `PageHeader` | шапка обычной страницы (настройки) |
 | `page-loader.tsx` | `PageLoader` | скелет до гидрации сторов |
 
