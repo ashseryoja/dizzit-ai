@@ -4,6 +4,7 @@ import { useState } from "react"
 import { Download, Eye, Grid2x2, ImageOff, RefreshCw, Trash2 } from "lucide-react"
 
 import { ThinkingGlyph } from "@/components/glyphs"
+import { openLightbox, ZoomHit, type LightboxItem } from "@/components/ui/lightbox"
 import { getBlob, resultKey, sourceKey, thumbResultKey, thumbSourceKey } from "@/lib/blob-store"
 import { previewCaption } from "@/lib/image-generation"
 import { useStoredBlobUrl, type StoredBlobStatus } from "@/lib/use-stored-blob"
@@ -91,9 +92,34 @@ export function ToolCard({
     await downloadStoredResult(item, downloadBaseName)
   }
 
+  /* Просмотр во весь экран: полный результат (а не миниатюра карточки), рядом —
+     исходник, чтобы «до / после» листалось стрелками. */
+  const openViewer = (origin: HTMLElement) => {
+    const name = item.sourceName ?? item.note ?? ""
+    const views: LightboxItem[] = []
+    if (resultAsset.url) {
+      views.push({
+        keys: [resultKey(id), thumbResultKey(id)],
+        preview: resultAsset.url,
+        alt: name,
+        caption: name ? `${name} · результат` : "результат",
+        downloadName: downloadBaseName,
+      })
+    }
+    if (sourceAsset.url) {
+      views.push({
+        keys: [sourceKey(id), thumbSourceKey(id)],
+        preview: sourceAsset.url,
+        alt: name,
+        caption: name ? `${name} · исходник` : "исходник",
+      })
+    }
+    openLightbox(views, { index: comparing && views.length > 1 ? 1 : 0, origin })
+  }
+
   return (
     <figure
-      className="group card rise-in relative mb-4 break-inside-avoid overflow-hidden"
+      className="group card card-media rise-in relative mb-4 break-inside-avoid overflow-hidden"
       style={{ borderRadius: "var(--r-lg)" }}
     >
       <div className="relative w-full" style={{ aspectRatio: `${width} / ${height}` }}>
@@ -122,6 +148,9 @@ export function ToolCard({
         ) : (
           <div className="absolute inset-0" style={{ background: "var(--bg-raised)" }} />
         )}
+
+        {/* Вся картинка открывает просмотр; действия карточки лежат выше и кликаются сами. */}
+        {shown && status === "done" ? <ZoomHit onOpen={openViewer} /> : null}
 
         {status === "processing" ? (
           <div
@@ -182,7 +211,7 @@ export function ToolCard({
             {/* Действия — по ховеру, как отметки на карточках нейрофотосессии. */}
             <div
               className={cn(
-                "absolute right-2 top-2 flex gap-1 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100",
+                "card-actions absolute right-2 top-2 flex gap-1 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100",
                 repeating ? "opacity-100" : "opacity-0"
               )}
             >
@@ -225,7 +254,7 @@ export function ToolCard({
             ) : null}
 
             <figcaption
-              className="chip absolute bottom-2 left-2 opacity-0 transition-opacity group-hover:opacity-100"
+              className="chip pointer-events-none absolute bottom-2 left-2 opacity-0 transition-opacity group-hover:opacity-100"
               style={{ background: "rgba(16,16,18,0.7)", color: "rgba(255,255,255,0.85)", borderColor: "rgba(255,255,255,0.16)" }}
             >
               {/* Результат без ключа провайдера подписан честно: это canvas-предпросмотр. */}
@@ -327,7 +356,7 @@ function CardAction({
       onPointerUp={onPointerUp}
       onPointerLeave={onPointerLeave}
       onContextMenu={(event) => event.preventDefault()}
-      className="flex h-8 w-8 items-center justify-center rounded-[8px] transition-colors"
+      className="card-action flex h-8 w-8 items-center justify-center rounded-[8px]"
       style={{
         background: active ? "rgba(255,255,255,0.92)" : "rgba(16,16,18,0.66)",
         border: "1px solid rgba(255,255,255,0.18)",

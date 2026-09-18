@@ -97,8 +97,8 @@ export interface BatchTools {
 }
 
 /**
- * Обработка рендера. При включённом улучшении GPT Image 2 создаёт 2K-версию,
- * после чего сервер приводит длинную сторону к 2000 px через Lanczos3.
+ * Обработка рендера. При включённом улучшении GPT Image 2 создаёт 4K-версию,
+ * после чего сервер приводит длинную сторону к 3840 px через Lanczos3.
  */
 export interface Enhancement extends GalleryItemMeta {
   context: EnhanceContext

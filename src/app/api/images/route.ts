@@ -10,9 +10,13 @@ import {
   type ImageReference,
   type ImageResolution,
 } from "@/server/image-provider"
-import { isSameOrigin, problem } from "@/server/http"
+import { sessionFromRequest } from "@/server/auth"
+import { getSql } from "@/server/db"
+import { isSameOrigin, problem, streamBytes } from "@/server/http"
 import { resizeToLongSideLanczos } from "@/server/image-postprocess"
 import { describeIntendedProvider, providerKeyVariable, providerLabel, resolveImageProvider } from "@/server/providers"
+import { upsertAssetMeta } from "@/server/records"
+import { objectKey, resolveStorage } from "@/server/storage"
 
 /**
  * Единственный серверный вход генерации картинок — тонкий прокси, прячущий
@@ -27,7 +31,9 @@ import { describeIntendedProvider, providerKeyVariable, providerLabel, resolveIm
  *        («ширина:высота» желаемой пропорции),
  *        0…4 файлов `image` (PNG/JPEG/WEBP до 12 МБ каждый); опционально
  *        `provider`, `resolution`, `final_long_side` для фиксированного по
- *        цене пайплайна улучшения → байты картинки.
+ *        цене пайплайна улучшения и `store_key` (`${id}:result`) — сервер сам
+ *        кладёт результат в хранилище записи → байты картинки потоком,
+ *        заголовок `X-Image-Stored: 1|0`.
  *
  * Очереди и воркера пока нет (см. docs/PLATFORM_ARCHITECTURE.md, этап 0):
  * запрос держится открытым всё время генерации, поэтому `maxDuration` —
@@ -38,15 +44,27 @@ export const dynamic = "force-dynamic"
 export const maxDuration = 300
 
 /**
- * Потолок инструкции провайдеру. Промпт улучшения — это задание, инвентарь
- * сцены (до 1600 символов) и блок запретов; gpt-image-2 принимает заметно
- * больше, лимит здесь защищает от случайного мусора, а не от длины задания.
+ * Потолок инструкции провайдеру. Промпт улучшения — это задание с блоком про
+ * светильники (~13 тыс. символов), инвентарь сцены (до 3,6 тыс.), блок запретов,
+ * а с правками дизайнера — ещё правила «удалить / добавить / заменить» (~3 тыс.)
+ * и сам комментарий (до 5 тыс., `EDIT_COMMENT_MAX_LENGTH`): обычное улучшение —
+ * ~18 тыс., правка по области — ~22 тыс., худший случай — ~27,5 тыс.
+ * gpt-image-2 принимает до 32 тыс.; лимит здесь защищает от случайного мусора, а
+ * не от длины задания. При 14 тыс. любая правка по отмеченной области упиралась
+ * в него и не доходила до модели.
  */
-const MAX_PROMPT_CHARS = 14_000
+const MAX_PROMPT_CHARS = 31_000
 const MAX_REFERENCES = 4
 const MAX_REFERENCE_BYTES = 12 * 1024 * 1024
 const MIN_FINAL_LONG_SIDE = 512
 const MAX_FINAL_LONG_SIDE = 4_096
+/**
+ * `store_key` — ключ результата записи (`${id}:result`): с ним сервер сам кладёт
+ * готовую картинку в хранилище. 4K-результат весит 5–10 МБ и обратно через
+ * `/api/assets` (тело запроса ≤ 4,5 МБ на Vercel) не пролезает — клиенту пришлось
+ * бы ужимать его, и «облачная» копия переставала быть 4K.
+ */
+const STORE_KEY_PATTERN = /^[A-Za-z0-9_-]{1,64}:result$/
 
 /** «1600:900» → пропорция; пусто — квадрат. */
 function parseAspect(value: FormDataEntryValue | null): AspectRatio | null {
@@ -133,6 +151,11 @@ export async function POST(request: Request) {
     return problem(400, { error: "bad_request", message: "Слишком длинные prompt и negative prompt." })
   }
 
+  const storeKey = String(form.get("store_key") ?? "").trim()
+  if (storeKey && !STORE_KEY_PATTERN.test(storeKey)) {
+    return problem(400, { error: "bad_request", message: "Недопустимый ключ результата." })
+  }
+
   const aspect = parseAspect(form.get("aspect"))
   if (!aspect) return problem(400, { error: "bad_request", message: "Пропорция задаётся как «ширина:высота»." })
 
@@ -160,23 +183,51 @@ export async function POST(request: Request) {
     const output = finalLongSide
       ? await resizeToLongSideLanczos(image.bytes, finalLongSide)
       : { bytes: image.bytes, mimeType: image.mimeType, width: undefined, height: undefined }
-    return new Response(output.bytes as BodyInit, {
-      status: 200,
-      headers: {
-        "Content-Type": output.mimeType,
-        "Cache-Control": "no-store",
-        "X-Image-Provider": image.provider,
-        "X-Image-Model": image.model,
-        "X-Image-Endpoint": image.endpoint,
-        "X-Image-Duration-Ms": String(image.durationMs),
-        ...(finalLongSide
-          ? {
-              "X-Image-Postprocess": "lanczos3",
-              "X-Image-Width": String(output.width),
-              "X-Image-Height": String(output.height),
-            }
-          : {}),
-      },
+    // Полный результат — сразу в хранилище записи: без обратной загрузки с клиента.
+    // Сбой хранилища генерацию не отменяет: клиент увидит `X-Image-Stored: 0` и
+    // сохранит файл своим путём (с ужатием под лимит тела запроса).
+    let stored = false
+    if (storeKey) {
+      try {
+        const session = await sessionFromRequest(request)
+        const storage = session ? resolveStorage() : null
+        if (session && storage) {
+          await storage.put(objectKey(session.ownerId, storeKey), output.bytes, output.mimeType)
+          const sql = getSql()
+          if (sql) {
+            await upsertAssetMeta(sql, session.ownerId, {
+              key: storeKey,
+              recordId: storeKey.split(":")[0],
+              contentType: output.mimeType,
+              bytes: output.bytes.byteLength,
+            })
+          }
+          stored = true
+        }
+      } catch (error) {
+        console.error(`[api/images] не удалось сохранить ${storeKey} в хранилище:`, error)
+      }
+    }
+    console.info(
+      `[api/images] ${image.provider} ${image.endpoint} ${image.durationMs} мс → ${output.width ?? "?"}×${output.height ?? "?"}, ${(output.bytes.byteLength / 1024 / 1024).toFixed(1)} МБ${stored ? `, сохранён ${storeKey}` : ""}`
+    )
+
+    // Потоком: 4K-результат больше потолка Vercel в 4,5 МБ на тело ответа функции.
+    return streamBytes(output.bytes, {
+      "Content-Type": output.mimeType,
+      "Cache-Control": "no-store",
+      "X-Image-Provider": image.provider,
+      "X-Image-Model": image.model,
+      "X-Image-Endpoint": image.endpoint,
+      "X-Image-Duration-Ms": String(image.durationMs),
+      "X-Image-Stored": stored ? "1" : "0",
+      ...(finalLongSide
+        ? {
+            "X-Image-Postprocess": "lanczos3",
+            "X-Image-Width": String(output.width),
+            "X-Image-Height": String(output.height),
+          }
+        : {}),
     })
   } catch (error) {
     if (error instanceof ImageProviderError) {

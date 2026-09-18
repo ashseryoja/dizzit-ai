@@ -4,6 +4,7 @@ import { Download, RefreshCw, Sparkles, Trash2 } from "lucide-react"
 
 import { ThinkingGlyph } from "@/components/glyphs"
 import { StoredAssetNotice } from "@/components/tool/tool-card"
+import { openLightbox, ZoomHit, type LightboxItem } from "@/components/ui/lightbox"
 import { getBlob, sourceKey, thumbSourceKey } from "@/lib/blob-store"
 import { frameAspectCss, frameAspectRatio } from "@/lib/frame-aspect"
 import { previewCaption } from "@/lib/image-generation"
@@ -71,6 +72,30 @@ export function ViewSetCard({
     }
   }
 
+  /* Просмотр во весь экран: общий план и готовые кадры сета одной галереей —
+     стрелки листают сет, открывается тот кадр, по которому нажали. */
+  const openViewer = (startKey: string | null, origin: HTMLElement) => {
+    const views: Array<LightboxItem & { frameKey: string | null }> = [
+      {
+        frameKey: null,
+        keys: [sourceKey(id), thumbSourceKey(id)],
+        preview: sourceAsset.url,
+        alt: item.sourceName,
+        caption: `${item.sourceName} · общий план`,
+      },
+      ...frames
+        .filter((frame) => ready.has(frame.key))
+        .map((frame) => ({
+          frameKey: frame.key,
+          keys: [viewKey(id, frame.key), viewThumbKey(id, frame.key)],
+          alt: `${item.sourceName} — ${frame.label}`,
+          caption: frame.label,
+          downloadName: `${downloadBaseName}-${frame.key}`,
+        })),
+    ]
+    openLightbox(views, { index: Math.max(0, views.findIndex((view) => view.frameKey === startKey)), origin })
+  }
+
   const frameCount = `${frames.length} ${plural(frames.length, ["кадр", "кадра", "кадров"])}`
   const summary = [
     `${item.sourceWidth}×${item.sourceHeight}`,
@@ -99,7 +124,7 @@ export function ViewSetCard({
         {/* Общий план: что приложили, с подписью и действиями. */}
         <div className="view-set-source flex flex-col gap-2.5">
           <div
-            className="relative w-full overflow-hidden"
+            className="card-media relative w-full overflow-hidden"
             style={{
               aspectRatio: `${item.sourceWidth || 4} / ${item.sourceHeight || 3}`,
               borderRadius: "var(--r-md)",
@@ -122,6 +147,7 @@ export function ViewSetCard({
             ) : (
               <StoredAssetNotice status={sourceAsset.status} onRetry={sourceAsset.retry} compact className="absolute inset-0" />
             )}
+            {sourceAsset.url ? <ZoomHit onOpen={(origin) => openViewer(null, origin)} label="Открыть общий план в полном размере" /> : null}
             <span className="view-set-chip">общий план</span>
           </div>
 
@@ -179,7 +205,15 @@ export function ViewSetCard({
         {/* Кадры сета — в формате, выбранном для сета. */}
         <div className={cn("view-set-frames", tall ? "is-tall" : "is-wide")}>
           {frames.map((frame) => (
-            <ViewTile key={frame.key} item={item} frame={frame} ready={ready.has(frame.key)} sourceAsset={sourceAsset} onDownload={() => void download(frame)} />
+            <ViewTile
+              key={frame.key}
+              item={item}
+              frame={frame}
+              ready={ready.has(frame.key)}
+              sourceAsset={sourceAsset}
+              onDownload={() => void download(frame)}
+              onOpen={(origin) => openViewer(frame.key, origin)}
+            />
           ))}
         </div>
       </div>
@@ -194,12 +228,15 @@ function ViewTile({
   ready,
   sourceAsset,
   onDownload,
+  onOpen,
 }: {
   item: ViewSet
   frame: ViewFrame
   ready: boolean
   sourceAsset: StoredBlobUrlState
   onDownload: () => void
+  /** Открыть кадр в просмотре во весь экран. */
+  onOpen: (origin: HTMLElement) => void
 }) {
   const frameAsset = useStoredBlobUrl(ready ? [viewThumbKey(item.id, frame.key), viewKey(item.id, frame.key)] : [])
   // Готовый кадр — сам кадр; пока его нет — размытый исходник как подложка.
@@ -215,7 +252,7 @@ function ViewTile({
       : "4 / 5"
 
   return (
-    <div className="group/tile view-set-tile" style={{ aspectRatio: aspect }}>
+    <div className="group/tile view-set-tile card-media" style={{ aspectRatio: aspect }}>
       {shown ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -227,6 +264,8 @@ function ViewTile({
           className={cn("absolute inset-0 h-full w-full select-none object-cover", (pending || showingSourceFallback) && "blur-[6px]")}
         />
       ) : null}
+
+      {ready && frameAsset.url ? <ZoomHit onOpen={onOpen} label={`Открыть кадр «${frame.label}» в полном размере`} /> : null}
 
       {!shown ? (
         <StoredAssetNotice

@@ -2,6 +2,7 @@
 
 import { Check } from "lucide-react"
 
+import { openLightbox, ZoomButton } from "@/components/ui/lightbox"
 import { useStoredBlobUrl } from "@/lib/use-stored-blob"
 import { cn } from "@/lib/utils"
 
@@ -99,22 +100,34 @@ export function AlbumPicker({
 
 function AlbumPickTile({ item, selected, order, single, onToggle }: { item: AlbumPickItem; selected: boolean; order: number | null; single: boolean; onToggle: () => void }) {
   const { url } = useStoredBlobUrl(item.keys)
+  // Клик по плитке ставит галочку, поэтому просмотр во весь экран — уголком рядом
+  // (кнопка в кнопке недопустима — уголок лежит соседом внутри обёртки).
+  const keys = item.keys.filter((key): key is string => Boolean(key)).reverse()
   return (
-    <button
-      type="button"
-      role={single ? "radio" : "checkbox"}
-      aria-checked={selected}
-      aria-label={item.label}
-      title={item.hint ? `${item.label} — ${item.hint}` : item.label}
-      onClick={onToggle}
-      className={cn("album-pick-tile", selected && "is-selected")}
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      {url ? <img src={url} alt="" draggable={false} /> : null}
-      <span className="album-pick-badge" aria-hidden>
-        {order !== null && selected ? order : <Check className="h-3 w-3" strokeWidth={2.4} />}
-      </span>
-      <span className="album-pick-label">{item.label}</span>
-    </button>
+    <div className="zoom-host relative">
+      <button
+        type="button"
+        role={single ? "radio" : "checkbox"}
+        aria-checked={selected}
+        aria-label={item.label}
+        title={item.hint ? `${item.label} — ${item.hint}` : item.label}
+        onClick={onToggle}
+        className={cn("album-pick-tile", selected && "is-selected")}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        {url ? <img src={url} alt="" draggable={false} /> : null}
+        <span className="album-pick-badge" aria-hidden>
+          {order !== null && selected ? order : <Check className="h-3 w-3" strokeWidth={2.4} />}
+        </span>
+        <span className="album-pick-label">{item.label}</span>
+      </button>
+      {url ? (
+        <ZoomButton
+          onOpen={(origin) => openLightbox({ keys, preview: url, alt: item.label, caption: item.label }, { origin })}
+          label={`Открыть «${item.label}» в полном размере`}
+          className="album-pick-zoom"
+        />
+      ) : null}
+    </div>
   )
 }

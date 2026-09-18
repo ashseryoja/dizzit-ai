@@ -1,6 +1,7 @@
 import type { ReactNode } from "react"
 
 import { AppSidebar } from "@/components/app-sidebar"
+import { LightboxHost } from "@/components/ui/lightbox"
 
 /**
  * Раскладка приложения: плавающий сайдбар слева, контент справа.
@@ -12,6 +13,8 @@ export default function MainLayout({ children }: Readonly<{ children: ReactNode 
     <div className="min-h-dvh">
       <AppSidebar />
       <main className="min-w-0 lg:pl-[296px]">{children}</main>
+      {/* Просмотр картинок во весь экран — один слой на все экраны (openLightbox). */}
+      <LightboxHost />
     </div>
   )
 }

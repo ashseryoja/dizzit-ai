@@ -27,7 +27,7 @@ import {
   thumbResultKey,
   thumbSourceKey,
 } from "@/lib/blob-store"
-import { MAX_BATCH, enhanceRender } from "@/lib/enhance-engine"
+import { ENHANCE_PRICE_LABEL, MAX_BATCH, enhanceRender } from "@/lib/enhance-engine"
 import { persistResultDurably, repairPersistedResult } from "@/lib/result-storage"
 import {
   buildEditComment,
@@ -57,13 +57,13 @@ const LABELS: ToolComposerLabels = {
   filesTitle: "Рендеры",
   filesQuality: "исходники",
   uploadTitle: "Загрузить рендеры",
-  filesCaption: "GPT Image 2 + разбор сцены · результат 2000 px · ≈ $0,03 за рендер",
+  filesCaption: `GPT Image 2 + разбор сцены и света · результат 4K (3840 px) · ≈ ${ENHANCE_PRICE_LABEL} за рендер`,
   optionsTitle: "Контекст",
   optionsIcon: Layers,
   footer:
     "Содержимое кадра не меняется: геометрия, материалы и композиция остаются вашими. Перед обработкой vision-модель распознаёт предметы кадра — телевизор, шторы, светильники, — чтобы каждый стал реальнее, а не другим предметом.",
   inputPlaceholder: "Комментарий к обработке…",
-  submitLabel: "Улучшить · $0,03",
+  submitLabel: `Улучшить · ${ENHANCE_PRICE_LABEL}`,
   batchNoun: ["рендер", "рендера", "рендеров"],
 }
 
@@ -595,6 +595,10 @@ export default function EnhancePage() {
             tools: meta.tools,
             regions: meta.regions,
             inventory: meta.sceneInventory,
+            // Правка поверх готового результата — точечная, без полного прохода «рендер → фото».
+            inputRole: input ? "result" : "source",
+            // 4K-файл сервер кладёт в хранилище сам: обратно через /api/assets он не пролезает.
+            storeKey: resultKey(meta.id),
           },
           {
             // Инвентарь сцены — в запись сразу: повтор после сбоя генератора
@@ -615,7 +619,7 @@ export default function EnhancePage() {
           syncPending: true,
         })
         try {
-          await persistResultDurably(meta.id, result.blob)
+          await persistResultDurably(meta.id, result.blob, { serverHasFull: result.stored })
         } catch {
           update(meta.id, {
             status: "error",
@@ -798,7 +802,11 @@ export default function EnhancePage() {
               onRemoveRegionTag={(id) => setCurrentRegions(currentRegions.filter((region) => region.id !== id))}
               submitBlockedReason={submitBlockedReason}
               placeholder={
-                regionEditingActive && currentRegions.length > 0 ? "И что изменить в рендере целиком…" : undefined
+                regionEditingActive && currentRegions.length > 0
+                  ? currentRegions.some((region) => !region.comment.trim())
+                    ? "Что сделать в отмеченных местах…"
+                    : "И что изменить в рендере целиком…"
+                  : undefined
               }
               notice={notice}
               attentionKey={attention}

@@ -206,15 +206,22 @@ export interface BuiltEditComment {
   /** Итоговый текст задания; пустая строка — общей правки и областей нет. */
   comment: string
   tooLong: boolean
-  /** Области без подписи: их нельзя молча проглатывать. */
+  /**
+   * Области без подписи, которым НЕЧЕГО делать: нет ни своей подписи, ни общего
+   * текста. Их нельзя молча проглатывать — кнопка закрыта, пока не подпишут.
+   */
   unlabeledRegionNumbers: number[]
   /** Области, чья подпись длиннее предела. */
   overlongRegionNumbers: number[]
 }
 
 /**
- * Собрать задание из свободного текста и подписанных областей. Порядок частей
+ * Собрать задание из свободного текста и отмеченных областей. Порядок частей
  * фиксирован: сначала общий текст, потом области по порядку рисования.
+ *
+ * Область без подписи рядом с общим текстом — не ошибка, а самый частый жест:
+ * обвёл предмет и написал в композере «убери это». Тогда общий текст адресуется
+ * этим областям, и задание уходит как обычная точечная правка.
  */
 export function buildEditComment({
   userComment,
@@ -234,29 +241,44 @@ export function buildEditComment({
   const overlongRegionNumbers = numbered
     .filter(({ region }) => normalizeRegionComment(region.comment).length > REGION_COMMENT_MAX_LENGTH)
     .map(({ number }) => number)
-  const unlabeledRegionNumbers = numbered
-    .filter(({ region }) => region.comment.trim().length === 0)
-    .map(({ number }) => number)
+  const unlabeled = numbered.filter(({ region }) => region.comment.trim().length === 0)
+  // Общий текст есть — он и есть задание для областей без подписи.
+  const addressed = trimmedUserComment ? unlabeled : []
+  const unlabeledRegionNumbers = trimmedUserComment ? [] : unlabeled.map(({ number }) => number)
 
   const parts: string[] = []
   if (trimmedUserComment) parts.push(trimmedUserComment)
+
+  if (addressed.length > 0) {
+    const numbers = addressed.map(({ number }) => number).join(", ")
+    parts.push(
+      addressed.length > 1
+        ? `Правка выше относится к отмеченным на карте областям ${numbers}: выполнить её именно в этих местах.`
+        : `Правка выше относится к отмеченной на карте области ${numbers}: выполнить её именно в этом месте.`
+    )
+  }
 
   if (labeled.length > 0) {
     // Только НОМЕР и задание — без словесного адреса: где именно править,
     // показывает карта областей. Нумерация — по позиции на кадре, как у бейджа.
     const lines = labeled.map(({ region, number }) => `${number}. ${normalizeRegionComment(region.comment)}`)
-    // «Остальное не менять» рядом с общей правкой — самопротиворечивое задание.
-    const closing = trimmedUserComment
-      ? "Вне отмеченных мест — только то, что просит общая правка выше."
-      : `Остальную часть ${subjectNoun} оставить без изменений.`
     parts.push(
       [
         labeled.length > 1
           ? "Правки по отмеченным на карте областям (номера совпадают с картой):"
           : "Правка по отмеченной на карте области (номер совпадает с картой):",
         ...lines,
-        closing,
       ].join("\n")
+    )
+  }
+
+  if (labeled.length > 0 || addressed.length > 0) {
+    // «Остальное не менять» рядом с общей правкой на весь кадр — самопротиворечивое
+    // задание; если же общий текст адресован областям, вне них менять нечего.
+    parts.push(
+      trimmedUserComment && addressed.length === 0
+        ? "Вне отмеченных мест — только то, что просит общая правка выше."
+        : `Остальную часть ${subjectNoun} оставить без изменений.`
     )
   }
 
@@ -271,7 +293,9 @@ export function buildEditComment({
 export function editBlockReason(built: BuiltEditComment): string | null {
   if (built.unlabeledRegionNumbers.length > 0) {
     const numbers = built.unlabeledRegionNumbers.join(", ")
-    return built.unlabeledRegionNumbers.length > 1 ? `Подпишите области ${numbers}` : `Подпишите область ${numbers}`
+    return built.unlabeledRegionNumbers.length > 1
+      ? `Подпишите области ${numbers} или напишите, что с ними сделать`
+      : `Подпишите область ${numbers} или напишите, что с ней сделать`
   }
   if (built.overlongRegionNumbers.length > 0) {
     const numbers = built.overlongRegionNumbers.join(", ")

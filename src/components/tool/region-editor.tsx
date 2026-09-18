@@ -103,6 +103,8 @@ export function RegionEditor({
   const draftRef = useRef<DraftRegion | null>(null)
   const frameRef = useRef<number | null>(null)
   const pointerIdRef = useRef<number | null>(null)
+  // Без захвата указателя pointerup за краем холста не придёт — штрих закрывает уход с холста.
+  const capturedRef = useRef(false)
 
   // Толщина переживает перезаход: читаем после монтирования, localStorage на сервере нет.
   useEffect(() => {
@@ -430,7 +432,14 @@ export function RegionEditor({
     // Зажатый Shift дорисовывает к ПОСЛЕДНЕЙ области кистью; цель снимаем здесь же.
     const appendTarget = event.shiftKey && canAppendToLast ? lastRegion : undefined
     if (!appendTarget && limitReached) return
-    event.currentTarget.setPointerCapture(event.pointerId)
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId)
+      capturedRef.current = true
+    } catch {
+      // Указатель уже отпущен (быстрый тап, стилус на границе кадра): захват не
+      // обязателен — штрих закончится, когда указатель уйдёт с холста (onPointerLeave).
+      capturedRef.current = false
+    }
     pointerIdRef.current = event.pointerId
     setBrushPanelOpen(false)
     hideBrushPreview()
@@ -584,6 +593,9 @@ export function RegionEditor({
         onPointerUp={finishStroke}
         onPointerCancel={discardStroke}
         onLostPointerCapture={finishStroke}
+        onPointerLeave={(event) => {
+          if (!capturedRef.current) finishStroke(event)
+        }}
       />
 
       {/* Номера областей. Пока открыт поповер, бейджи прячем: номер налезал бы на поле. */}
@@ -733,7 +745,7 @@ export function RegionEditor({
                 setActiveId(null)
               }
             }}
-            placeholder="Что изменить в этом месте…"
+            placeholder="Что сделать здесь: убрать, добавить, заменить…"
             maxLength={REGION_COMMENT_MAX_LENGTH}
             className="rg-textarea"
           />

@@ -362,14 +362,16 @@ function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality: number):
 
 /**
  * Крупный блоб перед отправкой ужимается: сначала перекодируется в JPEG в
- * том же размере, если мало — уменьшается до 2048 px по длинной стороне.
- * Локальная копия в IndexedDB остаётся полноразмерной.
+ * том же размере (два шага качества — 4K-кадр чаще остаётся 4K), если мало —
+ * уменьшается до 2048 px по длинной стороне. Локальная копия в IndexedDB
+ * остаётся полноразмерной. Штатно 4K-результат улучшения сюда не попадает: его
+ * кладёт в хранилище сам сервер (`/api/images` со `store_key`).
  */
 async function shrinkForUpload(blob: Blob): Promise<Blob> {
   if (blob.size <= MAX_UPLOAD_BYTES) return blob
   const bitmap = await createImageBitmap(blob)
   try {
-    for (const maxSide of [4096, 2048, 1536]) {
+    for (const [maxSide, quality] of [[4096, 0.9], [4096, 0.8], [2048, 0.9], [1536, 0.9]] as const) {
       const k = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height))
       const canvas = document.createElement("canvas")
       canvas.width = Math.max(1, Math.round(bitmap.width * k))
@@ -379,7 +381,7 @@ async function shrinkForUpload(blob: Blob): Promise<Blob> {
       ctx.imageSmoothingEnabled = true
       ctx.imageSmoothingQuality = "high"
       ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
-      const candidate = await canvasToBlob(canvas, "image/jpeg", 0.9)
+      const candidate = await canvasToBlob(canvas, "image/jpeg", quality)
       if (candidate.size <= MAX_UPLOAD_BYTES) return candidate
     }
     throw new Error("Картинка слишком велика даже после уменьшения")
@@ -426,7 +428,7 @@ export async function fetchAsset(key: string): Promise<Blob | null> {
  * более свежий объект другого браузера. Серверный HEAD проверяет storage.has
  * и не загружает изображение целиком.
  */
-async function remoteAssetExists(key: string): Promise<boolean> {
+export async function remoteAssetExists(key: string): Promise<boolean> {
   return withRequestTimeout(`check asset ${key}`, RECORDS_TIMEOUT_MS, async (signal) => {
     const url = `/api/assets/${encodeURIComponent(key)}`
     const response = await fetch(url, { method: "HEAD", cache: "no-store", signal })

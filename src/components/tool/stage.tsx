@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { ChevronLeft, ChevronRight, LayoutGrid, X } from "lucide-react"
 
+import { openLightbox, ZoomButton, ZoomHit } from "@/components/ui/lightbox"
 import type { AttachedRender } from "@/lib/use-attachments"
 import { cn, plural } from "@/lib/utils"
 
@@ -23,6 +24,9 @@ export function StagePlaceholder({ children, className }: { children: ReactNode;
  * бокс РОВНО по кадру: его позиция и размер считаются по пропорции картинки
  * от размера сцены, чтобы холст накрывал именно кадр. Без overlay —
  * просто object-contain на всю сцену.
+ *
+ * Просмотр во весь экран: кнопка-уголок внизу слева есть всегда; без overlay
+ * его открывает и клик по самой картинке (с overlay клик занят рисованием).
  */
 export function Stage({
   attachment,
@@ -66,6 +70,15 @@ export function Stage({
     return () => observer.disconnect()
   }, [measured])
 
+  const openViewer = (origin: HTMLElement) => {
+    // Кадр вырастает из картинки на сцене, а не из кнопки.
+    const image = ref.current?.querySelector("img") ?? origin
+    openLightbox(
+      { src: attachment.previewUrl, alt: attachment.file.name, caption: attachment.file.name },
+      { origin: image }
+    )
+  }
+
   const frameBox = (() => {
     if (!measured || size.width === 0 || size.height === 0) return null
     const scale = Math.min(size.width / attachment.width, size.height / attachment.height)
@@ -75,7 +88,7 @@ export function Stage({
   })()
 
   return (
-    <div ref={ref} className={cn("stage", className)}>
+    <div ref={ref} className={cn("stage zoom-host", className)}>
       {measured ? (
         frameBox ? (
           <div className="stage-frame" style={frameBox}>
@@ -94,6 +107,7 @@ export function Stage({
           className="absolute inset-0 h-full w-full select-none object-contain"
         />
       )}
+      {measured ? null : <ZoomHit onOpen={openViewer} />}
 
       <span className="stage-badge left-3 top-3">
         <span className="truncate">{attachment.file.name}</span>
@@ -106,6 +120,8 @@ export function Stage({
           {index + 1} / {count}
         </span>
       ) : null}
+
+      <ZoomButton onOpen={openViewer} className="stage-zoom" />
 
       {count > 1 ? (
         <>
@@ -135,8 +151,9 @@ export function Stage({
 
 /**
  * Пакетный режим: вместо сцены — грид рабочего набора с заголовком и
- * кнопкой «К просмотру». Плитки без интерактива (.batch-tile): править по
- * одному здесь нельзя намеренно. compact — для узкой колонки переноса стиля.
+ * кнопкой «К просмотру». Править по одному здесь нельзя намеренно
+ * (.batch-tile), клик по плитке только открывает просмотр во весь экран.
+ * compact — для узкой колонки переноса стиля.
  */
 export function BatchGrid({
   items,
@@ -174,10 +191,19 @@ export function BatchGrid({
         </button>
       </div>
       <div className={cn("grid grid-cols-2", compact ? "gap-2 md:grid-cols-3" : "gap-3 xl:grid-cols-3")}>
-        {items.map((item) => (
-          <div key={item.previewUrl} className="batch-tile">
+        {items.map((item, index) => (
+          <div key={item.previewUrl} className="batch-tile card-media">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={item.previewUrl} alt={item.file.name} draggable={false} />
+            {/* Править по одному здесь нельзя, а рассмотреть — можно: набор листается стрелками. */}
+            <ZoomHit
+              onOpen={(origin) =>
+                openLightbox(
+                  items.map((entry) => ({ src: entry.previewUrl, alt: entry.file.name, caption: entry.file.name })),
+                  { index, origin }
+                )
+              }
+            />
             <span className={cn("stage-badge", compact ? "left-2 top-2" : "left-2.5 top-2.5")}>
               <span className="truncate">{item.file.name}</span>
               {compact ? null : (

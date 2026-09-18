@@ -6,8 +6,8 @@
  * Основной путь — `enhanceRender`: промпт + исходник (и карта областей точечной
  * правки) уходят в gpt-image-2 через `lib/image-generation` → `/api/images`.
  * Модель дорисовывает микродетали, материалы и свет, не трогая геометрию и
- * состав кадра; результат — в ближайшей из пропорций провайдера, разрешение
- * по его ступени (2K у API Models).
+ * состав кадра; результат — в ближайшей из пропорций провайдера, на ступени 4K
+ * (API Models), длинная сторона после Lanczos3 — 3840 px.
  *
  * Перед промптом — разбор сцены (`lib/scene-analysis`): vision-модель
  * составляет инвентарь предметов кадра (телевизор выключен, шторы тюлевые,
@@ -33,14 +33,20 @@ import {
   type GeneratedImage,
 } from "@/lib/image-generation"
 import { BRUSH_HALF_WIDTH, type RegionPayload } from "@/lib/render-regions"
-import { describeScene, hasMaterialsSection, type SceneInventory } from "@/lib/scene-analysis"
+import { describeScene, isCurrentInventory, type SceneInventory } from "@/lib/scene-analysis"
 import { populateScene } from "@/lib/scene-population"
 import type { BatchFilter, BatchTime, BatchTools, EnhanceContext } from "@/types"
 
 export const ENHANCE_ACCEPT = "image/png,image/jpeg,image/webp"
 export const MAX_FILE_BYTES = 32 * 1024 * 1024
-/** Итог улучшения: длинная сторона ровно 2000 px после Lanczos3. */
-export const ENHANCE_LONG_SIDE = 2000
+/**
+ * Итог улучшения — 4K: провайдер считает на ступени 4K (нативные детали, а не
+ * растянутые 2K), затем Lanczos3 приводит длинную сторону ровно к 3840 px (UHD).
+ */
+export const ENHANCE_LONG_SIDE = 3840
+/** Ступень разрешения провайдера для улучшения и её цена за рендер (API Models: 1K $0,025 · 2K $0,03 · 4K $0,05). */
+export const ENHANCE_RESOLUTION = "4K" as const
+export const ENHANCE_PRICE_LABEL = "$0,05"
 /** Пачка за одну отправку: как лимит вложений в прежнем чате. */
 export const MAX_BATCH = 10
 
@@ -97,6 +103,14 @@ export interface EnhanceJob extends EnhanceOptions {
   inventory?: string
   /** Размер исходника: маленький рендер получает отдельную инструкцию. */
   sourceSize?: { width: number; height: number }
+  /** Ключ результата записи: сервер сам сохранит 4K-файл в хранилище (см. `requestImage.storeKey`). */
+  storeKey?: string
+  /**
+   * Что пришло входом: исходный рендер или уже улучшенный результат. Правка
+   * результата — точечная: кадр уже фотореалистичен, и перерисовывать его
+   * целиком ради «убрать вазу» нельзя — поплывёт всё, чего правка не касалась.
+   */
+  inputRole?: "source" | "result"
 }
 
 /** Что страница узнаёт по ходу обработки, до её конца. */
@@ -116,7 +130,7 @@ export const SMALL_SOURCE_LONG_SIDE = 1200
  * форму; этот блок называет типичные случаи и их правильное поведение.
  */
 export const OBJECT_IDENTITY_HINT =
-  "OBJECT IDENTITY: Before changing a single pixel, recognize what every object in IMAGE 1 is and render it as exactly that real-world object with its true function, scale and material behavior; never let an ambiguous shape drift into a different object. A television or monitor stays a thin flat panel with a flat black glossy screen that is switched off (dark, with only faint dim reflections of the room) unless the source clearly shows content, with a slim bezel and its wall mount or stand — never a window, painting, mirror, niche or glowing rectangle. Curtains stay fabric: sheer voile is translucent and softly transmits daylight, blackout drapes are opaque with heavy vertical folds; both hang from their rod or ceiling track with natural pleats and a gentle break at the floor — never fused into the wall or turned into rigid panels. Light fixtures (pendants, chandeliers, sconces, spots, cove LED strips, floor and table lamps) keep their exact form, count, mounting and on/off state, with believable emissive glow, shades, cords and hardware. Windows and glass doors show a plausible exterior with correct exposure, real glass thickness, mullions and subtle reflections. Mirrors reflect the actual room consistently with the viewpoint. Artwork and photographs keep their exact subject, framing and mount. Plants get botanically believable leaves and stems; rugs and upholstery get true pile, weave and seams; wood keeps species-like grain, stone its veining, metal its brushed or polished finish."
+  "OBJECT IDENTITY: Before changing a single pixel, recognize what every object in IMAGE 1 is and render it as exactly that real-world object with its true function, scale and material behavior; never let an ambiguous shape drift into a different object. A television or monitor stays a thin flat panel with a flat black glossy screen that is switched off (dark, with only faint dim reflections of the room) unless the source clearly shows content, with a slim bezel and its wall mount or stand — never a window, painting, mirror, niche or glowing rectangle. Curtains stay fabric: sheer voile is translucent and softly transmits daylight, blackout drapes are opaque with heavy vertical folds; both hang from their rod or ceiling track with natural pleats and a gentle break at the floor — never fused into the wall or turned into rigid panels. Light fixtures (pendants, chandeliers, sconces, spots, cove LED strips, floor and table lamps) keep their exact form, count, mounting and ON/OFF state (see LIGHT FIXTURES), with true-to-life shades, diffusers, cords and hardware — a lit one glows and lights its surroundings, an unlit one does not glow at all. Windows and glass doors show a plausible exterior with correct exposure, real glass thickness, mullions and subtle reflections. Mirrors reflect the actual room consistently with the viewpoint. Artwork and photographs keep their exact subject, framing and mount. Plants get botanically believable leaves and stems; rugs and upholstery get true pile, weave and seams; wood keeps species-like grain, stone its veining, metal its brushed or polished finish."
 
 /**
  * Материалы — как выбрал дизайнер. Вторая причина брака после «не тот предмет»:
@@ -138,16 +152,66 @@ export const MATERIAL_FIDELITY_HINT =
 const STRUCTURE_LOCK_HINT =
   "STRUCTURE LOCK: Light fixtures keep their exact number, grouping, spacing and positions — count the ceiling spots, downlights, pendants and LED lines in IMAGE 1 and reproduce exactly that many in exactly those places; never merge two fixtures into one, drop one, add one, or turn spots into a strip or a strip into spots. Furniture keeps its exact construction: the same number, thickness and shape of legs, supports, shelves and frames, with the same open space beneath and between them — the floor and wall visible under a table, console, bench or sofa in IMAGE 1 stay visible; thin legs stay thin and separate, never fused into a solid block or a shadow mass. Floors keep the same board or slab format: the same plank or tile width, count across the frame, direction, joint layout, grain scale, finish and color — do not narrow, widen, rotate or re-lay the boards and do not shift the floor's tone. Doors, handles, skirtings, frames, mouldings and ceiling recesses keep their exact profile and position."
 
-/** Инвентарь сцены — авторитетное описание кадра, сильнее любых спорных пикселей. */
-export function sceneInventoryBlock(inventory: string | undefined): string {
+/**
+ * Светильники — главное, по чему глаз отличает фото от рендера. Две ошибки
+ * генератора: он «зажигает» выключенные лампы (и гасит горящие), а горящие
+ * рисует плоским белым пятном без света вокруг. Состояние каждого светильника
+ * приходит из секции FIXTURES инвентаря; здесь — что с ним делать.
+ *
+ * `allOn` — пользователь сам выбрал ночь: тогда включаются все светильники
+ * сцены, и замок состояния уступает этому выбору.
+ */
+function lightFixturesHint(allOn: boolean): string {
+  return [
+    allOn
+      ? "LIGHT FIXTURES — STATE: the designer asked for a night scene, so every artificial fixture of IMAGE 1 is switched ON; their number, form and placement stay exactly as in IMAGE 1."
+      : "LIGHT FIXTURES — STATE LOCK: every fixture keeps the exact state it has in IMAGE 1 (see FIXTURES in the inventory): a fixture that is ON stays ON with the same relative brightness and color temperature; a fixture that is OFF stays OFF. Never switch an unlit lamp on to make the image prettier, never dim or kill a lit one, never let a lamp's state drift because the scene got brighter or darker.",
+    "A fixture that is ON must look like a real working luminaire, not a white sticker: the source itself (bulb, filament, opal globe, LED diffuser, candle flame) is the brightest thing near it yet keeps shape and a hint of tone — a hot core rolling off smoothly to the rim, never a flat clipped blob. Shades and diffusers transmit light the way their material does: opal glass glows evenly from within with a slightly brighter centre, fabric and paper shades show a warm gradient that is strongest next to the bulb, perforated or metal shades leak light only through their openings and show a bright inner surface with a dark outer one, clear glass shows the filament and crisp internal reflections. Every lit fixture visibly lights its surroundings with inverse-square falloff: a soft pool on the table or floor under a pendant, a scallop with soft penumbra on the wall under a spot or sconce, a smooth even wash from an LED cove or strip with no dotting, stepping or banding, a gentle glow on the ceiling around a flush fixture. Nearby objects get soft shadows and warm rim light from it; glossy surfaces — polished stone, glass, lacquer, a switched-off TV, a steel appliance — carry its small believable reflection. Restrained photographic halation around the brightest sources is welcome; star bursts, lens-flare streaks, fog and god rays from lamps are not. Keep the color temperature the inventory names (warm 2700–3000K stays warm, neutral stays neutral) and keep the balance between daylight and artificial light: in a daylit room a lit lamp is a subtle warm accent, at dusk or night it is the key light and the room falls off into natural shadow away from it.",
+    "A fixture that is OFF is still a beautiful real object, lit only by the light that reaches it: no emission, no glow or halo around it, no light pool under it, no bright diffuser. An unlit opal globe is milky grey-white with soft shading and a window reflection, an unlit clear bulb shows its dark filament and tiny reflections of the room, an unlit LED profile is a matte white or grey line, an unlit fabric shade is simply fabric in the room's light. Its metal, glass, cord, canopy and mounting get the same true-to-life material rendering as everything else.",
+    "Light must always have a source: no surface may glow on its own, and no pool of light may appear where IMAGE 1 has no lit fixture or opening to cast it.",
+  ].join("\n")
+}
+
+/**
+ * Инвентарь сцены — авторитетное описание кадра, сильнее любых спорных пикселей.
+ * `withEdits` — в задании есть правки дизайнера: инвентарь описывает кадр ДО них
+ * и не может быть поводом вернуть убранный предмет или отказаться от нового.
+ */
+export function sceneInventoryBlock(inventory: string | undefined, withEdits = false): string {
   const text = inventory?.trim()
   if (!text) return ""
   return [
     "SCENE INVENTORY (authoritative visual analysis of IMAGE 1 — trust it over any ambiguous pixels):",
     text,
-    "Render every listed object as exactly that object, in its listed position, material and state; give every surface in MATERIALS exactly the named material, pattern, layout and finish (and never the material it is marked NOT to be); resolve each EASILY MISREAD item as described. The inventory never authorizes adding, removing or moving anything.",
-  ].join("\n")
+    "Render every listed object as exactly that object, in its listed position, material and state; give every surface in MATERIALS exactly the named material, pattern, layout and finish (and never the material it is marked NOT to be); give every fixture in FIXTURES exactly the listed count, layout, ON or OFF state and color temperature; resolve each EASILY MISREAD item as described. The inventory never authorizes adding, removing or moving anything.",
+    withEdits
+      ? "The inventory describes the scene BEFORE the designer's edits. Where an edit below removes, replaces, moves or changes a listed object or material, the edit wins and the inventory line for it no longer applies. If IMAGE 1 already lacks a listed object (it was removed in an earlier edit), never bring it back."
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n")
 }
+
+/**
+ * Правки дизайнера важнее замков. Без этого блока модель читает «ничего не
+ * убирать и не добавлять» буквально и тихо пропускает «удалить кресло»: замки
+ * стоят выше по тексту и повторяются в запретах, а просьба — одна строка в конце.
+ */
+const DESIGNER_EDITS_PRIORITY_HINT =
+  "DESIGNER'S EDITS HAVE PRIORITY: The designer's edits at the end of this brief are mandatory and must be clearly visible in the result, whatever they ask for — removing an object, adding a new one, replacing, moving, resizing, recoloring, changing a material, a fixture or the light. Every preservation rule, lock, inventory line and exclusion in this brief protects only what the designer did NOT ask to change; none of them may be used as a reason to skip, soften or partially apply a requested edit. The edits may be written in Russian — follow them exactly as written. An output where a requested edit is missing is a failed output."
+
+/**
+ * Как читать карту областей и что значит каждая типовая просьба. «Удалить» и
+ * «добавить» расписаны отдельно: это две просьбы, которые прямо спорят с
+ * замками сохранения, и на них модель ошибалась чаще всего.
+ */
+const MARKED_AREAS_HINT = [
+  "MARKED AREAS: Two images are attached. IMAGE 1 is the image to edit. IMAGE 2 is a copy of IMAGE 1 that serves only as a location map: translucent red shapes with a white number on a red round badge mark the areas the designer pointed at. For every numbered edit below, find the area with that number on IMAGE 2, locate the same place in IMAGE 1 and carry the edit out there, fully and visibly. A marked shape is a rough hand-drawn hint, not a pixel mask: the target is the whole object, surface or spot it covers or circles, even when the outline is imprecise, cuts through the object or spills past it.",
+  "- REMOVE (убрать, удалить, стереть, remove, delete): take the marked object out completely, together with its shadow, reflections, glow and contact marks, and rebuild what was hidden behind it — continue the wall, floor, ceiling, skirting, window, rug or neighbouring furniture with the same material, pattern, joints, perspective and lighting, as if the object had never been there. No ghost silhouette, blur, smudge, empty patch or substitute object in its place.",
+  "- ADD (добавить, поставить, повесить, положить, add, place): create the requested new object inside the marked area, sized to fit that area and the true scale of the room, resting or mounted on the correct surface in correct perspective, lit by the scene's own light with a believable contact shadow and reflections, in a style and materials that suit the room unless the edit says otherwise. An empty marked spot must not stay empty.",
+  "- REPLACE or CHANGE (заменить, перекрасить, сделать …, change, replace): change exactly what the edit names — the object, its material, color, shape, size or on/off state — inside the marked area, and blend the result with its surroundings.",
+  "Outside the marked areas keep IMAGE 1 exactly as this brief requires. IMAGE 2's red shapes, outlines, badges and numbers are annotations only: the output must not contain any of them, nor any tint left by them.",
+].join("\n")
 
 /** Маленький исходник: размытые пятна — это предметы из инвентаря, а не новые объекты. */
 function sourceQualityHint(size: EnhanceJob["sourceSize"]): string {
@@ -203,7 +267,7 @@ function naturalLightHint(time: BatchTime): string {
   const lightingKeywords = time === "morning" ? `${LIGHTING_KEYWORDS}, ${MORNING_SUNLIGHT_KEYWORD}` : LIGHTING_KEYWORDS
   return [
     `LIGHTING KEYWORDS: ${lightingKeywords}.`,
-    "NATURAL SUNLIGHT: Use one coherent sun direction from an existing visible opening or a plausible off-camera window/opening. Add restrained volumetric sunbeams only where light can physically enter, soft shadows from windows, correct penumbra and contact shadows, warm direct highlights with cooler bounced skylight fill, and subtle specular sun glints on glass, metal and polished wood. Use gentle photographic highlight bloom and a barely perceptible lens flare when physically justified. Keep windows and highlights recoverable; no fake flare overlay, exaggerated god rays, orange wash or random light sources. Sunlight changes the illumination only, never the fixtures: every lamp, spot and strip of IMAGE 1 stays in place, in the same number.",
+    "NATURAL SUNLIGHT: Use one coherent sun direction from an existing visible opening or a plausible off-camera window/opening. Add restrained volumetric sunbeams only where light can physically enter, soft shadows from windows, correct penumbra and contact shadows, warm direct highlights with cooler bounced skylight fill, and subtle specular sun glints on glass, metal and polished wood. Use gentle photographic highlight bloom and a barely perceptible lens flare when physically justified. Keep windows and highlights recoverable; no fake flare overlay, exaggerated god rays, orange wash or random light sources. Sunlight changes the illumination only, never the fixtures: every lamp, spot and strip of IMAGE 1 stays in place, in the same number and in the same ON or OFF state.",
   ].join("\n")
 }
 
@@ -220,8 +284,17 @@ const PHOTOREALISM_HINT =
  * GPT Image 2 не имеет отдельного weighted negative prompt, но наш API держит
  * запреты отдельным полем и бэкенд добавляет их последним строгим блоком.
  */
+/** Есть ли в задании правки дизайнера: общий комментарий или отмеченные области. */
+function hasDesignerEdits(job: EnhanceJob): boolean {
+  return Boolean(job.note?.trim()) || Boolean(job.regions && job.regions.length > 0)
+}
+
 export function buildEnhanceNegativePrompt(job: EnhanceJob): string {
   const time = job.tools?.time ?? "keep"
+  // Запреты «ничего не убирать и не добавлять» — последний и самый громкий блок
+  // инструкции. Рядом с правкой «удалить диван» они её отменяли: с правками
+  // запрещены только НЕпрошенные изменения, а оставшийся мусор правки назван явно.
+  const withEdits = hasDesignerEdits(job)
   return [
     "cheap 3D render, low-quality CGI, obvious CGI, videogame graphics, flat technical visualization, plastic materials, waxy surfaces, rubbery fabric, perfectly uniform procedural textures, texture tiling, fake reflections, mirror-like wood, glowing materials",
     "flat lighting, sterile lighting, shadowless scene, inconsistent light direction, random light sources, fake HDR, HDR halos, clipped highlights, blown-out windows, crushed blacks, harsh artificial shadows, fake volumetric fog, exaggerated god rays, painted-on sunbeams, fake lens-flare overlay",
@@ -229,8 +302,15 @@ export function buildEnhanceNegativePrompt(job: EnhanceJob): string {
     "cartoon, illustration, concept art, painterly image, surrealism, fantasy styling, miniature or dollhouse look",
     "misidentified objects, objects changed into different objects, TV screen turned into a window or painting, screen showing a landscape or glowing content, curtains merged into the wall, curtains turned into solid panels, melted or malformed light fixtures, lamps turned into blobs, missing fixtures, mirror without reflection, replaced artwork subject",
     "substituted materials, changed floor material, travertine or limestone turned into microcement or concrete or plaster, stone veining removed, marble veins repainted, tile joints or grout lines removed, seamless floor where the source has slabs or planks, added joints on a seamless floor, changed wood species, changed veneer grain direction, veneer turned into laminate, changed fabric type, changed metal finish, recolored materials",
+    time === "night"
+      ? "flat white clipped light sources, lamp shades blown out to pure white, lit lamp that lights nothing around it, light pool without a source, glowing surfaces with no light source, dotted or banded LED strip, star-burst or lens-flare streaks from lamps"
+      : "unlit lamps switched on, lit lamps switched off, glow or halo around an unlit lamp, light pool under an unlit lamp, flat white clipped light sources, lamp shades blown out to pure white, lit lamp that lights nothing around it, light pool without a source, glowing surfaces with no light source, dotted or banded LED strip, star-burst or lens-flare streaks from lamps, changed color temperature of the lamps",
     "changed number of spotlights, merged downlights, missing or extra ceiling spots, added LED strip, spots turned into a strip, redesigned ceiling lighting, moved fixtures, merged furniture legs, fused legs, thickened legs, filled-in space under furniture, solid block under a table or console, missing gap under furniture, changed plank width, narrower or wider boards, re-laid floor, rotated floor boards, changed floor color, shifted floor tone",
-    "fisheye distortion, warped perspective, leaning verticals, changed camera angle, changed crop, changed room geometry, moved walls, moved doors or windows, redesigned ceiling or floor, altered furniture, added furniture, removed objects, duplicated objects, floating objects, malformed decor, text, logo, watermark",
+    "fisheye distortion, warped perspective, leaning verticals, changed camera angle, changed crop, changed room geometry, moved walls, moved doors or windows, redesigned ceiling or floor",
+    withEdits
+      ? "furniture altered without being asked, furniture or objects added without being asked, objects removed without being asked, a requested edit skipped or only half done, ghost silhouette or smudge where an object was removed, red marker overlay, colored outlines, number badges or annotation marks from the area map"
+      : "altered furniture, added furniture, removed objects",
+    "duplicated objects, floating objects, malformed decor, text, logo, watermark",
     time === "night" ? "sunlight, daylight, sunbeams, morning light, visible god rays" : "night-time exposure, black windows",
   ].join(", ")
 }
@@ -246,37 +326,53 @@ export function buildEnhancePrompt(job: EnhanceJob): string {
   const time = tools?.time ?? "keep"
   const note = job.note?.trim() ?? ""
   const hasRegions = Boolean(job.regions && job.regions.length > 0)
+  const withEdits = hasDesignerEdits(job)
+  // Правка уже улучшенного результата — точечная: кадр фотореалистичен, и
+  // полный проход «рендер → фото» перерисовал бы всё, чего правка не касалась.
+  const focusedEdit = withEdits && job.inputRole === "result"
+  const rerender = improveQuality && !focusedEdit
 
   const lines: string[] = [
-    "TASK: Transform IMAGE 1 from a computer-generated render into an ultra-realistic real professional photograph. IMAGE 1 is the authoritative design reference. The result must be immediately believable as an ultra-realistic photograph of a real, physically built subject — hyper-detailed, true-to-life materials and light — not a cleaner CGI render.",
+    focusedEdit
+      ? "TASK: Edit IMAGE 1 — an already finished ultra-realistic photograph of the designer's project. Carry out the designer's edits listed at the end of this brief and return the same photograph with those edits applied. Everything the edits do not touch stays exactly as it is in IMAGE 1: the same look, light, colors, materials, sharpness and fine detail — do not re-stylize, re-light, re-grade or re-render the rest of the image. Anything the edits add or rebuild must match that photograph seamlessly."
+      : "TASK: Transform IMAGE 1 from a computer-generated render into an ultra-realistic real professional photograph. IMAGE 1 is the authoritative design reference. The result must be immediately believable as an ultra-realistic photograph of a real, physically built subject — hyper-detailed, true-to-life materials and light — not a cleaner CGI render.",
     CONTEXT_HINT[job.context ?? "auto"],
-    sceneInventoryBlock(job.inventory),
-    "NON-NEGOTIABLE PRESERVATION: This is an enhancement of IMAGE 1, never a redesign or a reinterpretation. Keep the exact camera position, lens/focal-length feel, perspective, vertical lines, crop, aspect ratio, framing and composition. Preserve every wall, opening, ceiling, floor boundary, built-in element, piece of furniture, fixture and decor item in exactly the same shape, scale, count and position. Preserve the design, material identities, patterns and base colors. Do not redesign, restyle, invent, remove, move or replace anything unless the designer explicitly requests it below.",
+    withEdits ? DESIGNER_EDITS_PRIORITY_HINT : "",
+    sceneInventoryBlock(job.inventory, withEdits),
+    `NON-NEGOTIABLE PRESERVATION: This is an enhancement of IMAGE 1, never a redesign or a reinterpretation. Keep the exact camera position, lens/focal-length feel, perspective, vertical lines, crop, aspect ratio, framing and composition. Preserve every wall, opening, ceiling, floor boundary, built-in element, piece of furniture, fixture and decor item in exactly the same shape, scale, count and position. Preserve the design, material identities, patterns and base colors. ${
+      withEdits
+        ? "Do not redesign, restyle, invent, remove, move or replace anything on your own initiative — the only exceptions are the designer's edits at the end of this brief, and those must be carried out."
+        : "Do not redesign, restyle, invent, remove, move or replace anything."
+    }`,
     STRUCTURE_LOCK_HINT,
+    improveQuality ? lightFixturesHint(time === "night") : "",
     improveQuality ? OBJECT_IDENTITY_HINT : "",
     improveQuality ? MATERIAL_FIDELITY_HINT : "",
-    improveQuality ? sourceQualityHint(job.sourceSize) : "",
-    improveQuality
+    rerender ? sourceQualityHint(job.sourceSize) : "",
+    rerender
       ? "RENDER-TO-PHOTO PASS: Do not merely upscale, sharpen or polish the existing CGI pixels. Re-light and re-render every visible surface as real material under real light while keeping the locked design unchanged. Use physically plausible global illumination, indirect bounce, ambient occlusion, ray tracing and consistent light direction/color temperature. Replace flat procedural shading with scale-accurate photographic material response: natural wood grain and pores, individual textile fibers and weave, subtle plaster variation, realistic glass thickness/refraction, metal roughness, joints, seams, tiny edge bevels and grounded surface contact. Add restrained micro-imperfections and non-uniform roughness so surfaces feel manufactured and touched, never sterile or synthetic."
-      : "Preserve the rendering quality as is; apply only the changes requested below.",
-    improveQuality
+      : focusedEdit
+        ? ""
+        : "Preserve the rendering quality as is; apply only the changes requested below.",
+    rerender
       ? "PHOTOGRAPHIC CAMERA RESPONSE: Preserve the source lens and viewpoint, with straight architectural verticals where relevant and natural edge-to-edge focus. Use balanced exposure, neutral white balance, realistic dynamic range and highlight roll-off, gentle micro-contrast, fine sensor-level texture and subtle depth cues. The image should feel like an unretouched professional design-editorial photograph appropriate to the scene. Avoid plastic surfaces, perfectly uniform textures, fake mirror reflections, glowing materials, crushed blacks, clipped whites, HDR halos, excessive saturation/contrast, oversharpening, waxy denoising, blur, coarse noise, banding, moire, repeated texture tiles, warped geometry and the glossy 3D-render look."
       : "",
     improveQuality ? PHOTOREALISM_HINT : "",
-    improveQuality
-      ? "CONTROLLED EDIT FREEDOM: Change how every existing surface responds to light — shading, shadows, reflections, microtexture and material response — so the result no longer inherits the flat CGI look. This freedom applies only to surface response and photographic rendering; it never extends to the light sources themselves (their number, placement, form and on/off state), nor to geometry, layout, objects, floor layout or camera. The preservation rules always win."
+    rerender
+      ? "CONTROLLED EDIT FREEDOM: Change how every existing surface responds to light — shading, shadows, reflections, microtexture and material response — so the result no longer inherits the flat CGI look. This freedom applies only to surface response and photographic rendering; it never extends to the light sources themselves (their number, placement, form and on/off state), nor to geometry, layout, objects, floor layout or camera. The preservation rules always win over this freedom — and the designer's edits, when present, win over the preservation rules."
       : "",
-    improveQuality ? naturalLightHint(time) : "",
+    // У точечной правки результата свет трогаем, только если время суток выбрано явно.
+    rerender || (improveQuality && time !== "keep") ? naturalLightHint(time) : "",
     tools ? FILTER_HINT[tools.filter] : "",
     tools ? TIME_HINT[time] : "",
     job.populate
       ? "Populate the scene: add a few people and, where appropriate, plants natural to this space, in correct scale and perspective, without covering the key elements of the composition."
       : "",
-    hasRegions
-      ? "Two images are attached. IMAGE 1 is the render to edit. IMAGE 2 is the same render with numbered marked areas (colored outlines with number badges). Apply each numbered instruction below only to the corresponding marked area. The output must not contain any outlines, badges or numbers."
-      : "",
+    hasRegions ? MARKED_AREAS_HINT : "",
     "OUTPUT: Return one clean full-frame image with no crop or border. No text, labels, logos, signatures or watermark.",
-    note ? `DESIGNER'S ALLOWED CHANGES (these override preservation only where explicit):\n${note}` : "",
+    note
+      ? `DESIGNER'S EDITS — MANDATORY (carry out every one of them visibly; they override the preservation rules, the inventory and the exclusions wherever they apply):\n${note}`
+      : "",
   ]
   return lines.filter(Boolean).join("\n")
 }
@@ -402,8 +498,9 @@ export async function enhanceRender(source: Blob, job: EnhanceJob, hooks: Enhanc
       const references = [await prepareReference(source)]
       if (job.regions && job.regions.length > 0) references.push(await renderRegionMap(source, job.regions))
 
-      // Инвентарь без секции MATERIALS — из записи прошлых версий: разбираем заново.
-      let inventory = hasMaterialsSection(job.inventory) ? job.inventory?.trim() : undefined
+      // Инвентарь без секций MATERIALS или FIXTURES — из записи прошлых версий:
+      // разбираем заново, иначе генератор не знает, какие лампы горят.
+      let inventory = isCurrentInventory(job.inventory) ? job.inventory?.trim() : undefined
       let found: SceneInventory | undefined
       if (improveQuality && !inventory) {
         found = (await describeScene(source, { context: job.context })) ?? undefined
@@ -420,13 +517,14 @@ export async function enhanceRender(source: Blob, job: EnhanceJob, hooks: Enhanc
         aspect: { width, height },
         references,
         provider: "apimodels",
-        resolution: "2K",
+        resolution: ENHANCE_RESOLUTION,
         finalLongSide: improveQuality ? ENHANCE_LONG_SIDE : undefined,
+        storeKey: job.storeKey,
       })
       return { ...image, inventory: found }
     },
     () => enhanceLocally(source, job),
-    { provider: "apimodels", resolution: "2K" }
+    { provider: "apimodels", resolution: ENHANCE_RESOLUTION }
   )
 }
 

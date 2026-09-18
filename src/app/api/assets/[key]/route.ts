@@ -3,6 +3,7 @@ import { NextResponse } from "next/server"
 import { authNotConfigured, sessionFromRequest, unauthorized } from "@/server/auth"
 import { authConfigured } from "@/server/config"
 import { getSql } from "@/server/db"
+import { streamBytes } from "@/server/http"
 import { sniffImageMime } from "@/server/image-provider"
 import { deleteAssetMeta, upsertAssetMeta } from "@/server/records"
 import { objectKey, resolveStorage } from "@/server/storage"
@@ -13,8 +14,10 @@ export const dynamic = "force-dynamic"
 /**
  * Объекты записей: `${id}:${role}` — тот же ключ, что у блоба в IndexedDB
  * клиента, поэтому `getBlob(key)` при промахе кэша просто зовёт этот роут.
- * Лимит тела — ниже потолка Vercel в 4,5 МБ: клиент уменьшает крупное до
- * отправки (`src/lib/server-sync.ts`).
+ * Лимит тела ЗАПРОСА — ниже потолка Vercel в 4,5 МБ: клиент уменьшает крупное
+ * до отправки (`src/lib/server-sync.ts`). Крупные объекты (4K-результат
+ * улучшения, GLB) сюда не загружаются — их кладёт в хранилище сам сервер
+ * (`/api/images` с `store_key`, `/api/models/.../file`), а отдаются они потоком.
  */
 const KEY_PATTERN = /^[A-Za-z0-9_-]{1,64}:[a-z0-9-]{1,48}$/
 const MAX_ASSET_BYTES = 4 * 1024 * 1024
@@ -43,13 +46,11 @@ export async function GET(request: Request, context: Context) {
   if (!KEY_PATTERN.test(key)) return badKey()
   const object = await g.storage.get(objectKey(g.session.ownerId, key))
   if (!object) return NextResponse.json({ error: "not_found", message: "Объекта нет на сервере." }, { status: 404 })
-  return new Response(object.bytes as BodyInit, {
-    status: 200,
-    headers: {
-      "Content-Type": object.contentType,
-      // Ключ неизменяем: тот же ключ — то же содержимое, кэшировать можно навсегда.
-      "Cache-Control": "private, max-age=31536000, immutable",
-    },
+  // Потоком: 4K-результат улучшения и GLB-модели больше потолка Vercel в 4,5 МБ на тело ответа.
+  return streamBytes(object.bytes, {
+    "Content-Type": object.contentType,
+    // Ключ неизменяем: тот же ключ — то же содержимое, кэшировать можно навсегда.
+    "Cache-Control": "private, max-age=31536000, immutable",
   })
 }
 

@@ -2,6 +2,7 @@
 
 import { ChevronDown, Clock, Coins, Info, Upload, X } from "lucide-react"
 
+import { openLightbox, ZoomButton } from "@/components/ui/lightbox"
 import { Switch } from "@/components/ui/switch"
 import type { AttachedRender } from "@/lib/use-attachments"
 import type { ViewSlots } from "@/lib/use-view-slots"
@@ -204,7 +205,7 @@ function PhotoSlot({
 }) {
   const label = MODEL_SLOT_LABEL[slot]
   return (
-    <div className={cn("model-slot", slot === "main" && "is-main", attachment && "is-filled", disabled && "is-disabled")}>
+    <div className={cn("model-slot zoom-host", slot === "main" && "is-main", attachment && "is-filled", disabled && "is-disabled")}>
       <button
         type="button"
         onClick={onPick}
@@ -224,9 +225,19 @@ function PhotoSlot({
         <span className="model-slot-label">{label}</span>
       </button>
       {attachment ? (
-        <button type="button" onClick={onRemove} aria-label={`Убрать фото: ${label}`} className="model-slot-remove">
-          <X className="h-3 w-3" strokeWidth={1.8} />
-        </button>
+        <>
+          <button type="button" onClick={onRemove} aria-label={`Убрать фото: ${label}`} className="model-slot-remove">
+            <X className="h-3 w-3" strokeWidth={1.8} />
+          </button>
+          {/* Клик по слоту заменяет фото — рассмотреть его в полном размере даёт уголок. */}
+          <ZoomButton
+            onOpen={(origin) =>
+              openLightbox({ src: attachment.previewUrl, alt: attachment.file.name, caption: `${label} · ${attachment.file.name}` }, { origin })
+            }
+            label={`Открыть фото «${label}» в полном размере`}
+            className="model-slot-zoom"
+          />
+        </>
       ) : null}
     </div>
   )

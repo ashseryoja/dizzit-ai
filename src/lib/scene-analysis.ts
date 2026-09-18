@@ -31,6 +31,21 @@ export function hasMaterialsSection(inventory: string | undefined): boolean {
   return Boolean(inventory && /^MATERIALS:/im.test(inventory))
 }
 
+/**
+ * Инвентарь с секцией FIXTURES (состояние каждого светильника: ON или OFF, с
+ * доказательствами) — формат с 2026-09-18. Запись со старым инвентарём движок
+ * разбирает заново: без явного ON/OFF генератор включает выключенные лампы и
+ * гасит горящие.
+ */
+export function hasFixturesSection(inventory: string | undefined): boolean {
+  return Boolean(inventory && /^FIXTURES:/im.test(inventory))
+}
+
+/** Инвентарь актуального формата: есть и материалы, и светильники. */
+export function isCurrentInventory(inventory: string | undefined): boolean {
+  return hasMaterialsSection(inventory) && hasFixturesSection(inventory)
+}
+
 export interface SceneInventory {
   text: string
   provider: string

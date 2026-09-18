@@ -34,3 +34,25 @@ export function isSameOrigin(request: Request): boolean {
     return false
   }
 }
+
+const STREAM_CHUNK_BYTES = 256 * 1024
+
+/**
+ * Байты — потоком. Тело ответа функции Vercel ограничено 4,5 МБ, потоковый
+ * ответ — нет; 4K-результат улучшения (5–10 МБ), GLB-модели и объекты хранилища
+ * идут только так. Один помощник на все роуты, отдающие файлы.
+ */
+export function streamBytes(bytes: Uint8Array, headers: Record<string, string>, status = 200): Response {
+  let offset = 0
+  const body = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (offset >= bytes.byteLength) {
+        controller.close()
+        return
+      }
+      controller.enqueue(bytes.subarray(offset, offset + STREAM_CHUNK_BYTES))
+      offset += STREAM_CHUNK_BYTES
+    },
+  })
+  return new Response(body, { status, headers })
+}

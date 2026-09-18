@@ -73,7 +73,10 @@ export function composeProviderPrompt(prompt: string, negativePrompt?: string): 
     prompt.trim(),
     "NEGATIVE PROMPT — STRICT EXCLUSIONS:",
     `Do not produce or introduce any of the following: ${negative}`,
-    "These exclusions never permit changing the locked geometry, layout, camera or object placement.",
+    // Запреты — про непрошеное. Правку, которую инструкция выше просит явно
+    // («убрать кресло», «добавить торшер»), они не отменяют: иначе последний блок
+    // перекрикивал бы просьбу дизайнера.
+    "These exclusions never permit changing the locked geometry, layout, camera or object placement on your own initiative, and they never cancel an edit that the instructions above explicitly request: requested removals, additions and replacements are still carried out in full.",
   ].join("\n")
 }
 

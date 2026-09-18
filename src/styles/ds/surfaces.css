@@ -1145,9 +1145,19 @@ select.field option { background: var(--bg-overlay); color: var(--fg-1); }
 .stage {
   position: relative;
   overflow: hidden;
+  /* Слои сцены (панель областей, поповер, кнопки) спорят между собой, а не с
+     композером и панелями страницы. */
+  isolation: isolate;
   border-radius: var(--r-xl);
   border: 1px solid var(--line);
   background: var(--bg-surface);
+}
+
+/* Нижний отступ под плавающий композер: не меньше пола экрана (--composer-floor
+   от ToolShell) и не меньше измеренной высоты композера (--composer-reserve от
+   ComposerDock) — выросший композер отодвигает контент, а не накрывает его. */
+.page-shell.has-composer {
+  padding-bottom: max(var(--composer-floor, 15rem), var(--composer-reserve, 0px));
 }
 /* Бокс РОВНО с отрисованный кадр: позиция и размер считаются страницей по
    пропорции картинки. Поверх него ложится холст точечной правки, поэтому

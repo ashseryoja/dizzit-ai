@@ -1,6 +1,6 @@
 import { sessionFromRequest } from "@/server/auth"
 import { getSql } from "@/server/db"
-import { problem } from "@/server/http"
+import { problem, streamBytes } from "@/server/http"
 import { sniffImageMime } from "@/server/image-provider"
 import {
   downloadMeshyModel,
@@ -36,21 +36,9 @@ export const maxDuration = 300
 
 const TASK_ID = /^[A-Za-z0-9-]{8,64}$/
 const RECORD_ID = /^[A-Za-z0-9_-]{1,64}$/
-const CHUNK_BYTES = 256 * 1024
 
 function stream(bytes: Uint8Array, contentType: string): Response {
-  let offset = 0
-  const body = new ReadableStream<Uint8Array>({
-    pull(controller) {
-      if (offset >= bytes.byteLength) {
-        controller.close()
-        return
-      }
-      controller.enqueue(bytes.subarray(offset, offset + CHUNK_BYTES))
-      offset += CHUNK_BYTES
-    },
-  })
-  return new Response(body, { status: 200, headers: { "Content-Type": contentType, "Cache-Control": "private, no-store" } })
+  return streamBytes(bytes, { "Content-Type": contentType, "Cache-Control": "private, no-store" })
 }
 
 export async function GET(request: Request, context: { params: Promise<{ taskId: string }> }) {

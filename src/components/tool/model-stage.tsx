@@ -6,6 +6,7 @@ import { Pause, RefreshCw, RotateCw, Trash2 } from "lucide-react"
 import { ThinkingGlyph } from "@/components/glyphs"
 import { FurnitureMorph } from "@/components/tool/furniture-morph"
 import { ModelDownloads, ModelViewer } from "@/components/tool/model-viewer"
+import { openLightbox, ZoomHit } from "@/components/ui/lightbox"
 import { sourceKey, thumbSourceKey, viewKey } from "@/lib/blob-store"
 import { SHAPE_LABEL } from "@/lib/furniture-wire"
 import { MESHY_ENGINE, type ModelTaskProgress } from "@/lib/model-engine"
@@ -202,8 +203,15 @@ export function ModelStage({
 function SourceThumb({ keys, label }: { keys: string[]; label: string }) {
   const asset = useStoredBlobUrl(keys)
   return asset.url ? (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img src={asset.url} alt={label} title={label} className="model-stage-thumb" draggable={false} onError={asset.reportImageError} />
+    // Фото-исходник открывается в просмотре во весь экран — полным файлом, не миниатюрой.
+    <span className="card-media relative flex shrink-0 overflow-hidden rounded-[7px]" title={label}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={asset.url} alt={label} className="model-stage-thumb" draggable={false} onError={asset.reportImageError} />
+      <ZoomHit
+        onOpen={(origin) => openLightbox({ keys: [...keys].reverse(), preview: asset.url, alt: label, caption: label }, { origin })}
+        label={`Открыть фото «${label}» в полном размере`}
+      />
+    </span>
   ) : (
     <span className="model-stage-thumb flex items-center justify-center" title={label}>
       {asset.status === "loading" ? <ThinkingGlyph size={13} /> : null}

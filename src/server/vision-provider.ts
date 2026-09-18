@@ -71,11 +71,12 @@ const REQUEST_TIMEOUT_MS = 90_000
  * `reasoning_effort` и другие ручки не доходят (проверено на API Models и
  * LaoZhang). Поэтому им — бюджет с запасом, остальным — короче. Инвентарь с
  * секцией MATERIALS — до ~2600 символов, это ~700 токенов текста; Claude Sonnet 5
- * на пробе не уложился в 1100 (`finish_reason: length`), отсюда 1400.
+ * на пробе не уложился в 1100 (`finish_reason: length`), отсюда 1400; с секцией
+ * FIXTURES (состояние светильников) инвентарь вырос до ~2900 символов — 1800.
  */
 const REASONING_MODEL = /gemini-3|gpt-5|deepseek-v4|glm-5|thinking|reason/i
 const REASONING_OUTPUT_BUDGET = 4_000
-const PLAIN_OUTPUT_BUDGET = 1_400
+const PLAIN_OUTPUT_BUDGET = 1_800
 /**
  * Если лимит всё же ушёл на рассуждение и модель вернула `content: null` с
  * `finish_reason: "length"` — один повтор с удвоенным лимитом, не выше потолка.

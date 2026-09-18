@@ -1,0 +1,507 @@
+/* Dizzit AI — движение: наведение, нажатие, фокус и просмотр во весь экран.
+   Один файл на всё, что происходит «под курсором»: геометрия и состояния
+   компонентов — в surfaces.css, материал стекла — в liquid-glass.css.
+
+   Правила:
+   • двигаются только сами контролы и их иконки. На ToolShell, сцене
+     (.stage-frame) и предках фиксированных панелей transform и filter
+     запрещены — см. docs/TOOL_UI.md, «Liquid Glass»;
+   • подъём и приближение — только там, где есть настоящий курсор
+     (@media (hover: hover)); нажатие работает везде;
+   • блика, бегущего за курсором, нет (снят по обратной связи). У главной
+     кнопки блик проходит один раз при наведении и заливку не меняет;
+   • prefers-reduced-motion и настройка «Меньше движения» гасят всё разом —
+     последний блок файла. */
+
+:root {
+  --ease-pop: cubic-bezier(0.3, 1.45, 0.5, 1);
+  --dur-hover: 240ms;
+  --sheen: rgba(255, 255, 255, 0.95);
+  --lift-shadow: 0 10px 26px #00000038;
+  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--fg-1) 12%, transparent);
+}
+:root[data-theme="light"] {
+  --sheen: rgba(255, 255, 255, 0.24);
+  --lift-shadow: 0 10px 24px #00000018;
+}
+
+/* ============================================================
+   КНОПКИ
+   ============================================================ */
+
+/* Главная кнопка («Улучшить», «Собрать PDF»…): поднимается, тень глубже,
+   по ней один раз проходит блик, иконка вспыхивает искрой; под пальцем —
+   пружинит вниз. Заливка не меняется — только свет на ней. */
+.btn-primary {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  transition: transform 320ms var(--ease-pop), box-shadow 220ms var(--ease-std), opacity 180ms var(--ease-std);
+}
+.btn-primary::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(105deg, transparent 38%, var(--sheen) 50%, transparent 62%);
+  transform: translateX(-130%);
+}
+.btn-primary svg { transition: transform 360ms var(--ease-pop); }
+.btn-primary:active:not(:disabled) { transform: scale(0.965); transition-duration: 90ms; }
+
+@media (hover: hover) {
+  .btn-primary:hover:not(:disabled) { transform: translateY(-1.5px); }
+  .btn-primary:hover:not(:disabled)::after { transform: translateX(130%); transition: transform 760ms var(--ease-out); }
+  /* Спиннеры и «думающий» глиф крутятся сами — искра им не нужна. */
+  .btn-primary:hover:not(:disabled) svg:not(.animate-spin):not([class*="glyph"]) { animation: spark-twinkle 720ms var(--ease-out) both; }
+  .btn-primary:hover:active:not(:disabled) { transform: translateY(0) scale(0.965); }
+}
+@keyframes spark-twinkle {
+  0% { transform: none; }
+  38% { transform: scale(1.32) rotate(18deg); }
+  68% { transform: scale(0.94) rotate(-7deg); }
+  100% { transform: scale(1.1); }
+}
+
+/* Главная кнопка композера — самое частое действие: свечение по кромке вдобавок. */
+@media (hover: hover) {
+  .composer-submit .btn-primary:hover:not(:disabled) {
+    box-shadow: 0 12px 30px #00000045, 0 0 0 4px color-mix(in srgb, var(--fg-1) 9%, transparent), inset 0 1px 2px #ffffff;
+  }
+}
+/* Закрытая кнопка не «мёртвая»: наведение качает её, подсказка объясняет причину. */
+@media (hover: hover) {
+  .composer-submit:hover .btn-primary:disabled { animation: nudge-no 360ms var(--ease-std); }
+}
+@keyframes nudge-no {
+  0%, 100% { transform: none; }
+  30% { transform: translateX(-3px); }
+  65% { transform: translateX(3px); }
+}
+
+/* Стеклянные кнопки: подъём, тень, иконка чуть крупнее. */
+.btn-outline, .btn-secondary {
+  transition: transform 280ms var(--ease-pop), box-shadow 200ms var(--ease-std),
+    background-color var(--dur-fast) var(--ease-std), border-color var(--dur-fast) var(--ease-std),
+    color var(--dur-fast) var(--ease-std), opacity var(--dur-fast) var(--ease-std);
+}
+.btn-outline svg, .btn-secondary svg, .btn-ghost svg, .btn-icon svg { transition: transform 300ms var(--ease-pop); }
+.btn-outline:active:not(:disabled), .btn-secondary:active:not(:disabled) { transform: scale(0.97); transition-duration: 90ms; }
+@media (hover: hover) {
+  .btn-outline:hover:not(:disabled), .btn-secondary:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: inset 0 1px var(--line-strong), var(--lift-shadow);
+  }
+  .btn-outline:hover:active:not(:disabled), .btn-secondary:hover:active:not(:disabled) { transform: scale(0.97); }
+  .btn-outline:hover:not(:disabled) svg, .btn-secondary:hover:not(:disabled) svg { transform: scale(1.12); }
+}
+
+/* Тихие кнопки: двигается только иконка, под пальцем кнопка сжимается. */
+.btn-ghost, .btn-icon {
+  transition: color var(--dur-fast) var(--ease-std), background-color var(--dur-fast) var(--ease-std),
+    transform 240ms var(--ease-pop);
+}
+.btn-ghost:active:not(:disabled) { transform: scale(0.96); }
+.btn-icon:active:not(:disabled) { transform: scale(0.88); }
+@media (hover: hover) {
+  .btn-ghost:hover:not(:disabled) svg { transform: scale(1.14); }
+  .btn-icon:hover:not(:disabled) svg { transform: scale(1.16); }
+  /* Шестерёнка настроек проворачивается; открытая панель держит её повёрнутой. */
+  .btn-icon.composer-settings:hover:not(:disabled) svg { transform: rotate(50deg) scale(1.1); }
+  .btn-danger:hover:not(:disabled) svg { transform: scale(1.14) rotate(-8deg); }
+}
+.btn-icon.composer-settings[aria-expanded="true"]:not(:disabled) svg,
+.btn-icon.composer-settings[aria-expanded="true"]:hover:not(:disabled) svg { transform: rotate(90deg); }
+
+/* Действия на карточке результата: выезжают по очереди, под курсором растут. */
+.card-action { transition: transform 260ms var(--ease-pop), background-color var(--dur-fast) var(--ease-std), color var(--dur-fast) var(--ease-std); }
+.card-action:active { transform: scale(0.9); }
+.card-actions > * { transform: translateY(-4px); transition: transform 320ms var(--ease-pop), background-color var(--dur-fast) var(--ease-std); }
+.group:hover .card-actions > *, .group:focus-within .card-actions > *, .card-actions.opacity-100 > * { transform: none; }
+.card-actions > *:nth-child(2) { transition-delay: 35ms; }
+.card-actions > *:nth-child(3) { transition-delay: 70ms; }
+.card-actions > *:nth-child(4) { transition-delay: 105ms; }
+@media (hover: hover) {
+  .group:hover .card-actions > .card-action:hover { transform: scale(1.12); transition-delay: 0ms; }
+}
+.group:hover .card-actions > .card-action:active { transform: scale(0.9); transition-delay: 0ms; }
+
+/* ============================================================
+   НАВИГАЦИЯ, СЕГМЕНТЫ, ТУМБЛЕРЫ, ЧИПЫ
+   ============================================================ */
+.nav-item svg:not(.chevron) { transition: transform 300ms var(--ease-pop); }
+.nav-item:active { transform: scale(0.985); }
+@media (hover: hover) {
+  .nav-item:hover svg:not(.chevron) { transform: translateX(2px) scale(1.08); }
+  .nav-item.is-active:hover svg:not(.chevron) { transform: scale(1.08); }
+}
+
+.seg-item svg, .seg-item .aspect-glyph, .seg-item .album-theme-glyph { transition: transform 300ms var(--ease-pop), opacity var(--dur-fast) var(--ease-std), border-color var(--dur-fast) var(--ease-std); }
+.seg-item:active { transform: scale(0.96); }
+@media (hover: hover) {
+  .seg-item:not(.is-active):hover svg { transform: scale(1.18) rotate(-6deg); }
+  .seg-item:not(.is-active):hover .aspect-glyph, .seg-item:not(.is-active):hover .album-theme-glyph { transform: scale(1.1); }
+}
+
+/* Тумблер: ручка тянется к нажатию, как у iOS, и пружинит на место. */
+.switch-knob { transition: transform 300ms var(--ease-pop), width 200ms var(--ease-std), background-color var(--dur-fast) var(--ease-std); }
+.switch:active:not(:disabled) .switch-knob { width: 21px; }
+.switch.is-on:active:not(:disabled) .switch-knob { transform: translate(11px, -50%); }
+@media (hover: hover) {
+  .switch:hover:not(:disabled):not(.is-on) .switch-knob { transform: translate(2px, -50%); background: var(--fg-2); }
+  .switch.is-on:hover:not(:disabled) .switch-knob { transform: translate(14px, -50%); }
+}
+
+.rg-tag { transition: transform 260ms var(--ease-pop), border-color var(--dur-fast) var(--ease-std); }
+@media (hover: hover) { .rg-tag:hover { transform: translateY(-1px); } }
+
+/* Вкладки папок выдвигаются из-за панели навстречу курсору. */
+.folder-tab { transition: transform 280ms var(--ease-pop), color var(--dur-fast) var(--ease-std), background-color var(--dur-fast) var(--ease-std), border-color var(--dur-fast) var(--ease-std); }
+@media (hover: hover) {
+  .folder-rail:not(.is-horizontal) .folder-tab:not(.is-active):hover { transform: translateX(-3px); }
+  .folder-rail.is-horizontal .folder-tab:not(.is-active):hover { transform: translateY(-2px); }
+}
+
+/* Стили и модели в списках: строка подаётся вправо, свотчи расходятся веером. */
+.style-row, .style-tile, .model-ai, .tray-move-item { transition: transform 280ms var(--ease-pop), background-color var(--dur-fast) var(--ease-std), border-color var(--dur-fast) var(--ease-std), color var(--dur-fast) var(--ease-std); }
+.style-row .swatch, .style-tile .swatch { transition: transform 320ms var(--ease-pop), opacity var(--dur-fast) var(--ease-std), filter var(--dur-fast) var(--ease-std); }
+.style-row:active, .style-tile:active, .model-ai:active:not(:disabled) { transform: scale(0.985); }
+@media (hover: hover) {
+  .style-row:not(.is-active):hover, .model-ai:not(.is-active):hover:not(:disabled), .tray-move-item:hover { transform: translateX(3px); }
+  .style-row:hover .swatch:nth-child(1) { transform: translateX(-3px) rotate(-6deg); }
+  .style-row:hover .swatch:nth-child(2) { transform: translateY(-2px); }
+  .style-row:hover .swatch:nth-child(3) { transform: translateY(-2px); }
+  .style-row:hover .swatch:nth-child(4) { transform: translateX(3px) rotate(6deg); }
+  .style-tile:hover .swatch { transform: scale(1.08) rotate(-3deg); }
+}
+
+/* ============================================================
+   ПОЛЯ ВВОДА
+   ============================================================ */
+
+/* Композер: под курсором кромка стекла светлеет, с кареткой внутри —
+   собирается в кольцо. */
+.tool-composer { transition: box-shadow 320ms var(--ease-std); }
+@media (hover: hover) {
+  .tool-composer:hover { box-shadow: var(--glass-shadow), 0 0 0 1px color-mix(in srgb, var(--fg-1) 8%, transparent); }
+}
+.tool-composer:focus-within {
+  box-shadow: var(--glass-shadow), 0 0 0 1px color-mix(in srgb, var(--fg-1) 22%, transparent), 0 26px 60px #00000030;
+}
+.composer-input::placeholder { transition: opacity var(--dur-base) var(--ease-std); }
+.composer-input:focus::placeholder { opacity: 0.45; }
+.composer-input:focus, .composer-input:focus-visible { box-shadow: none; }
+
+/* ============================================================
+   ПЛИТКИ И КАРТИНКИ
+   ============================================================ */
+
+/* Любая картинка в рамке (.card-media) под курсором медленно приближается. */
+.card-media img, .card-media .tile-repeat { transition: transform 700ms var(--ease-out), filter 300ms var(--ease-std); }
+@media (hover: hover) {
+  .card-media:hover img { transform: scale(1.04); }
+}
+.card.card-media { transition: box-shadow 320ms var(--ease-std), border-color var(--dur-fast) var(--ease-std), background-color var(--dur-fast) var(--ease-std); }
+@media (hover: hover) {
+  .card.card-media:hover { box-shadow: inset 0 1px var(--line), 0 18px 40px #00000030; }
+}
+.view-set-tile { transition: transform 300ms var(--ease-pop), box-shadow 300ms var(--ease-std), border-color var(--dur-fast) var(--ease-std); }
+@media (hover: hover) {
+  .view-set-tile:hover { transform: translateY(-2px); box-shadow: 0 12px 28px #00000035; }
+}
+
+/* Плитки правой панели: приподнимаются, крестик и уголок вплывают. */
+.tray-thumb { transition: transform 280ms var(--ease-pop), border-color var(--dur-fast) var(--ease-std), box-shadow 240ms var(--ease-std); }
+.tray-thumb:active { transform: scale(0.975); }
+.tray-thumb-remove, .model-tile-remove, .model-slot-remove { transition: opacity var(--dur-fast) var(--ease-std), transform 260ms var(--ease-pop), background-color var(--dur-fast) var(--ease-std), color var(--dur-fast) var(--ease-std); }
+@media (hover: hover) {
+  .tray-thumb:hover { transform: translateY(-2px); box-shadow: 0 10px 22px #00000035; }
+  .tray-thumb.is-active:hover { box-shadow: 0 0 0 1px var(--fg-3), 0 10px 22px #00000035; }
+  .tray-thumb:hover:active { transform: scale(0.975); }
+  .tray-thumb-remove { transform: scale(0.7); }
+  .tray-thumb:hover .tray-thumb-remove, .tray-thumb:focus-within .tray-thumb-remove { transform: none; }
+  .tray-thumb-remove:hover, .model-tile-remove:hover, .model-slot-remove:hover { transform: scale(1.14) rotate(90deg) !important; }
+}
+
+/* Выбор состава альбома: вместо общего затемнения — приближение и подъём. */
+.album-pick-tile { transition: opacity 200ms var(--ease-out), border-color 160ms var(--ease-out), box-shadow 200ms var(--ease-out), transform 280ms var(--ease-pop); }
+.album-pick-tile img { transition: transform 600ms var(--ease-out); }
+.album-pick-tile:active { transform: scale(0.97); }
+.album-pick-badge { transition: transform 300ms var(--ease-pop), background-color var(--dur-fast) var(--ease-std), color var(--dur-fast) var(--ease-std); }
+.album-pick-tile.is-selected .album-pick-badge { animation: badge-pop 360ms var(--ease-pop); }
+@keyframes badge-pop { from { transform: scale(0.4); } }
+@media (hover: hover) {
+  .album-pick-tile:hover { opacity: 0.92; transform: translateY(-2px); }
+  .album-pick-tile.is-selected:hover { opacity: 1; }
+  .album-pick-tile:hover img { transform: scale(1.05); }
+  .album-pick-tile:hover:active { transform: scale(0.97); }
+}
+
+/* «Добавить»: плюс проворачивается на четверть оборота. */
+.add-tile, .add-bar, .tray-add { transition: border-color var(--dur-fast) var(--ease-std), background-color var(--dur-fast) var(--ease-std), color var(--dur-fast) var(--ease-std), transform 280ms var(--ease-pop); }
+.add-tile-plus, .tray-add svg { transition: transform 420ms var(--ease-pop); }
+.add-tile:active, .add-bar:active, .tray-add:active { transform: scale(0.985); }
+@media (hover: hover) {
+  .add-tile:hover .add-tile-plus, .add-bar:hover .add-tile-plus, .tray-add:hover svg { transform: rotate(90deg) scale(1.1); }
+}
+
+/* Слоты фото и плитки библиотеки «Фото → 3D». */
+.model-slot-pick { transition: border-color var(--dur-fast) var(--ease-std), color var(--dur-fast) var(--ease-std), transform 280ms var(--ease-pop); }
+.model-slot-pick img { transition: transform 600ms var(--ease-out); }
+.model-slot-pick svg { transition: transform 320ms var(--ease-pop); }
+@media (hover: hover) {
+  .model-slot-pick:hover:not(:disabled) img { transform: scale(1.05); }
+  .model-slot-pick:hover:not(:disabled) svg { transform: translateY(-2px) scale(1.1); }
+}
+.model-stage-swatches button { transition: transform 260ms var(--ease-pop), box-shadow var(--dur-fast) var(--ease-std); }
+@media (hover: hover) { .model-stage-swatches button:hover { transform: scale(1.18); } }
+.model-downloads button { transition: background-color var(--dur-fast) var(--ease-std), transform 240ms var(--ease-pop); }
+.model-downloads button:active:not(:disabled) { transform: scale(0.95); }
+
+/* ============================================================
+   СЦЕНА И ТОЧЕЧНАЯ ПРАВКА
+   На самой картинке и её боксе (.stage-frame) движения нет — по нему
+   считаются координаты областей. Двигаются только кнопки поверх.
+   ============================================================ */
+.stage-nav { transition: opacity var(--dur-fast) var(--ease-std), background-color var(--dur-fast) var(--ease-std), transform 280ms var(--ease-pop); }
+.stage-nav svg { transition: transform 300ms var(--ease-pop); }
+.stage-nav:active { transform: translateY(-50%) scale(0.92); }
+@media (hover: hover) {
+  .stage-nav:hover { transform: translateY(-50%) scale(1.1); }
+  .stage-nav.left-3:hover svg { transform: translateX(-2px); }
+  .stage-nav.right-3:hover svg { transform: translateX(2px); }
+}
+
+.rg-tool { transition: color var(--dur-fast) var(--ease-std), background-color 220ms var(--ease-std), transform 240ms var(--ease-pop); }
+.rg-tool svg, .rg-tool > span { transition: transform 300ms var(--ease-pop); }
+.rg-tool:active:not(:disabled) { transform: scale(0.88); }
+@media (hover: hover) {
+  .rg-tool:hover:not(:disabled):not(.is-active) { background: rgba(255, 255, 255, 0.1); }
+  .rg-tool:hover:not(:disabled) svg, .rg-tool:hover:not(:disabled) > span { transform: scale(1.16); }
+}
+.rg-badge { transition: transform 260ms var(--ease-pop), box-shadow var(--dur-fast) var(--ease-std); animation: rg-badge-in 320ms var(--ease-pop) both; }
+@keyframes rg-badge-in { from { opacity: 0; transform: translate(-50%, -50%) scale(0.4); } }
+@media (hover: hover) {
+  .rg-badge:hover { transform: translate(-50%, -50%) scale(1.18); box-shadow: 0 4px 14px -2px rgba(0, 0, 0, 0.8); }
+}
+.rg-done, .rg-link { transition: color var(--dur-fast) var(--ease-std), background-color var(--dur-fast) var(--ease-std), transform 240ms var(--ease-pop); }
+.rg-done:active, .rg-link:active { transform: scale(0.95); }
+@media (hover: hover) { .rg-link:hover svg { transform: rotate(90deg); } }
+.rg-link svg { transition: transform 300ms var(--ease-pop); }
+
+/* ============================================================
+   ПРОСМОТР ВО ВЕСЬ ЭКРАН (components/ui/lightbox.tsx)
+   ============================================================ */
+
+/* Невидимая кнопка поверх картинки со свободным кликом. */
+.zoom-hit {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  cursor: zoom-in;
+}
+.zoom-hit:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* Кнопка-уголок на плитке, у которой клик уже занят. */
+.zoom-btn {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(16, 16, 18, 0.7);
+  color: rgba(255, 255, 255, 0.92);
+  cursor: zoom-in;
+  opacity: 0;
+  transform: scale(0.7);
+  transition: opacity var(--dur-fast) var(--ease-std), transform 260ms var(--ease-pop), background-color var(--dur-fast) var(--ease-std);
+}
+.zoom-host:hover .zoom-btn, .zoom-host:focus-within .zoom-btn, .zoom-btn:focus-visible { opacity: 1; transform: none; }
+.zoom-btn:hover { background: rgba(16, 16, 18, 0.92); transform: scale(1.14) !important; }
+.zoom-btn:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+@media (hover: none) { .zoom-btn { opacity: 1; transform: none; } }
+.model-slot-zoom { top: 4px; right: 30px; bottom: auto; }
+.album-pick-zoom { right: 6px; bottom: 6px; }
+/* На сцене — круглая стеклянная кнопка, как стрелки; выше холста областей и вуали обработки. */
+.stage-zoom {
+  left: 12px;
+  right: auto;
+  bottom: 12px;
+  z-index: 31;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border-color: transparent;
+  background: linear-gradient(145deg, #ffffff35, #ffffff12 55%, #ffffff20), #30303055;
+  box-shadow: inset 0 1px 2px #ffffff65, inset 0 -1px #ffffff18, 0 8px 22px #00000030;
+  -webkit-backdrop-filter: grayscale(1) blur(22px) brightness(0.85);
+  backdrop-filter: grayscale(1) blur(22px) brightness(0.85);
+}
+.stage-zoom svg { width: 15px; height: 15px; }
+.stage-zoom:hover { background: #4a4a4ade; }
+
+/* Слой просмотра. */
+.lb {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  color: #fff;
+  animation: fade-in 240ms var(--ease-std) both;
+}
+.lb[data-state="closed"] { animation: fade-out 200ms var(--ease-std) both; pointer-events: none; }
+.lb-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 8, 10, 0.9);
+  -webkit-backdrop-filter: blur(26px) saturate(0.8);
+  backdrop-filter: blur(26px) saturate(0.8);
+}
+.lb-bar {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  height: 64px;
+  padding: 0 16px 0 22px;
+  pointer-events: none;
+  animation: lb-bar-in 380ms var(--ease-out) both;
+}
+@keyframes lb-bar-in { from { opacity: 0; transform: translateY(-8px); } }
+.lb-bar > * { pointer-events: auto; }
+.lb-caption { display: flex; min-width: 0; align-items: baseline; gap: 10px; }
+.lb-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; color: rgba(255, 255, 255, 0.92); }
+.lb-meta, .lb-counter { flex-shrink: 0; font-size: 12px; font-variant-numeric: tabular-nums; color: rgba(255, 255, 255, 0.5); }
+.lb-counter { margin-right: 6px; }
+.lb-actions { display: flex; flex-shrink: 0; align-items: center; gap: 6px; }
+.lb-action, .lb-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.88);
+  background: linear-gradient(145deg, #ffffff26, #ffffff0d 55%, #ffffff18), #2c2c2e99;
+  box-shadow: inset 0 1px 1px #ffffff40, 0 6px 18px #00000040;
+  cursor: pointer;
+  transition: transform 260ms var(--ease-pop), background-color var(--dur-fast) var(--ease-std), color var(--dur-fast) var(--ease-std);
+}
+.lb-action { width: 38px; height: 38px; }
+.lb-action svg, .lb-nav svg { transition: transform 300ms var(--ease-pop); }
+.lb-action:active, .lb-nav:active { transform: scale(0.9); }
+.lb-action:focus-visible, .lb-nav:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+@media (hover: hover) {
+  .lb-action:hover { color: #fff; transform: scale(1.08); background-color: #4a4a4acc; }
+  .lb-action:hover svg { transform: scale(1.12); }
+}
+.lb-nav {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  width: 46px;
+  height: 46px;
+  transform: translateY(-50%);
+}
+.lb-nav.is-prev { left: 16px; }
+.lb-nav.is-next { right: 16px; }
+.lb-nav:active { transform: translateY(-50%) scale(0.9); }
+@media (hover: hover) {
+  .lb-nav:hover { transform: translateY(-50%) scale(1.1); background-color: #4a4a4acc; }
+  .lb-nav.is-prev:hover svg { transform: translateX(-2px); }
+  .lb-nav.is-next:hover svg { transform: translateX(2px); }
+}
+.lb-viewport {
+  position: absolute;
+  inset: 64px 0 28px;
+  z-index: 1;
+  display: flex;
+  overflow: hidden;
+  padding: 0 78px;
+}
+.lb-viewport.is-zoomed { overflow: auto; padding: 0; cursor: grab; scrollbar-width: none; }
+.lb-viewport.is-zoomed::-webkit-scrollbar { display: none; }
+.lb-viewport.is-zoomed:active { cursor: grabbing; }
+.lb-image {
+  display: block;
+  margin: auto;
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 10px;
+  box-shadow: 0 30px 80px #00000080;
+  user-select: none;
+  -webkit-user-drag: none;
+  animation: lb-image-in 360ms var(--ease-out) both;
+  transition: filter 320ms var(--ease-std);
+}
+/* Кадр вырастает из миниатюры сам (Web Animations) — общий вход ему не нужен. */
+.lb-image[data-grow="true"] { animation: none; }
+.lb-image[data-direction="next"] { animation-name: lb-image-next; }
+.lb-image[data-direction="prev"] { animation-name: lb-image-prev; }
+.lb-image.is-preview { filter: blur(6px); }
+.lb-image.is-zoomable { cursor: zoom-in; }
+.lb-viewport.is-zoomed .lb-image { cursor: inherit; border-radius: 0; animation: none; }
+@keyframes lb-image-in { from { opacity: 0; transform: scale(0.94); } }
+@keyframes lb-image-next { from { opacity: 0; transform: translateX(36px) scale(0.98); } }
+@keyframes lb-image-prev { from { opacity: 0; transform: translateX(-36px) scale(0.98); } }
+.lb[data-state="closed"] .lb-image { animation: lb-image-out 200ms var(--ease-std) both; }
+@keyframes lb-image-out { to { opacity: 0; transform: scale(0.96); } }
+.lb-status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.8);
+  pointer-events: none;
+}
+.lb-status > button { pointer-events: auto; }
+@media (max-width: 767px) {
+  .lb-viewport { padding: 0 10px; inset: 60px 0 16px; }
+  .lb-nav { top: auto; bottom: 18px; transform: none; }
+  .lb-nav:active { transform: scale(0.9); }
+  .lb-bar { padding: 0 10px 0 14px; }
+}
+
+/* ============================================================
+   МЕНЬШЕ ДВИЖЕНИЯ
+   Системная настройка гасит подъёмы, приближения и искры; состояния
+   (цвет, рамка, появление кнопок) остаются. Настройка приложения
+   data-motion="reduce" схлопывает длительности в surfaces.css.
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  .btn-primary, .btn-outline, .btn-secondary, .btn-ghost, .btn-icon, .nav-item, .seg-item, .tray-thumb,
+  .view-set-tile, .album-pick-tile, .folder-tab, .style-row, .style-tile, .model-ai, .tray-move-item,
+  .card-action, .card-actions > *, .rg-tool, .rg-tag, .add-tile, .add-bar, .tray-add, .upload-slot,
+  .lb-action, .zoom-btn { transform: none !important; }
+  .stage-nav { transform: translateY(-50%) !important; }
+  .rg-badge { transform: translate(-50%, -50%) !important; }
+  .btn-primary::after { display: none; }
+  .btn-primary svg, .btn-outline svg, .btn-secondary svg, .btn-ghost svg, .btn-icon svg, .nav-item svg:not(.chevron),
+  .seg-item svg, .card-media img, .album-pick-tile img, .model-slot-pick img, .swatch, .add-tile-plus, .tray-add svg,
+  .upload-slot svg, .stage-nav svg, .rg-tool svg, .lb-action svg, .lb-nav svg { transform: none !important; animation: none !important; }
+  .composer-submit:hover .btn-primary:disabled, .rg-popover, .rg-badge, .album-pick-tile.is-selected .album-pick-badge,
+  .lb, .lb-bar, .lb-image { animation: none !important; }
+  .composer-input, .rg-textarea { transition: none; }
+}
+@media (prefers-reduced-motion: reduce) and (min-width: 768px) {
+  .lb-nav { transform: translateY(-50%) !important; }
+}

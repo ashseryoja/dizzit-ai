@@ -1,6 +1,6 @@
 "use client"
 
-import type { ReactNode } from "react"
+import { useLayoutEffect, useRef, type CSSProperties, type ReactNode } from "react"
 import { usePathname } from "next/navigation"
 import { useActiveProject } from "@/stores/project-store"
 
@@ -43,7 +43,7 @@ export function ToolShell({
   intake,
   dropLabel,
   composerOpen,
-  composerSpace = "pb-60",
+  composerSpace = "7rem",
   trayOpen = false,
   trayMargin = "lg:mr-[296px]",
   layers,
@@ -55,7 +55,12 @@ export function ToolShell({
   dropLabel?: string
   /** Внизу есть композер — контент получает отступ, чтобы не уходить под него. */
   composerOpen: boolean
-  /** Класс нижнего отступа под композер; выше обычного, когда над ним постоянная секция (`dock`). */
+  /**
+   * Минимальный нижний отступ под композер (CSS-длина). Настоящий резерв —
+   * измеренная высота композера (`ComposerDock` пишет её в `--composer-reserve`):
+   * теги областей, замечание или панель `dock` делают композер выше, и контент
+   * отодвигается сам, а не уходит под него.
+   */
   composerSpace?: string
   /** Справа открыта панель-галерея пачки — контент получает отступ под неё. */
   trayOpen?: boolean
@@ -85,11 +90,11 @@ export function ToolShell({
       {...intake?.dropProps}
       className={cn(
         "page-shell transition-[margin] duration-300",
-        composerOpen && composerSpace,
+        composerOpen && "has-composer",
         // Справа — место под панель-галерею, зеркально отступу под сайдбар.
         trayOpen && trayMargin
       )}
-      style={{ transitionTimingFunction: "var(--ease-out)" }}
+      style={{ transitionTimingFunction: "var(--ease-out)", "--composer-floor": composerSpace } as CSSProperties}
     >
       {intake ? (
         <input
@@ -151,9 +156,35 @@ export function ComposerDock({
   trayRight?: string
   children: ReactNode
 }) {
-  if (presence && !presence.present) return null
+  const present = !presence || presence.present
+  const ref = useRef<HTMLDivElement>(null)
+
+  // Композер бывает разной высоты (теги областей, замечание, панель над ним).
+  // Сколько места он занимает от низа окна — в --composer-reserve: ToolShell
+  // держит под него отступ, и сцена не уходит под композер.
+  useLayoutEffect(() => {
+    const node = ref.current
+    if (!present || !node || typeof ResizeObserver === "undefined") return
+    const root = document.documentElement
+    const sync = () => {
+      const bottom = window.innerHeight - node.getBoundingClientRect().bottom
+      root.style.setProperty("--composer-reserve", `${Math.round(node.offsetHeight + Math.max(0, bottom) + 16)}px`)
+    }
+    sync()
+    const observer = new ResizeObserver(sync)
+    observer.observe(node)
+    window.addEventListener("resize", sync)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener("resize", sync)
+      root.style.removeProperty("--composer-reserve")
+    }
+  }, [present])
+
+  if (!present) return null
   return (
     <div
+      ref={ref}
       data-state={presence?.state}
       className={cn(
         "composer-position presence-rise pointer-events-none fixed inset-x-3 bottom-3 z-30 flex justify-center lg:left-[312px] lg:bottom-5",

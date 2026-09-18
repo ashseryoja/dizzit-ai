@@ -4,6 +4,7 @@ import { Fragment, useEffect, useRef, useState, type DragEvent, type ReactNode }
 import { Check, FolderInput, Plus, SlidersHorizontal, X } from "lucide-react"
 
 import type { AttachedRender } from "@/components/tool/tool-composer"
+import { openLightbox, ZoomButton } from "@/components/ui/lightbox"
 import { cn, plural } from "@/lib/utils"
 
 /** MIME переноса плиток пачки: список id записей (JSON). Принимает FolderRail. */
@@ -132,6 +133,7 @@ export function RenderTray({
                 picking={picking}
                 onSelect={() => onSelect(index)}
                 onRemove={() => onRemove(index)}
+                onZoom={(origin) => openTrayViewer(attachments, index, origin)}
                 dragIds={canMove ? dragIdsFor(attachment, attachments, picked, picking) : undefined}
               />
               {!picking ? renderVersion?.(attachment, index) : null}
@@ -221,6 +223,7 @@ export function RenderStrip({
                   picking={picking}
                   onSelect={() => onSelect(index)}
                   onRemove={() => onRemove(index)}
+                  onZoom={(origin) => openTrayViewer(attachments, index, origin)}
                   dragIds={canMove ? dragIdsFor(attachment, attachments, picked, picking) : undefined}
                 />
               </div>
@@ -261,6 +264,14 @@ export function RenderStrip({
   )
 }
 
+/** Клик по плитке занят выбором рендера — пачку в полном размере открывает уголок плитки. */
+function openTrayViewer(attachments: AttachedRender[], index: number, origin: HTMLElement) {
+  openLightbox(
+    attachments.map((item) => ({ src: item.previewUrl, alt: item.file.name, caption: item.file.name })),
+    { index, origin }
+  )
+}
+
 function TrayThumb({
   attachment,
   index,
@@ -270,6 +281,7 @@ function TrayThumb({
   picking,
   onSelect,
   onRemove,
+  onZoom,
   dragIds,
 }: {
   attachment: AttachedRender
@@ -280,6 +292,8 @@ function TrayThumb({
   picking: boolean
   onSelect: () => void
   onRemove: () => void
+  /** Открыть рендер в просмотре во весь экран (кнопка-уголок плитки). */
+  onZoom: (origin: HTMLElement) => void
   /** Id записей, которые уезжают при перетаскивании плитки на вкладку папки. */
   dragIds?: string[]
 }) {
@@ -305,7 +319,7 @@ function TrayThumb({
         }
       }}
       className={cn(
-        "tray-thumb group/thumb aspect-[4/3]",
+        "tray-thumb zoom-host group/thumb aspect-[4/3]",
         picked && "is-active",
         focused && "is-focus",
         picking && "is-picking"
@@ -323,6 +337,7 @@ function TrayThumb({
       <span className="tray-thumb-index" aria-hidden>
         {label ?? index + 1}
       </span>
+      <ZoomButton onOpen={onZoom} label={`Открыть «${attachment.file.name}» в полном размере`} />
       {picking ? (
         /* Кружок-чекбокс в режиме выбора — паттерн «Фото» iOS. */
         <span className={cn("tray-thumb-check", picked && "is-on")} aria-hidden>

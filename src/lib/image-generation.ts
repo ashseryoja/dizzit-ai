@@ -31,6 +31,8 @@ export interface GeneratedImage {
   height: number
   /** Чем посчитано: id модели провайдера (`gpt-image-2`) или `preview`. */
   engine: string
+  /** Сервер уже положил полный файл в хранилище записи (`storeKey`) — загружать его обратно не нужно. */
+  stored?: boolean
 }
 
 export interface ImageProviderStatus {
@@ -57,6 +59,12 @@ export interface ImageRequest {
   resolution?: "1K" | "2K" | "4K"
   /** Серверный Lanczos3 после генерации: точная длина большей стороны. */
   finalLongSide?: number
+  /**
+   * Ключ результата записи (`${id}:result`): сервер сам сохранит полный файл в
+   * хранилище. 4K-результат (5–10 МБ) не пролезает обратно через `/api/assets`
+   * (тело запроса на Vercel ≤ 4,5 МБ) — клиентская загрузка ужала бы его.
+   */
+  storeKey?: string
   signal?: AbortSignal
 }
 
@@ -76,7 +84,7 @@ const STATUS_TTL_MS = 60_000
 /** Клиентский таймаут: сервер держит задачу до 4 минут, плюс запас на передачу. */
 const REQUEST_TIMEOUT_MS = 280_000
 /**
- * Длинная сторона референса. Модель отдаёт до 2K, больше ей не нужно, а канал
+ * Длинная сторона референса. Модели хватает 2K на входе (4K она дорисовывает сама), а канал
  * экономит: 30-мегабайтный рендер уезжает мегабайтом-двумя, что укладывается
  * в лимит тела запроса на Vercel.
  */
@@ -223,6 +231,7 @@ export async function requestImage({
   provider,
   resolution,
   finalLongSide,
+  storeKey,
   signal,
 }: ImageRequest): Promise<GeneratedImage> {
   const form = new FormData()
@@ -232,6 +241,7 @@ export async function requestImage({
   if (provider) form.set("provider", provider)
   if (resolution) form.set("resolution", resolution)
   if (finalLongSide) form.set("final_long_side", String(Math.round(finalLongSide)))
+  if (storeKey) form.set("store_key", storeKey)
   references.forEach((blob, index) => {
     const extension = blob.type === "image/png" ? "png" : blob.type === "image/webp" ? "webp" : "jpg"
     form.append("image", blob, `${index === 0 ? "source" : `reference_${index}`}.${extension}`)
@@ -270,7 +280,7 @@ export async function requestImage({
   const blob = await response.blob()
   const { width, height } = await readBlobSize(blob)
   const engine = response.headers.get("X-Image-Model") || "gpt-image-2"
-  return { blob, width, height, engine }
+  return { blob, width, height, engine, stored: response.headers.get("X-Image-Stored") === "1" }
 }
 
 /** Хвост подписи карточки для результата-предпросмотра. */

@@ -1,6 +1,7 @@
 @import "../styles/ds/colors_and_type.css";
 @import "../styles/ds/surfaces.css";
 @import "../styles/ds/liquid-glass.css";
+@import "../styles/ds/motion.css";
 
 @tailwind base;
 @tailwind components;

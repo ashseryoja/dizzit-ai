@@ -12,6 +12,7 @@ import {
   type LucideIcon,
 } from "lucide-react"
 
+import { openLightbox, ZoomHit } from "@/components/ui/lightbox"
 import { MAX_BATCH, sourceQuality } from "@/lib/enhance-engine"
 import type { AttachedRender } from "@/lib/use-attachments"
 import { usePresence } from "@/lib/use-presence"
@@ -161,6 +162,7 @@ export function ToolComposer<T extends string>({
   }
   const containerRef = useRef<HTMLDivElement>(null)
   const settings = usePresence(settingsOpen)
+
   // Новый браузер: проекты ещё едут с сервера, активного нет. Запуск ждёт их —
   // иначе записи ушли бы в фантомный «Проект N» (см. ensureActiveProject).
   const projectsPending = useProjectStore(
@@ -222,6 +224,13 @@ export function ToolComposer<T extends string>({
 
   const OptionsIcon = labels.optionsIcon
 
+  /* Приложенные файлы в полном размере: пачка листается стрелками. */
+  const openAttachments = (index: number, origin: HTMLElement) =>
+    openLightbox(
+      attachments.map((item) => ({ src: item.previewUrl, alt: item.file.name, caption: item.file.name })),
+      { index, origin }
+    )
+
   return (
     <div ref={containerRef} className="composer-stack pointer-events-auto relative w-full">
       {/* Панель настроек — над композером, той же ширины. */}
@@ -260,7 +269,7 @@ export function ToolComposer<T extends string>({
               <button
                 type="button"
                 onClick={onPickFiles}
-                className="flex h-44 w-full flex-col items-center justify-center gap-2 transition-colors"
+                className="upload-slot flex h-44 w-full flex-col items-center justify-center gap-2"
                 style={{
                   borderRadius: "var(--r-md)",
                   border: "1px dashed var(--line-strong)",
@@ -282,7 +291,7 @@ export function ToolComposer<T extends string>({
                 {attachments.map((attachment, index) => (
                   <div
                     key={attachment.previewUrl}
-                    className="group/slot relative aspect-[4/3] overflow-hidden"
+                    className="group/slot card-media relative aspect-[4/3] overflow-hidden"
                     style={{ borderRadius: "var(--r-md)", border: "1px solid var(--line-strong)" }}
                   >
                     {/* Превью — object URL локального файла, next/image ни к чему. */}
@@ -293,8 +302,9 @@ export function ToolComposer<T extends string>({
                       className="h-full w-full object-cover"
                       draggable={false}
                     />
+                    <ZoomHit onOpen={(origin) => openAttachments(index, origin)} label={`Открыть «${attachment.file.name}» в полном размере`} />
                     <span
-                      className="absolute inset-x-1 bottom-1 truncate rounded-[6px] px-1.5 py-0.5 text-[10.5px]"
+                      className="pointer-events-none absolute inset-x-1 bottom-1 truncate rounded-[6px] px-1.5 py-0.5 text-[10.5px]"
                       style={{ background: "rgba(16,16,18,0.7)", color: "rgba(255,255,255,0.85)" }}
                     >
                       {attachment.width}×{attachment.height}
@@ -315,7 +325,7 @@ export function ToolComposer<T extends string>({
                   <button
                     type="button"
                     onClick={onPickFiles}
-                    className="flex aspect-[4/3] flex-col items-center justify-center gap-1.5"
+                    className="upload-slot flex aspect-[4/3] flex-col items-center justify-center gap-1.5"
                     style={{
                       borderRadius: "var(--r-md)",
                       border: "1px dashed var(--line-strong)",
@@ -421,14 +431,12 @@ export function ToolComposer<T extends string>({
             className="composer-selection flex h-10 shrink-0 items-center gap-2 rounded-[var(--r-sm)] pl-1.5 pr-2"
             style={{ background: "var(--bg-raised)", border: "1px solid var(--line-strong)" }}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={attachments[0].previewUrl}
-              alt=""
-              aria-hidden
-              className="h-7 w-7 rounded-[6px] object-cover"
-              draggable={false}
-            />
+            {/* Миниатюра чипа — тоже вход в просмотр приложенных файлов. */}
+            <span className="card-media relative h-7 w-7 shrink-0 overflow-hidden rounded-[6px]">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={attachments[0].previewUrl} alt="" aria-hidden className="h-full w-full object-cover" draggable={false} />
+              <ZoomHit onOpen={(origin) => openAttachments(0, origin)} label="Открыть приложенные файлы в полном размере" />
+            </span>
             <span className="hidden max-w-[140px] truncate text-[12px] sm:block" style={{ color: "var(--fg-2)" }}>
               {attachments.length === 1
                 ? attachments[0].file.name

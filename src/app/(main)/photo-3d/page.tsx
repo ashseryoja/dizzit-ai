@@ -274,7 +274,7 @@ export default function PhotoTo3DPage() {
       intake={intake}
       dropLabel="Отпустите, чтобы приложить фото"
       composerOpen
-      composerSpace={dockOpen ? "pb-[22rem]" : "pb-44"}
+      composerSpace={dockOpen ? "22rem" : "11rem"}
       trayOpen={visible.length > 0}
       layers={
         <>
