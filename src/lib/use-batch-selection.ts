@@ -51,7 +51,7 @@ export interface BatchSelection {
   workingSet: AttachedRender[]
   /** Пакетный режим с непустым набором: вместо сцены — грид. */
   showBatchGrid: boolean
-  /** Подпись для композера: «выбрано 5 рендеров»; null — пачка пуста, показывать нечего. */
+  /** Подпись для композера: «5 рендеров»; null — показывать нечего (пачка пуста или выбран один). */
   selectionLabel: string | null
   /** Набор больше `maxWorkingSet`: причина, по которой отправка заблокирована; null — всё в норме. */
   limitNotice: string | null
@@ -114,12 +114,14 @@ export function useBatchSelection(
     previousUrls.current = new Set(attachments.map((item) => item.previewUrl))
   }, [attachments, picking])
 
+  // Один выбранный рендер и так виден на сцене и в панели — чип нужен только
+  // пачке («5 рендеров») и пустому выбору.
   const selectionLabel =
-    attachments.length === 0
+    attachments.length === 0 || workingSet.length === 1
       ? null
       : workingSet.length === 0
         ? "ничего не выбрано"
-        : `${plural(workingSet.length, ["выбран", "выбрано", "выбрано"])} ${workingSet.length} ${plural(workingSet.length, noun)}`
+        : `${workingSet.length} ${plural(workingSet.length, noun)}`
   const overflow = workingSet.length - maxWorkingSet
   const limitNotice =
     overflow > 0

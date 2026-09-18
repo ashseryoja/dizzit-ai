@@ -161,13 +161,16 @@ export function ToolComposer<T extends string>({
   }
   const containerRef = useRef<HTMLDivElement>(null)
   const settings = usePresence(settingsOpen)
-  const noticeLayer = usePresence(Boolean(notice))
   // Новый браузер: проекты ещё едут с сервера, активного нет. Запуск ждёт их —
   // иначе записи ушли бы в фантомный «Проект N» (см. ensureActiveProject).
   const projectsPending = useProjectStore(
     (state) => !state.synced && !state.projects.some((project) => project.id === state.activeProjectId)
   )
   const blockedReason = submitBlockedReason ?? (projectsPending ? "Загружаем проекты…" : null)
+  // Строка ввода всегда одна: замечание страницы, а без него — причина закрытой
+  // кнопки встают тонкой строкой над ней.
+  const noticeText = notice ?? blockedReason
+  const noticeLayer = usePresence(Boolean(noticeText))
   const panelRef = useRef<HTMLDivElement>(null)
 
   // «Волна» по контролам панели: каждой кнопке по очереди на полсекунды даётся
@@ -397,7 +400,7 @@ export function ToolComposer<T extends string>({
       {noticeLayer.present ? (
         <div data-state={noticeLayer.state} className="presence-fade composer-notice" role="status">
           <Info className="h-3.5 w-3.5 shrink-0" strokeWidth={1.7} />
-          <span>{notice}</span>
+          <span>{noticeText}</span>
         </div>
       ) : null}
       <div className="composer-row">
@@ -410,7 +413,7 @@ export function ToolComposer<T extends string>({
             aria-live="polite"
           >
             <CheckSquare className="h-3.5 w-3.5 shrink-0" strokeWidth={1.7} style={{ color: "var(--fg-4)" }} />
-            <span className="max-w-[180px] truncate">{selectionLabel}</span>
+            <span className="max-w-[120px] truncate sm:max-w-[180px]">{selectionLabel}</span>
           </span>
           ) : null
         ) : attachments.length > 0 && !settingsInDock ? (
@@ -426,7 +429,7 @@ export function ToolComposer<T extends string>({
               className="h-7 w-7 rounded-[6px] object-cover"
               draggable={false}
             />
-            <span className="max-w-[140px] truncate text-[12px]" style={{ color: "var(--fg-2)" }}>
+            <span className="hidden max-w-[140px] truncate text-[12px] sm:block" style={{ color: "var(--fg-2)" }}>
               {attachments.length === 1
                 ? attachments[0].file.name
                 : `${attachments.length} ${plural(attachments.length, labels.batchNoun)}`}
@@ -442,12 +445,14 @@ export function ToolComposer<T extends string>({
           </span>
         ) : null}
 
-        <textarea
-          rows={2}
+        {/* Одна строка: не влезающий текст обрезается многоточием, композер не растёт. */}
+        <input
+          type="text"
+          enterKeyHint="send"
           value={note}
           onChange={(event) => onNoteChange(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+            if (event.key === "Enter" && !event.nativeEvent.isComposing) {
               event.preventDefault()
               if (!blockedReason) onSubmit()
             }
@@ -457,8 +462,6 @@ export function ToolComposer<T extends string>({
           className="composer-input"
           style={{ color: "var(--fg-1)", caretColor: "var(--accent)" }}
         />
-
-        <span className="composer-shortcut">Enter — отправить · Shift + Enter — новая строка</span>
 
         {/* Обёртка держит подсказку: disabled-кнопка указатель не получает. */}
         <span className="composer-submit flex shrink-0" title={blockedReason ?? undefined}>
