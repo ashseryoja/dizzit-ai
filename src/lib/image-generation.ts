@@ -25,6 +25,13 @@ export interface Aspect {
   height: number
 }
 
+/**
+ * Длинная сторона любого результата генерации: 4K (UHD). Сервер доводит до неё
+ * результат провайдера бесплатным Lanczos3 (`/api/images`, `final_long_side`),
+ * поэтому 4K получают все инструменты, а не только ступень 4K у провайдера.
+ */
+export const OUTPUT_LONG_SIDE = 3840
+
 export interface GeneratedImage {
   blob: Blob
   width: number
@@ -59,6 +66,15 @@ export interface ImageRequest {
   resolution?: "1K" | "2K" | "4K"
   /** Серверный Lanczos3 после генерации: точная длина большей стороны. */
   finalLongSide?: number
+  /**
+   * Кадр результата. `pad` — ровно кадр первого референса (исходника): сервер
+   * подгоняет его полями до пропорции провайдера и вырезает обратно, модель
+   * ничего не обрезает. `crop` — новая картинка в пропорции `aspect`, лишнее
+   * у провайдера срезается по центру. Нет — пропорция провайдера как есть.
+   */
+  frame?: "pad" | "crop"
+  /** Бесшовный тайл: масштаб «с заворотом», чтобы при повторе не появился шов. */
+  tileable?: boolean
   /**
    * Ключ результата записи (`${id}:result`): сервер сам сохранит полный файл в
    * хранилище. 4K-результат (5–10 МБ) не пролезает обратно через `/api/assets`
@@ -231,6 +247,8 @@ export async function requestImage({
   provider,
   resolution,
   finalLongSide,
+  frame,
+  tileable,
   storeKey,
   signal,
 }: ImageRequest): Promise<GeneratedImage> {
@@ -241,6 +259,8 @@ export async function requestImage({
   if (provider) form.set("provider", provider)
   if (resolution) form.set("resolution", resolution)
   if (finalLongSide) form.set("final_long_side", String(Math.round(finalLongSide)))
+  if (frame) form.set("frame", frame)
+  if (tileable) form.set("tileable", "1")
   if (storeKey) form.set("store_key", storeKey)
   references.forEach((blob, index) => {
     const extension = blob.type === "image/png" ? "png" : blob.type === "image/webp" ? "webp" : "jpg"

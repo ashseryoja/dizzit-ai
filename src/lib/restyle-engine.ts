@@ -1,6 +1,7 @@
 "use client"
 
 import {
+  OUTPUT_LONG_SIDE,
   PREVIEW_ENGINE,
   prepareReference,
   readBlobSize,
@@ -471,6 +472,8 @@ export interface RestyleJob {
   variant?: string
   /** Зерно записи: вспомогательные материалы направления одни и те же при «Повторить». */
   seed?: string
+  /** Ключ результата записи: сервер сам сохранит 4K-файл в хранилище (см. `requestImage.storeKey`). */
+  storeKey?: string
 }
 
 const KEEP_ROOM =
@@ -549,6 +552,10 @@ export async function restyleRender(source: Blob, job: RestyleJob): Promise<Rest
         prompt: buildRestylePrompt(job),
         aspect: { width, height },
         references: [await prepareReference(source)],
+        // Та же комната в том же кадре: пропорция исходника точно, итог — 4K.
+        frame: "pad",
+        finalLongSide: OUTPUT_LONG_SIDE,
+        storeKey: job.storeKey,
       })
     },
     () => restyleLocally(source, resolveStyle(job.style, job.note))

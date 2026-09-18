@@ -24,6 +24,7 @@
  */
 
 import {
+  OUTPUT_LONG_SIDE,
   PREVIEW_ENGINE,
   REFERENCE_MAX_SIDE,
   prepareReference,
@@ -43,7 +44,7 @@ export const MAX_FILE_BYTES = 32 * 1024 * 1024
  * Итог улучшения — 4K: провайдер считает на ступени 4K (нативные детали, а не
  * растянутые 2K), затем Lanczos3 приводит длинную сторону ровно к 3840 px (UHD).
  */
-export const ENHANCE_LONG_SIDE = 3840
+export const ENHANCE_LONG_SIDE = OUTPUT_LONG_SIDE
 /** Ступень разрешения провайдера для улучшения и её цена за рендер (API Models: 1K $0,025 · 2K $0,03 · 4K $0,05). */
 export const ENHANCE_RESOLUTION = "4K" as const
 export const ENHANCE_PRICE_LABEL = "$0,05"
@@ -518,7 +519,10 @@ export async function enhanceRender(source: Blob, job: EnhanceJob, hooks: Enhanc
         references,
         provider: "apimodels",
         resolution: ENHANCE_RESOLUTION,
-        finalLongSide: improveQuality ? ENHANCE_LONG_SIDE : undefined,
+        // 4K и точный кадр исходника — всегда, в том числе без улучшения качества
+        // и при правке по области: пропорцию рендера модель не выбирает.
+        finalLongSide: ENHANCE_LONG_SIDE,
+        frame: "pad",
         storeKey: job.storeKey,
       })
       return { ...image, inventory: found }

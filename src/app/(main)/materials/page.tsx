@@ -7,7 +7,7 @@ import { MaterialPreviewGrid } from "@/components/tool/material-preview-grid"
 import { ToolCard } from "@/components/tool/tool-card"
 import { ToolComposer, type ToolComposerLabels, type ToolOption } from "@/components/tool/tool-composer"
 import { ComposerDock, TILE_GALLERY_WIDTH, ToolGallery, ToolShell } from "@/components/tool/tool-shell"
-import { getBlob, sourceKey } from "@/lib/blob-store"
+import { getBlob, resultKey, sourceKey } from "@/lib/blob-store"
 import { MAX_BATCH } from "@/lib/enhance-engine"
 import { generateMaterial } from "@/lib/material-engine"
 import { runGalleryQueue, saveSourceFile } from "@/lib/tool-jobs"
@@ -38,7 +38,7 @@ const LABELS: ToolComposerLabels = {
   filesTitle: "Референсы",
   filesQuality: "референсы",
   uploadTitle: "Загрузить референсы",
-  filesCaption: "референсы не обязательны · задают тон материала",
+  filesCaption: "референсы не обязательны · задают тон материала · тайл 4K",
   optionsTitle: "Материал",
   optionsIcon: Layers,
   footer:
@@ -99,6 +99,8 @@ export default function MaterialsPage() {
           note: meta.note,
           seed: meta.id,
           ref,
+          // 4K-тайл сервер кладёт в хранилище сам: обратно через /api/assets он не пролезает.
+          storeKey: resultKey(meta.id),
         })
         // Ответ провайдера уже оплачен: ставим персистентный маркер до
         // сетевой загрузки, чтобы «Повторить» никогда не вызвал модель снова.
@@ -109,7 +111,7 @@ export default function MaterialsPage() {
           syncPending: true,
         })
         try {
-          await persistResultDurably(meta.id, result.blob)
+          await persistResultDurably(meta.id, result.blob, { serverHasFull: result.stored })
         } catch {
           update(meta.id, {
             status: "error",

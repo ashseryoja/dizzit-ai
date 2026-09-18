@@ -94,6 +94,12 @@ export interface ImageProvider {
   readonly id: ImageProviderId
   readonly model: string
   readonly resolution: ImageResolution
+  /**
+   * В какой пропорции провайдер отдаст картинку на запрошенную: у него свой
+   * короткий список (16:9, 3:2, 4:3…). По ней `/api/images` подгоняет кадр
+   * полями до генерации, чтобы модель не обрезала рендер сама.
+   */
+  outputRatio(aspect: AspectRatio): number
   generate(input: ImageGenerationInput): Promise<GeneratedImageBytes>
 }
 

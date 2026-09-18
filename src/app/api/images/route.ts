@@ -13,7 +13,8 @@ import {
 import { sessionFromRequest } from "@/server/auth"
 import { getSql } from "@/server/db"
 import { isSameOrigin, problem, streamBytes } from "@/server/http"
-import { resizeToLongSideLanczos } from "@/server/image-postprocess"
+import { frameNote, padReferences, planFrame } from "@/server/image-frame"
+import { finalizeGeneratedImage, type NormalizedBox } from "@/server/image-postprocess"
 import { describeIntendedProvider, providerKeyVariable, providerLabel, resolveImageProvider } from "@/server/providers"
 import { upsertAssetMeta } from "@/server/records"
 import { objectKey, resolveStorage } from "@/server/storage"
@@ -32,8 +33,11 @@ import { objectKey, resolveStorage } from "@/server/storage"
  *        0…4 файлов `image` (PNG/JPEG/WEBP до 12 МБ каждый); опционально
  *        `provider`, `resolution`, `final_long_side` для фиксированного по
  *        цене пайплайна улучшения и `store_key` (`${id}:result`) — сервер сам
- *        кладёт результат в хранилище записи → байты картинки потоком,
- *        заголовок `X-Image-Stored: 1|0`.
+ *        кладёт результат в хранилище записи; `frame`: `pad` — кадр исходника
+ *        сохраняется точно (подгонка полями до генерации и вырезка после, см.
+ *        `server/image-frame.ts`), `crop` — результат режется по центру до
+ *        `aspect`; `tileable=1` — масштаб бесшовного тайла без шва → байты
+ *        картинки потоком, заголовок `X-Image-Stored: 1|0`.
  *
  * Очереди и воркера пока нет (см. docs/PLATFORM_ARCHITECTURE.md, этап 0):
  * запрос держится открытым всё время генерации, поэтому `maxDuration` —
@@ -89,6 +93,12 @@ function parseResolution(value: FormDataEntryValue | string | null): ImageResolu
   return isImageResolution(normalized) ? normalized : null
 }
 
+function parseFrame(value: FormDataEntryValue | null): "pad" | "crop" | null | undefined {
+  if (value === null || value === "") return undefined
+  if (value === "pad" || value === "crop") return value
+  return null
+}
+
 function parseFinalLongSide(value: FormDataEntryValue | null): number | null | undefined {
   if (value === null || value === "") return undefined
   if (!/^\d{3,4}$/.test(String(value))) return null
@@ -129,7 +139,9 @@ export async function POST(request: Request) {
   const preferred = parseProvider(form.get("provider"))
   const requestedResolution = parseResolution(form.get("resolution"))
   const finalLongSide = parseFinalLongSide(form.get("final_long_side"))
-  if (preferred === null || requestedResolution === null || finalLongSide === null) {
+  const frame = parseFrame(form.get("frame"))
+  const tileable = form.get("tileable") === "1"
+  if (preferred === null || requestedResolution === null || finalLongSide === null || frame === null) {
     return problem(400, { error: "bad_request", message: "Некорректные параметры обработки картинки." })
   }
 
@@ -146,10 +158,6 @@ export async function POST(request: Request) {
   const prompt = String(form.get("prompt") ?? "").trim()
   const negativePrompt = String(form.get("negative_prompt") ?? "").trim()
   if (!prompt) return problem(400, { error: "bad_request", message: "Пустой промпт." })
-  const providerPrompt = composeProviderPrompt(prompt, negativePrompt)
-  if (providerPrompt.length > MAX_PROMPT_CHARS) {
-    return problem(400, { error: "bad_request", message: "Слишком длинные prompt и negative prompt." })
-  }
 
   const storeKey = String(form.get("store_key") ?? "").trim()
   if (storeKey && !STORE_KEY_PATTERN.test(storeKey)) {
@@ -178,11 +186,43 @@ export async function POST(request: Request) {
     references.push({ bytes, mimeType, name: `${baseName || `reference_${index + 1}`}.${extension}` })
   }
 
+  // Кадр исходника без обрезки: подгоняем полями до пропорции провайдера,
+  // после генерации вырезаем ровно исходный кадр (`box`).
+  let providerAspect = aspect
+  let providerReferences = references
+  let box: NormalizedBox | undefined
+  let note = ""
+  if (frame === "pad") {
+    const plan = planFrame(aspect, provider.outputRatio(aspect))
+    const padded = plan ? await padReferences(references, aspect, plan).catch(() => null) : null
+    if (plan && padded) {
+      providerAspect = plan.providerAspect
+      providerReferences = padded.references
+      box = padded.box
+      note = frameNote(plan, references.length)
+    }
+  }
+
+  // Пояснение про поля подгонки — к заданию, до блока запретов.
+  const framedPrompt = note ? `${prompt}\n${note}` : prompt
+  const providerPrompt = composeProviderPrompt(framedPrompt, negativePrompt)
+  if (providerPrompt.length > MAX_PROMPT_CHARS) {
+    return problem(400, { error: "bad_request", message: "Слишком длинные prompt и negative prompt." })
+  }
+
   try {
-    const image = await provider.generate({ prompt: providerPrompt, aspect, references, signal: request.signal })
-    const output = finalLongSide
-      ? await resizeToLongSideLanczos(image.bytes, finalLongSide)
-      : { bytes: image.bytes, mimeType: image.mimeType, width: undefined, height: undefined }
+    const image = await provider.generate({ prompt: providerPrompt, aspect: providerAspect, references: providerReferences, signal: request.signal })
+    // Итог — в точной пропорции кадра (`frame`) и нужного размера. Без `frame`
+    // и размера — байты провайдера как есть.
+    const output =
+      finalLongSide || frame || tileable
+        ? await finalizeGeneratedImage(image.bytes, {
+            longSide: finalLongSide,
+            box,
+            aspect: frame ? aspect : undefined,
+            tileable,
+          })
+        : { bytes: image.bytes, mimeType: image.mimeType, width: undefined, height: undefined }
     // Полный результат — сразу в хранилище записи: без обратной загрузки с клиента.
     // Сбой хранилища генерацию не отменяет: клиент увидит `X-Image-Stored: 0` и
     // сохранит файл своим путём (с ужатием под лимит тела запроса).
@@ -209,7 +249,7 @@ export async function POST(request: Request) {
       }
     }
     console.info(
-      `[api/images] ${image.provider} ${image.endpoint} ${image.durationMs} мс → ${output.width ?? "?"}×${output.height ?? "?"}, ${(output.bytes.byteLength / 1024 / 1024).toFixed(1)} МБ${stored ? `, сохранён ${storeKey}` : ""}`
+      `[api/images] ${image.provider} ${image.endpoint} ${image.durationMs} мс → ${output.width ?? "?"}×${output.height ?? "?"}, ${(output.bytes.byteLength / 1024 / 1024).toFixed(1)} МБ${box ? `, кадр подогнан полями (${providerAspect.width}:${providerAspect.height})` : ""}${stored ? `, сохранён ${storeKey}` : ""}`
     )
 
     // Потоком: 4K-результат больше потолка Vercel в 4,5 МБ на тело ответа функции.
@@ -221,7 +261,8 @@ export async function POST(request: Request) {
       "X-Image-Endpoint": image.endpoint,
       "X-Image-Duration-Ms": String(image.durationMs),
       "X-Image-Stored": stored ? "1" : "0",
-      ...(finalLongSide
+      ...(box ? { "X-Image-Frame": "padded" } : {}),
+      ...(output.width
         ? {
             "X-Image-Postprocess": "lanczos3",
             "X-Image-Width": String(output.width),

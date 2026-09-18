@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises"
 
-const [engine, client, route, sceneClient, sceneRoute, sceneInventory, providerContract, regions] = await Promise.all([
+const [engine, client, route, sceneClient, sceneRoute, sceneInventory, providerContract, regions, frameServer, restyle, materials, views] = await Promise.all([
   readFile(new URL("../src/lib/enhance-engine.ts", import.meta.url), "utf8"),
   readFile(new URL("../src/lib/image-generation.ts", import.meta.url), "utf8"),
   readFile(new URL("../src/app/api/images/route.ts", import.meta.url), "utf8"),
@@ -9,6 +9,10 @@ const [engine, client, route, sceneClient, sceneRoute, sceneInventory, providerC
   readFile(new URL("../src/server/scene-inventory.ts", import.meta.url), "utf8"),
   readFile(new URL("../src/server/image-provider.ts", import.meta.url), "utf8"),
   readFile(new URL("../src/lib/render-regions.ts", import.meta.url), "utf8"),
+  readFile(new URL("../src/server/image-frame.ts", import.meta.url), "utf8"),
+  readFile(new URL("../src/lib/restyle-engine.ts", import.meta.url), "utf8"),
+  readFile(new URL("../src/lib/material-engine.ts", import.meta.url), "utf8"),
+  readFile(new URL("../src/lib/view-engine.ts", import.meta.url), "utf8"),
 ])
 
 const positiveTerms = [
@@ -76,7 +80,7 @@ const lightTerms = [
   "Light must always have a source",
   "unlit lamps switched on, lit lamps switched off",
   "isCurrentInventory(job.inventory)",
-  "export const ENHANCE_LONG_SIDE = 3840",
+  "export const ENHANCE_LONG_SIDE = OUTPUT_LONG_SIDE",
   'export const ENHANCE_RESOLUTION = "4K"',
   "storeKey: job.storeKey",
 ]
@@ -134,6 +138,22 @@ const promptLimit = Number(route.match(/MAX_PROMPT_CHARS = ([\d_]+)/)?.[1]?.repl
 if (promptLimit < 28_000 || promptLimit > 32_000) {
   throw new Error(`MAX_PROMPT_CHARS = ${promptLimit}: задание с правками дизайнера — до ~27,5 тыс. символов, потолок gpt-image-2 — 32 тыс.`)
 }
+// Кадр пользователя не обрезается: провайдер знает только свои пропорции, поэтому
+// редактор и перенос стиля просят `frame: "pad"` (поля до генерации, вырезка после),
+// ракурсы — `frame: "crop"`, и все результаты доводятся до 4K бесплатным Lanczos.
+if (!client.includes("export const OUTPUT_LONG_SIDE = 3840")) throw new Error("image-generation: OUTPUT_LONG_SIDE должен быть 3840 (4K)")
+if (!engine.includes('frame: "pad"') || !engine.includes("finalLongSide: ENHANCE_LONG_SIDE,")) {
+  throw new Error("enhance-engine: кадр исходника (frame: \"pad\") и 4K должны уходить всегда, а не только с улучшением качества")
+}
+if (!restyle.includes('frame: "pad"') || !restyle.includes("finalLongSide: OUTPUT_LONG_SIDE")) throw new Error("restyle-engine: кадр исходника и 4K")
+if (!materials.includes("tileable: true") || !materials.includes("finalLongSide: OUTPUT_LONG_SIDE")) throw new Error("material-engine: 4K-тайл с масштабом «с заворотом»")
+if (!views.includes('frame: "crop"') || !views.includes("VIEW_LONG_SIDE = OUTPUT_LONG_SIDE")) throw new Error("view-engine: кадр в выбранном формате и 4K")
+if (!route.includes("padReferences(references, aspect, plan)") || !route.includes("provider.outputRatio(aspect)") || !route.includes("finalizeGeneratedImage(")) {
+  throw new Error("/api/images должен подгонять кадр под пропорцию провайдера и вырезать его обратно")
+}
+if (!frameServer.includes("FORMAT EXTENSION") || !frameServer.includes('extendWith: "mirror"')) {
+  throw new Error("image-frame: поля подгонки — размытое зеркальное продолжение с пояснением модели")
+}
 // Область без подписи + общий текст — обычная точечная правка, а не закрытая кнопка.
 if (!regions.includes("Правка выше относится к отмеченной на карте области")) {
   throw new Error("render-regions: общий комментарий не адресуется областям без подписи")
@@ -142,8 +162,8 @@ if (!regions.includes("Правка выше относится к отмече�
 if (!client.includes('form.set("negative_prompt", negativePrompt.trim())')) {
   throw new Error("Клиент не передаёт negative_prompt во внутренний API")
 }
-if (!route.includes("composeProviderPrompt(prompt, negativePrompt)")) {
+if (!/composeProviderPrompt\(\w+, negativePrompt\)/.test(route)) {
   throw new Error("Бэкенд не присоединяет negative prompt к инструкции провайдера")
 }
 
-console.log(`check:prompts — ок: ${positiveTerms.length} positive, ${editTerms.length} маркеров правок, ${lightTerms.length} маркеров света и 4K, ${negativeTerms.length} negative`)
+console.log(`check:prompts — ок: ${positiveTerms.length} positive, ${editTerms.length} маркеров правок, ${lightTerms.length} маркеров света и 4K, кадр и 4K у всех инструментов, ${negativeTerms.length} negative`)

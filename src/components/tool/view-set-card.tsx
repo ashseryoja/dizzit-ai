@@ -113,7 +113,7 @@ export function ViewSetCard({
         : item.planned === false || status !== "processing"
           ? "кадры по составу набора"
           : null,
-      item.status === "done" && item.engine && item.engine !== "preview" ? "Lanczos 2000 px" : null,
+      item.status === "done" && item.engine && item.engine !== "preview" ? "4K · Lanczos 3840 px" : null,
     ]
       .filter(Boolean)
       .join(" · ") + previewCaption(item)

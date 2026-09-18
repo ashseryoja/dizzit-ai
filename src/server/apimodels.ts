@@ -109,6 +109,10 @@ export class ApiModelsProvider implements ImageProvider {
     this.resolution = config.resolution
   }
 
+  outputRatio(aspect: AspectRatio): number {
+    return RATIOS[apiModelsAspect(aspect, this.resolution)]
+  }
+
   private headers(json: boolean): Record<string, string> {
     const headers: Record<string, string> = { Authorization: `Bearer ${this.apiKey}` }
     if (json) headers["Content-Type"] = "application/json"

@@ -1,6 +1,13 @@
 "use client"
 
-import { PREVIEW_ENGINE, prepareReference, requestImage, withImageProvider, type GeneratedImage } from "@/lib/image-generation"
+import {
+  OUTPUT_LONG_SIDE,
+  PREVIEW_ENGINE,
+  prepareReference,
+  requestImage,
+  withImageProvider,
+  type GeneratedImage,
+} from "@/lib/image-generation"
 import { makeRng, type Rng } from "@/lib/seeded-rng"
 import type { MaterialCategory } from "@/types"
 
@@ -144,6 +151,8 @@ export interface MaterialJob {
   /** Ключ детерминизма предпросмотра — id записи: «Повторить» рисует ту же текстуру. */
   seed: string
   ref?: Blob | null
+  /** Ключ результата записи: сервер сам сохранит 4K-тайл в хранилище (см. `requestImage.storeKey`). */
+  storeKey?: string
 }
 
 /** Генерация материала: модель, а без ключа — процедурный предпросмотр. */
@@ -154,6 +163,11 @@ export async function generateMaterial(job: MaterialJob): Promise<MaterialResult
         prompt: buildMaterialPrompt({ category: job.category, note: job.note, hasReference: Boolean(job.ref) }),
         aspect: { width: 1, height: 1 },
         references: job.ref ? [await prepareReference(job.ref)] : [],
+        // 4K-тайл: масштаб «с заворотом» — края считаются по противоположной
+        // стороне, повтор остаётся бесшовным (сам шов решает промпт, не пиксели).
+        finalLongSide: OUTPUT_LONG_SIDE,
+        tileable: true,
+        storeKey: job.storeKey,
       }),
     () => generateMaterialLocally(job)
   )

@@ -44,7 +44,7 @@
 | Рабочий набор: режим «Выбрать», «Выбрать все», стрелки и Escape, «Редактировать все», что уходит в обработку | `src/lib/use-batch-selection.ts` | `useBatchSelection` |
 | Сохранение исходника в IndexedDB/на сервере, серверный черновик до запуска, очередь пачки | `src/lib/tool-jobs.ts`, `src/app/(main)/enhance/page.tsx` | `saveSourceFile({ durable: true })`, статус `draft`, `runGalleryQueue` |
 | Где живут записи и картинки: кэш IndexedDB, синхронизация со своим сервером, вход по паролю, подпись «серверное хранение / локальный режим» | `src/lib/server-sync.ts` — клиент (очередь, слияние, `useServerStatus`); `src/lib/blob-store.ts` — кэш блобов; `src/server/{auth,records,storage,db}.ts` + `src/app/api/{records,assets,session,auth}` — сервер; `src/middleware.ts` — дверь | `attachServerSync` в каждом сторе; `serverStatus`, `useServerStatus` |
-| Куда уходит генерация картинок: positive/negative prompt, провайдер, пропорции, уменьшение референса, Lanczos-постобработка, предпросмотр без ключа, подпись «предпросмотр без ключа» на карточке | `src/lib/image-generation.ts` — клиент; `src/app/api/images/route.ts` + `src/server/image-provider.ts`, `providers.ts` (выбор), `apimodels.ts`, `laozhang.ts`, `image-postprocess.ts`, `http.ts` — сервер | `requestImage`, `composeProviderPrompt`, `withImageProvider`, `prepareReference`, `resizeToLongSideLanczos`, `previewCaption`; промпты — в движке инструмента (`build*Prompt`) |
+| Куда уходит генерация картинок: positive/negative prompt, провайдер, пропорции, уменьшение референса, Lanczos-постобработка, предпросмотр без ключа, подпись «предпросмотр без ключа» на карточке | `src/lib/image-generation.ts` — клиент; `src/app/api/images/route.ts` + `src/server/image-provider.ts`, `providers.ts` (выбор), `apimodels.ts`, `laozhang.ts`, `image-postprocess.ts`, `image-frame.ts`, `http.ts` — сервер | `requestImage` (`frame`, `tileable`, `finalLongSide`, `storeKey`), `OUTPUT_LONG_SIDE`, `composeProviderPrompt`, `withImageProvider`, `prepareReference`, `planFrame`, `padReferences`, `frameNote`, `finalizeGeneratedImage`, `previewCaption`; промпты — в движке инструмента (`build*Prompt`) |
 | Разбор сцены перед улучшением: vision-модель составляет инвентарь кадра — материалы поверхностей (пол травертин, а не микроцемент; шпон дуба, а не ламинат) и предметы (телевизор выключен, шторы тюлевые, люстра горит), он уходит в промпт gpt-image-2 и хранится в записи (`sceneInventory`); выбор модели, промпт аналитика, чистка ответа, запрет подмены материалов | `src/lib/scene-analysis.ts` — клиент; `src/app/api/scene/route.ts` + `src/server/scene-inventory.ts`, `vision-provider.ts`, `providers.ts` (`resolveVisionProviders` — цепочка с запасными) — сервер; блоки промпта — `src/lib/enhance-engine.ts` | `describeScene`, `sceneAnalysisStatus`, `hasMaterialsSection`; `analyzeScene`, `buildSceneInventoryPrompt`, `tidyInventory`; `OBJECT_IDENTITY_HINT`, `MATERIAL_FIDELITY_HINT`, `sceneInventoryBlock`, `sourceQualityHint`, `EnhanceHooks.onInventory` |
 | «Фото → 3D»: экран как у Meshy — панель генерации внизу (фото и ракурсы, модель, детализация, текстура/PBR/улучшение фото, «время · кредиты»), сцена с вьюером в центре, библиотека моделей справа; какие настройки есть у какой модели и сколько они стоят | `src/shared/model3d.ts` — контракт настроек, возможности моделей, оценка кредитов (один на клиент и сервер); `src/components/tool/model-dock.tsx`, `model-stage.tsx`, `model-library.tsx`; `src/lib/use-view-slots.ts` — какой файл в каком слоте; `tool-composer.tsx` — пропсы `dock`, `dockLabel`, `settingsInDock`; `tool-shell.tsx` — `composerSpace`; `.model-dock*`, `.model-slot*`, `.model-ai*`, `.model-stage*`, `.model-tile*` в `surfaces.css` | `ModelSettings`, `MODEL_AI`, `normalizeModelSettings`, `estimateModelCost`, `describeModelSettings`; `ModelDock`, `ModelStage`, `ModelLibrary`, `ModelLibraryStrip`; `useViewSlots` |
 | «Фото → 3D»: куда уходит фото и откуда берётся модель — задача Meshy (Image to 3D), опрос готовности, GLB в своём хранилище под ключом `${id}:model`, возобновление опроса после перезагрузки, каркас-заглушка без ключа; три формата результата (`MODEL_FORMATS`: GLB — вьюер, FBX и OBJ-архив с материалом и текстурой — для 3ds Max/ArchiCAD/AutoCAD; докачиваются фоном, список готовых — `Model3D.formats`); просмотр GLB (вращение, зум, автоповорот; материалы без текстуры — Meshy отдаёт их без секции `materials`, и glTF подставляет белый металл — вьюер переводит в матовую серую «глину», чтобы модель не выгорала) и скачивание по форматам | `src/lib/model-engine.ts` — клиент; `src/app/api/models/route.ts`, `[taskId]/route.ts`, `[taskId]/file/route.ts` + `src/server/meshy.ts` — сервер (ключ `MESHY_API_KEY`, параметры задачи, перекладывание GLB в хранилище); `src/server/zip.ts` — архив OBJ; `src/components/tool/model-viewer.tsx` — вьюер и скачивание; `.model-viewer`, `.model-downloads` в `surfaces.css` | `modelProviderStatus`, `submitModelTask`, `awaitModelTask`, `fetchModelFile`, `readGlbStats`; `createMeshyTask`, `getMeshyTask`, `downloadMeshyModel`; `buildZip`; `ModelViewer`, `ModelDownloads`, `downloadStoredModel` |
@@ -160,6 +160,35 @@ refresh. Удаление пары из пачки
 Набор ведётся по `previewUrl`: он уникален и переживает удаление соседей.
 Инструменты без просмотра пачки на сцене («Материалы», «Фото → 3D») этот хук
 не используют — им хватает `useAttachments`.
+
+### Кадр и 4K у всех инструментов
+
+**Кадр без обрезки.** Провайдер отдаёт только свои пропорции (API Models:
+1:1, 2:3, 3:2, 4:3, 3:4, 16:9, 9:16, 21:9). Рендер 2000×1176 (1,70) он рисовал
+как 16:9, и модель сама срезала низ кадра — пол и край кровати. Поэтому у
+`requestImage` есть `frame`:
+
+- `pad` — «Редактор рендера» и «Перенос стиля»: сервер (`src/server/image-frame.ts`)
+  дополняет исходник мягкими полями до ближайшей пропорции провайдера —
+  зеркальное продолжение с сильным размытием; карта областей получает те же
+  поля исходника без своих пометок. В промпт уходит `FORMAT EXTENSION`: поля не
+  часть проекта, реальный кадр не двигать. После генерации
+  `finalizeGeneratedImage` вырезает ровно исходный кадр и доводит до точной
+  пропорции. Проба на рендере спальни (1,70 → 16:9, поля по 2,2 %): итог
+  3840×2258 (1,7006), совпадение с исходником вне правки — при нулевом сдвиге и
+  масштабе 1 (корреляция 0,991); без подгонки было смещение на 3,4 % высоты.
+- `crop` — «Ракурсы»: новый кадр в выбранном формате, лишнее у пропорции
+  провайдера срезается по центру ДО Lanczos, поэтому кадр 4:5 выходит 3072×3840.
+- нет `frame` — пропорция провайдера как есть (обратная совместимость).
+
+**4K у всех.** `OUTPUT_LONG_SIDE = 3840` (`src/lib/image-generation.ts`) — длинная
+сторона любого результата: сервер доводит результат провайдера бесплатным
+Lanczos3. У «Редактора рендера» провайдер к тому же считает на ступени 4K
+($0,05), у остальных — на своей обычной ступени (2K, $0,03), 4K даёт Lanczos.
+Материалы — `tileable`: масштаб «с заворотом» (поля из противоположной стороны
+тайла, после масштаба отрезаются), стык при повторе не заметнее обычного шага
+между пикселями; обычный Lanczos давал шов в 1,7 раза заметнее. Перенос стиля и
+материалы, как и редактор, кладут 4K-файл в хранилище на сервере (`storeKey`).
 
 ### Свет и 4K в «Редакторе рендера»
 

@@ -64,6 +64,11 @@ export class LaoZhangProvider implements ImageProvider {
   private readonly apiKey: string
   private readonly baseUrl: string
 
+
+  outputRatio(aspect: AspectRatio): number {
+    return SIZES[laoZhangSize(aspect)]
+  }
+
   constructor(config: LaoZhangConfig) {
     this.apiKey = config.apiKey
     this.baseUrl = config.baseUrl.replace(/\/+$/, "")

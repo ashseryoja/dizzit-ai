@@ -29,7 +29,7 @@ import { ToolCard } from "@/components/tool/tool-card"
 import { ToolComposer, type ToolComposerLabels, type ToolOption } from "@/components/tool/tool-composer"
 import { ToolDropzone } from "@/components/tool/tool-dropzone"
 import { ComposerDock, ToolAside, ToolGallery, ToolShell } from "@/components/tool/tool-shell"
-import { getBlob, sourceKey } from "@/lib/blob-store"
+import { getBlob, resultKey, sourceKey } from "@/lib/blob-store"
 import { MAX_BATCH } from "@/lib/enhance-engine"
 import {
   STYLES,
@@ -81,7 +81,7 @@ const LABELS: ToolComposerLabels = {
   filesTitle: "Интерьеры",
   filesQuality: "исходники",
   uploadTitle: "Загрузить интерьеры",
-  filesCaption: "рендер или фото помещения · результат в 2K",
+  filesCaption: "рендер или фото помещения · результат в 4K, в кадре исходника",
   optionsTitle: "Стиль",
   optionsIcon: SwatchBook,
   footer:
@@ -173,6 +173,8 @@ export default function RestylePage() {
           excluded: meta.excluded,
           variant: meta.variant,
           seed: meta.id,
+          // 4K-файл сервер кладёт в хранилище сам: обратно через /api/assets он не пролезает.
+          storeKey: resultKey(meta.id),
         })
         // Ответ провайдера уже оплачен: сохраняем маркер до ожидания asset PUT,
         // чтобы reload/Retry мог только дозагрузить этот же результат.
@@ -183,7 +185,7 @@ export default function RestylePage() {
           syncPending: true,
         })
         try {
-          await persistResultDurably(meta.id, result.blob)
+          await persistResultDurably(meta.id, result.blob, { serverHasFull: result.stored })
         } catch {
           update(meta.id, {
             status: "error",

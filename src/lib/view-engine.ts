@@ -3,6 +3,7 @@
 import { MATERIAL_FIDELITY_HINT, OBJECT_IDENTITY_HINT, sceneInventoryBlock } from "@/lib/enhance-engine"
 import { frameAspectRatio, frameAspectSize } from "@/lib/frame-aspect"
 import {
+  OUTPUT_LONG_SIDE,
   PREVIEW_ENGINE,
   REFERENCE_MAX_SIDE,
   cropToAspect,
@@ -69,8 +70,8 @@ export type ViewResult = GeneratedImage
 /** Формат крупных планов у записей до появления выбора формата: портрет 4:5. */
 export const LEGACY_CLOSEUP_ASPECT = 4 / 5
 
-/** Длинная сторона кадра после серверного Lanczos3 — как у редактора рендера. */
-export const VIEW_LONG_SIDE = 2000
+/** Длинная сторона кадра после серверного Lanczos3 — 4K, как у всех результатов сервиса. */
+export const VIEW_LONG_SIDE = OUTPUT_LONG_SIDE
 
 /*
  * Кадр — КРОП исходника, а не новая точка съёмки (промпт по образцу
@@ -487,6 +488,9 @@ export async function prepareViewSet(
             aspect: wanted,
             references,
             finalLongSide: VIEW_LONG_SIDE,
+            // Кадр в выбранном формате: лишнее у пропорции провайдера сервер
+            // срезает по центру ДО Lanczos — кадр выходит ровно 4K, а не меньше.
+            frame: "crop",
           })
           return { image: await cropToAspect(image, ratioFor(frame)), base }
         }
