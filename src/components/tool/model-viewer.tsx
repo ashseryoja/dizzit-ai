@@ -1,6 +1,6 @@
 "use client"
 
-import { createElement, useEffect, useState } from "react"
+import { createElement, useCallback, useEffect, useState } from "react"
 import { Download } from "lucide-react"
 
 import { ThinkingGlyph } from "@/components/glyphs"
@@ -20,6 +20,13 @@ import type { Model3D, ModelFormat } from "@/types"
  *
  * Пока файл едет с сервера или потерян — общий `StoredAssetNotice`, как у
  * картинок.
+ *
+ * Модель без текстуры Meshy отдаёт вообще без секции материалов — по
+ * спецификации glTF такой сетке достаётся белый металл (metallic 1), который
+ * зеркалит окружение и выгорает в сплошное белое пятно. После загрузки такие
+ * материалы переводятся в матовую светло-серую «глину», как в просмотрщике
+ * Meshy: форма читается по светотени, а не по бликам. Текстурированные
+ * материалы не трогаем.
  */
 export function ModelViewer({
   modelId,
@@ -33,6 +40,12 @@ export function ModelViewer({
 }) {
   const asset = useStoredBlobUrl([modelKey(modelId)])
   const [ready, setReady] = useState(false)
+  const attach = useCallback((node: ModelViewerNode | null) => {
+    if (!node) return
+    node.addEventListener("load", () => clayBareMaterials(node))
+    // Событие могло прийти до подписки (файл из кэша) — проверяем сразу.
+    if (node.model) clayBareMaterials(node)
+  }, [])
 
   useEffect(() => {
     let alive = true
@@ -55,6 +68,7 @@ export function ModelViewer({
   // createElement — чтобы не расширять глобальные JSX-типы ради одного тега.
   return createElement("model-viewer", {
     key: asset.url,
+    ref: attach,
     src: asset.url,
     // Модель — главное на сцене: грузим сразу, не дожидаясь попадания во вьюпорт.
     loading: "eager",
@@ -66,10 +80,44 @@ export function ModelViewer({
     "environment-image": "neutral",
     "shadow-intensity": "0.7",
     "shadow-softness": "0.9",
-    exposure: "1.05",
+    exposure: "1",
     "touch-action": "pan-y",
     class: cn("model-viewer fade-in block", className),
   })
+}
+
+/** Часть API `<model-viewer>` (scene-graph), которая нужна для замены материалов. */
+interface ModelViewerNode extends HTMLElement {
+  model?: {
+    materials: ReadonlyArray<{
+      pbrMetallicRoughness: {
+        baseColorTexture: { texture: unknown } | null
+        setBaseColorFactor(rgba: [number, number, number, number] | string): void
+        setMetallicFactor(value: number): void
+        setRoughnessFactor(value: number): void
+      }
+    }>
+  } | null
+}
+
+/**
+ * Цвет «глины» в линейном пространстве (≈ #9a9794 в sRGB): тёплый средне-серый.
+ * Подобран замером кадра вьюера на графитовом фоне: у белого металла по
+ * умолчанию 81 % пикселей модели были выгоревшими (яркость ≥ 245), у этого
+ * оттенка — 0 %, средняя яркость ≈ 170 — светотень читается, блики не слепят.
+ */
+const CLAY_BASE_COLOR: [number, number, number, number] = [0.3, 0.29, 0.27, 1]
+const CLAY_ROUGHNESS = 0.62
+
+/** Материалам без цветовой текстуры — матовая глина; материалы с текстурой остаются как в файле. */
+function clayBareMaterials(node: ModelViewerNode) {
+  for (const material of node.model?.materials ?? []) {
+    const pbr = material.pbrMetallicRoughness
+    if (pbr.baseColorTexture?.texture) continue
+    pbr.setBaseColorFactor(CLAY_BASE_COLOR)
+    pbr.setMetallicFactor(0)
+    pbr.setRoughnessFactor(CLAY_ROUGHNESS)
+  }
 }
 
 /** Скачать файл модели из хранилища. `false` — файла нет ни локально, ни на сервере. */
