@@ -60,14 +60,23 @@
        скролл-контейнер, поэтому sticky продолжает работать от вьюпорта. */
     overflow-x: clip;
     height: 100%;
+    /* Фон — на корне, а не на body: он уходит на канвас целиком, и за краем
+       документа (резиновая прокрутка macOS, длинная страница) нет «подложки»
+       другого тона. Зерно (body::before) ложится поверх него. */
+    background: var(--ambient-background), var(--bg-page);
+    background-color: var(--bg-page);
+    background-attachment: fixed;
+    /* Резиновая прокрутка выключена: страницу нельзя оттянуть за верх или низ,
+       поэтому фиксированные слои (фон, зерно, композер, панели) не отрываются от краёв окна. */
+    overscroll-behavior: none;
   }
 
   body {
     font-family: var(--font-sans);
     color: var(--fg-1);
-    /* Нейтральная основа; световой фон задаёт liquid-glass.css. */
-    background: var(--ambient-background), var(--bg-page);
-    background-attachment: fixed;
+    /* Фон страницы — на html (см. выше); body прозрачен, иначе закрыл бы зерно. */
+    background: transparent;
+    overscroll-behavior: none;
     min-height: 100vh;
     min-height: 100dvh;
     -webkit-font-smoothing: antialiased;
@@ -83,8 +92,9 @@
   body::before {
     content: "";
     position: fixed;
-    inset: 0;
-    /* -1: фон body уходит на канвас, поэтому зерно ложится на него, но под весь контент. */
+    /* С запасом за края окна: даже если браузер всё же сдвинет страницу, у зерна не будет видимой границы. */
+    inset: -160px 0;
+    /* -1: фон лежит на канвасе (html), поэтому зерно ложится на него, но под весь контент. */
     z-index: -1;
     pointer-events: none;
     opacity: var(--grain-opacity);

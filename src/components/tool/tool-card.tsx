@@ -101,8 +101,11 @@ export function ToolCard({
     shown && status === "done" && shownAsset === sourceAsset && !resultAsset.url
   )
 
-  const width = (expectsSavedResult && item.resultWidth) || item.sourceWidth || 1
-  const height = (expectsSavedResult && item.resultHeight) || item.sourceHeight || 1
+  // Тайл (материал) — всегда квадрат: результат квадратный, а пока его нет, на
+  // карточке размытый референс любой пропорции — он обрезается по центру, иначе
+  // вертикальное фото растягивало бы строку сетки и под соседями открывалась пустота.
+  const width = tileable ? 1 : (expectsSavedResult && item.resultWidth) || item.sourceWidth || 1
+  const height = tileable ? 1 : (expectsSavedResult && item.resultHeight) || item.sourceHeight || 1
 
   const download = async () => {
     await downloadStoredResult(item, downloadBaseName)
@@ -136,7 +139,7 @@ export function ToolCard({
 
   return (
     <figure
-      className="group card card-media rise-in relative mb-4 break-inside-avoid overflow-hidden"
+      className="group card card-media rise-in relative mb-4 self-start break-inside-avoid overflow-hidden"
       style={{ borderRadius: "var(--r-lg)", animationDelay: `${Math.min(order, 8) * 60}ms` }}
     >
       <div className="relative w-full" style={{ aspectRatio: `${width} / ${height}` }}>

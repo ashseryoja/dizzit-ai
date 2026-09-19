@@ -18,7 +18,7 @@
      сквозь панель белым пятном и подписи не читаются. */
   --grain-opacity: 0.22;
   --glass-dense: linear-gradient(140deg, #ffffff14, #ffffff05 52%, #ffffff0c), #262626d6;
-  --glass-dense-filter: grayscale(0.4) blur(40px) saturate(1.15) brightness(0.62);
+  --glass-dense-filter: grayscale(1) blur(40px) brightness(0.62);
 }
 :root[data-theme="light"] {
   --glass-fill: linear-gradient(135deg, #ffffffd6, #ffffff8f 48%, #ffffffb8);
@@ -35,7 +35,7 @@
   --ambient-background: radial-gradient(ellipse at 19% 0%, #ffffff, transparent 62%),
     radial-gradient(ellipse at 100% 100%, #dcdcdc, transparent 55%);
   --glass-dense: linear-gradient(140deg, #ffffffd9, #ffffffb8 52%, #ffffffcc), #f4f4f4d9;
-  --glass-dense-filter: grayscale(0.4) blur(40px) saturate(1.1) brightness(1.12);
+  --glass-dense-filter: grayscale(1) blur(40px) brightness(1.12);
 }
 
 /* No filters on page/layout wrappers: fixed composers, menus and canvases
@@ -247,17 +247,25 @@
 .composer-hint { flex: none; font-size: 12px; color: var(--fg-4); white-space: nowrap; font-variant-numeric: tabular-nums; }
 @media (max-width: 767px) { .composer-hint { display: none; } }
 
-/* Контент затухает, уходя под композер: галерея не обрывается о стеклянную
-   полосу, а подписи карточек не читаются сквозь неё. Только в колонке композера. */
+/* Подложка композера. Стекло композера размывает всё, что лежит ПОД ним, поэтому
+   под ним должна быть ровная заливка цвета страницы: иначе в строке ввода
+   «отражаются» анимации и ховеры карточек, проезжающих снизу (переливы ожидания,
+   приближение картинок), а у краёв видны полосы. Заливка сплошная на всю высоту
+   композера и на 32 px выше растворяется — так галерея затухает, уходя под него, а сцена
+   редактора (она кончается чуть выше композера) под дымку не попадает.
+   Без mask-image: маска под backdrop-filter давала светлую линию у левого края.
+   Кромки не видны: слева — градиент в пустом поле, справа заливка уходит за край окна. */
 .composer-position:has(.tool-composer)::before {
   content: "";
   position: absolute;
   z-index: -1;
-  inset: -72px 0 -24px;
-  background: linear-gradient(to top, var(--bg-page) 38%, color-mix(in srgb, var(--bg-page) 72%, transparent) 62%, transparent);
-  /* Края затухания тоже растворяются: иначе по бокам колонки видна граница прямоугольника. */
-  -webkit-mask-image: linear-gradient(to right, transparent, #000 56px, #000 calc(100% - 56px), transparent);
-  mask-image: linear-gradient(to right, transparent, #000 56px, #000 calc(100% - 56px), transparent);
+  /* Вправо — до края окна (лишнее обрезает вьюпорт): у правого нижнего угла фон
+     страницы подсвечен, и кромка заливки посреди него была бы видна. Слева кромка
+     стоит в пустом поле между сайдбаром и контентом и смягчена градиентом. */
+  inset: -32px -100vw -24px -16px;
+  background:
+    linear-gradient(to right, transparent, var(--bg-page)) left bottom / 16px calc(100% - 32px) no-repeat,
+    linear-gradient(to top, var(--bg-page) calc(100% - 32px), transparent) 16px 0 / calc(100% - 16px) 100% no-repeat;
   pointer-events: none;
 }
 
@@ -286,11 +294,11 @@
   /* preflight ограничивает img в 100% ширины — фон не дотягивался бы до правого края. */
   max-width: none;
   object-fit: cover;
-  filter: blur(26px) saturate(1.1) brightness(0.55);
+  filter: blur(26px) grayscale(1) brightness(0.5);
   pointer-events: none;
   user-select: none;
 }
-:root[data-theme="light"] .login-backdrop { filter: blur(34px) saturate(1.05) brightness(1.05); opacity: 0.75; }
+:root[data-theme="light"] .login-backdrop { filter: blur(34px) grayscale(1) brightness(1.05); opacity: 0.75; }
 
 /* Кнопка меню на узких экранах: пилюля «≡ Dizzit AI.» — плотное стекло, потому
    что под ней прокручивается контент с картинками. */

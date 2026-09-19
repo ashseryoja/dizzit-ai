@@ -1119,8 +1119,8 @@ select.field option { background: var(--bg-overlay); color: var(--fg-1); }
 
 /* Сцена: выбранный рендер во весь доступный экран, вписан целиком.
    Сама .stage ничего не обрезает — за ней лежит свечение кадра (.stage-glow);
-   обрезает .stage-clip. Поля вокруг кадра заполняет размытая затемнённая копия
-   того же рендера (.stage-backdrop): она рисуется маленькой и растягивается
+   обрезает .stage-clip. Поля вокруг кадра заполняет размытая затемнённая
+   обесцвеченная копия того же рендера (.stage-backdrop): она рисуется маленькой и растягивается
    transform-ом — размытие считается по малой площади и не тормозит. Сцена
    тёмная в обеих темах: это просмотровый бокс, как лайтбокс. */
 .stage {
@@ -1147,7 +1147,8 @@ select.field option { background: var(--bg-overlay); color: var(--fg-1); }
   height: 30%;
   object-fit: cover;
   transform: translate(-50%, -50%) scale(4.2);
-  filter: blur(14px) saturate(1.2) brightness(0.46);
+  /* Без цвета: поля сцены нейтрально-серые при любом рендере — тёплый кадр не красит интерфейс. */
+  filter: blur(14px) grayscale(1) brightness(0.42);
   pointer-events: none;
   user-select: none;
 }
@@ -1160,8 +1161,8 @@ select.field option { background: var(--bg-overlay); color: var(--fg-1); }
   height: 22%;
   object-fit: cover;
   transform: translate(-50%, -50%) scale(4.1);
-  filter: blur(16px) saturate(1.35);
-  opacity: 0.3;
+  filter: blur(16px) grayscale(1);
+  opacity: 0.22;
   border-radius: 12px;
   pointer-events: none;
   user-select: none;
