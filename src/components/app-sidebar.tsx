@@ -7,6 +7,7 @@ import {
   BookOpen,
   ChevronDown,
   Database,
+  FlaskConical,
   Layers,
   Pencil,
   Plus,
@@ -500,6 +501,11 @@ function SidebarBody({
             </Link>
           ))}
         </div>
+        <span className="ds-micro mb-1.5 block px-3">лаборатория</span>
+        <Link href="/creative-lab" onClick={onNavigate} className={navItemClass(large, isActive("/creative-lab"))} aria-current={isActive("/creative-lab") ? "page" : undefined}>
+          <FlaskConical className="h-3.5 w-3.5 shrink-0" strokeWidth={1.7} />
+          <span className="min-w-0 flex-1 truncate">Creative Lab</span>
+        </Link>
       </div>
 
       <div className="shrink-0 px-4 pb-4 pt-2">

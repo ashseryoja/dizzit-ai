@@ -4,6 +4,7 @@ node_modules
 .next-solo
 .next-build
 .next-design-review
+.next-creative-lab
 out
 build
 .DS_Store
