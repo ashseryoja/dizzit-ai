@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ru" data-format="9:16" data-h="1920" data-composition-variables='[
+  {"id":"title","type":"string","label":"Проект","default":"Гостиная"},
+  {"id":"lead","type":"string","label":"Надпись","default":"Материалы"},
+  {"id":"theme","type":"enum","label":"Тема","default":"dark","options":["light","dark"]},
+  {"id":"accent","type":"color","label":"Акцент","default":"#ff5a1f"},
+  {"id":"photo1","type":"image","label":"Интерьер","default":""},{"id":"focus1","type":"string","label":"Фокус 1","default":"50% 50%"},
+  {"id":"photo2","type":"image","label":"Материал 1","default":""},{"id":"focus2","type":"string","label":"Фокус 2","default":"50% 50%"},{"id":"cap2","type":"string","label":"Подпись 2","default":""},
+  {"id":"photo3","type":"image","label":"Материал 2","default":""},{"id":"focus3","type":"string","label":"Фокус 3","default":"50% 50%"},{"id":"cap3","type":"string","label":"Подпись 3","default":""},
+  {"id":"photo4","type":"image","label":"Материал 3","default":""},{"id":"focus4","type":"string","label":"Фокус 4","default":"50% 50%"},{"id":"cap4","type":"string","label":"Подпись 4","default":""},
+  {"id":"photo5","type":"image","label":"Материал 4","default":""},{"id":"focus5","type":"string","label":"Фокус 5","default":"50% 50%"},{"id":"cap5","type":"string","label":"Подпись 5","default":""}
+]'>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=1080, height=1920" />
+  <title>Materials</title>
+  <link rel="stylesheet" href="../_shared/lab.css" />
+  <script src="../_shared/gsap.min.js"></script>
+  <script src="../_shared/lab.js"></script>
+  <style>
+    .shot { position: absolute; inset: 0; visibility: hidden; }
+    .tags { position: absolute; top: var(--safe-top); left: var(--safe-left); right: var(--safe-right); display: flex; justify-content: space-between; align-items: baseline; }
+    .cap { position: absolute; left: var(--safe-left); right: var(--safe-right); bottom: var(--safe-bottom); display: flex; flex-direction: column; gap: 26px; }
+    .board { position: absolute; inset: 0; visibility: hidden; background: var(--bg); }
+    .board .photo { visibility: hidden; background: var(--fg-24); }
+    .board .photo .idx { position: absolute; left: 16px; top: 16px; color: #fff; mix-blend-mode: difference; }
+    .end { position: absolute; left: 0; right: 0; bottom: 0; height: 46%; visibility: hidden; padding: 56px var(--safe-right) var(--safe-bottom) var(--safe-left); display: flex; flex-direction: column; justify-content: flex-end; }
+    .end .row { display: flex; gap: 28px; align-items: baseline; padding: 18px 0; border-top: 2px solid currentColor; visibility: hidden; }
+    .end .row:last-child { border-bottom: 2px solid currentColor; }
+    .end .row .t-mono { flex: none; width: 110px; }
+    .end .head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 30px; }
+  </style>
+</head>
+<body>
+  <div id="root" data-composition-id="materials" data-start="0" data-width="1080" data-height="1920">
+    <span class="font-warm t-head">Ag Жф</span><span class="font-warm t-body">Ag Жф</span><span class="font-warm t-mono">01 Жф</span><span class="font-warm t-num">01</span>
+  </div>
+  <script>
+    (function () {
+      var L = window.Lab, B = L.B, root = document.getElementById("root");
+      L.theme();
+      var all = L.photos(5);
+      if (!all.length) { var tl0 = gsap.timeline({ paused: true }); tl0.set({}, {}, 1); L.register("materials", tl0); return; }
+      var hero = all[0], sw = all.slice(1);
+      var S = L.safe(), tl = gsap.timeline({ paused: true });
+      var lead = L.text("lead", "Материалы"), title = L.text("title", "");
+      /* Интерьер с первого кадра. */
+      var h = L.el("div", "shot", root);
+      var hp = L.photo(h, hero);
+      L.el("div", "scrim top", h); L.el("div", "scrim", h);
+      var tags = L.el("div", "tags on-photo t-mono", h);
+      L.el("span", "", tags, lead); L.el("span", "muted", tags, title);
+      var cap = L.el("div", "cap on-photo", h);
+      var bar = L.el("span", "bar", cap); bar.style.position = "relative"; bar.style.display = "block"; bar.style.width = "140px";
+      var lines = L.lines(cap, lead, 12, "t-display");
+      L.cut(tl, h, 0, { scale: 1.1, dur: B * 1.2 });
+      L.push(tl, hp, B * 1.2, B * 2.2, .01);
+      L.bar(tl, bar, B * .4); L.slam(tl, lines, B * .5);
+      tl.set(tags.children, { autoAlpha: 0 }, 0); tl.set(tags.children, { autoAlpha: 1, stagger: B / 4 }, B * .8);
+      var t = sw.length ? B * 3.4 : B * 7;
+      if (sw.length) {
+        /* Доска: образцы щёлкают по сетке. */
+        var board = L.el("div", "board", root);
+        var bh = L.el("div", "tags t-mono", board);
+        L.el("span", "", bh, lead); L.el("span", "muted", bh, title);
+        /* Сетка сидит над финальным инверсным блоком (46 % высоты), чтобы он не накрывал плитки. */
+        var cells = L.grid(sw.length, sw.length === 1 ? 1 : 2, 1, 14, { top: S.top + 90, bottom: Math.round(L.H * .46) + 40, left: S.left, right: S.right });
+        var tiles = sw.map(function (p, i) {
+          var c = cells[i], tile = L.photo(board, p);
+          tile.style.left = c.x + "px"; tile.style.top = c.y + "px"; tile.style.width = c.w + "px"; tile.style.height = c.h + "px";
+          L.el("span", "idx t-mono", tile, "( " + L.pad(i + 1) + " )");
+          return tile;
+        });
+        tl.set(board, { autoAlpha: 1 }, t);
+        tl.set(tiles, { autoAlpha: 1, stagger: B / 6 }, t);
+        t += B * 2.4;
+        /* Каждый образец — во весь кадр, с индексом и названием. */
+        sw.forEach(function (p, i) {
+          var m = L.el("div", "shot", root);
+          var mp = L.photo(m, p);
+          L.el("div", "scrim", m); L.el("div", "scrim top", m);
+          var tg = L.el("div", "tags on-photo t-mono", m);
+          L.el("span", "", tg, "( " + L.pad(i + 1) + " )"); L.el("span", "muted", tg, L.pad(i + 1) + " / " + L.pad(sw.length));
+          var c = L.el("div", "cap on-photo", m);
+          var cl = L.lines(c, p.caption || "", 14, "t-head");
+          L.cut(tl, m, t, { scale: 1.12 });
+          if (cl.length) L.slam(tl, cl, t + B * .2);
+          L.push(tl, mp, t + B * .9, B * 1.5, .012);
+          var end = t + B * 2.2;
+          if (cl.length) L.slamOut(tl, cl, end - B * .3);
+          tl.set(m, { autoAlpha: 0 }, end);
+          t = end;
+        });
+        /* Назад к доске + инверсный список материалов. */
+        var endBlock = L.el("div", "end block", board);
+        var eh = L.el("div", "head", endBlock);
+        L.el("span", "t-head", eh, title || lead); L.el("span", "t-mono muted", eh, L.pad(sw.length));
+        var rows = sw.map(function (p, i) { var r = L.el("div", "row", endBlock); L.el("span", "t-mono", r, "( " + L.pad(i + 1) + " )"); L.el("span", "t-body", r, p.caption || ""); return r; });
+        L.slide(tl, endBlock, t + B * .6, { xPercent: 0, yPercent: 100, dur: B * .8 });
+        tl.set(rows, { autoAlpha: 1, stagger: B / 4 }, t + B * 1.2);
+        t += B * 1.4 + 2.4;
+      }
+      L.finish(tl, root, t);
+      L.register("materials", tl);
+    })();
+  </script>
+</body>
+</html>

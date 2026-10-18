@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="ru" data-format="9:16" data-h="1920" data-composition-variables='[
+  {"id":"title","type":"string","label":"Проект","default":"Дом в Сосновке"},
+  {"id":"meta","type":"string","label":"Город · год","default":"Подмосковье · 2026"},
+  {"id":"render","type":"string","label":"Подпись рендера","default":"Рендер"},
+  {"id":"built","type":"string","label":"Подпись фото","default":"Реализация"},
+  {"id":"theme","type":"enum","label":"Тема","default":"dark","options":["light","dark"]},
+  {"id":"accent","type":"color","label":"Акцент","default":"#ff5a1f"},
+  {"id":"photo1","type":"image","label":"Главный кадр","default":""},{"id":"focus1","type":"string","label":"Фокус 1","default":"50% 50%"},
+  {"id":"photo2","type":"image","label":"Рендер 1","default":""},{"id":"focus2","type":"string","label":"Фокус 2","default":"50% 50%"},{"id":"cap2","type":"string","label":"Подпись 2","default":""},
+  {"id":"photo3","type":"image","label":"Фото 1","default":""},{"id":"focus3","type":"string","label":"Фокус 3","default":"50% 50%"},
+  {"id":"photo4","type":"image","label":"Рендер 2","default":""},{"id":"focus4","type":"string","label":"Фокус 4","default":"50% 50%"},{"id":"cap4","type":"string","label":"Подпись 4","default":""},
+  {"id":"photo5","type":"image","label":"Фото 2","default":""},{"id":"focus5","type":"string","label":"Фокус 5","default":"50% 50%"},
+  {"id":"photo6","type":"image","label":"Рендер 3","default":""},{"id":"focus6","type":"string","label":"Фокус 6","default":"50% 50%"},{"id":"cap6","type":"string","label":"Подпись 6","default":""},
+  {"id":"photo7","type":"image","label":"Фото 3","default":""},{"id":"focus7","type":"string","label":"Фокус 7","default":"50% 50%"}
+]'>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=1080, height=1920" />
+  <title>Project reveal</title>
+  <link rel="stylesheet" href="../_shared/lab.css" />
+  <script src="../_shared/gsap.min.js"></script>
+  <script src="../_shared/lab.js"></script>
+  <style>
+    .shot { position: absolute; inset: 0; visibility: hidden; }
+    .tags { position: absolute; top: var(--safe-top); left: var(--safe-left); right: var(--safe-right); display: flex; justify-content: space-between; align-items: baseline; }
+    .tags .swap { position: relative; min-width: 320px; }
+    .tags .swap > span { position: absolute; left: 0; top: 0; white-space: nowrap; }
+    .foot { position: absolute; left: var(--safe-left); right: var(--safe-right); bottom: var(--safe-bottom); }
+    .foot .bar { position: relative; display: block; width: 140px; margin-bottom: 36px; }
+    .grid { position: absolute; inset: 0; visibility: hidden; background: var(--bg); }
+    .grid .photo { background: var(--fg-24); visibility: hidden; }
+    .grid .block { left: 0; right: 0; bottom: 0; height: 30%; padding: 56px var(--safe-right) var(--safe-bottom) var(--safe-left); display: flex; flex-direction: column; justify-content: flex-end; gap: 22px; }
+    .grid .block .bar { position: relative; display: block; width: 140px; }
+  </style>
+</head>
+<body>
+  <div id="root" data-composition-id="reveal" data-start="0" data-width="1080" data-height="1920">
+    <span class="font-warm t-display">Ag Жф</span><span class="font-warm t-head">Ag Жф</span><span class="font-warm t-mono">01 Жф</span><span class="font-warm t-num">01</span>
+  </div>
+  <script>
+    (function () {
+      var L = window.Lab, B = L.B, root = document.getElementById("root");
+      L.theme();
+      var all = L.photos(7);
+      if (!all.length) { var tl0 = gsap.timeline({ paused: true }); tl0.set({}, {}, 1); L.register("reveal", tl0); return; }
+      var hero = all[0], pairs = [];
+      for (var i = 1; i + 1 < all.length; i += 2) pairs.push([all[i], all[i + 1]]);
+      var renderLabel = L.text("render", "Рендер"), builtLabel = L.text("built", "Реализация");
+      var title = L.text("title", ""), meta = L.text("meta", "");
+      var tl = gsap.timeline({ paused: true });
+
+      /* Хук: готовый кадр с первого же кадра, название вылетает за полдоли. */
+      var open = L.el("div", "shot", root);
+      var heroPhoto = L.photo(open, hero);
+      L.el("div", "scrim", open);
+      var tags = L.el("div", "tags on-photo t-mono", open);
+      L.el("span", "", tags, meta);
+      L.el("span", "muted", tags, L.pad(all.length) + " / " + L.pad(all.length));
+      var foot = L.el("div", "foot on-photo", open);
+      var bar = L.el("span", "bar", foot);
+      var titleLines = L.lines(foot, title, 10, "t-display");
+      L.cut(tl, open, 0, { scale: 1.1, dur: B * 1.4 });
+      L.push(tl, heroPhoto, B * 1.4, B * 2, .01);
+      L.bar(tl, bar, B * .5);
+      L.slam(tl, titleLines, B * .6);
+      tl.fromTo(tags.children, { autoAlpha: 0 }, { autoAlpha: 1, duration: .01, stagger: B / 4 }, B);
+      var t = pairs.length ? B * 3.4 : B * 7;
+
+      pairs.forEach(function (pair, i) {
+        var g = L.el("div", "shot", root);
+        var render = L.photo(g, pair[0]);
+        var built = L.photo(g, pair[1]);
+        L.el("div", "scrim", g);
+        L.el("div", "scrim top", g);
+        var tg = L.el("div", "tags on-photo t-mono", g);
+        var swap = L.el("div", "swap", tg);
+        var a = L.el("span", "", swap, renderLabel), b = L.el("span", "accent", swap, builtLabel);
+        L.el("span", "", tg, L.pad(i + 1) + " / " + L.pad(pairs.length));
+        var num = L.el("div", "num t-num", g, L.pad(i + 1));
+        var cap = L.el("div", "foot on-photo", g);
+        var capBar = L.el("span", "bar thin", cap);
+        var room = pair[0].caption ? L.lines(cap, pair[0].caption, 14, "t-head") : [];
+        /* Рендер: резкая склейка со snap-масштабом. */
+        L.cut(tl, g, t, { scale: 1.08 });
+        tl.set(built, { autoAlpha: 0 }, t);
+        tl.set(b, { autoAlpha: 0 }, t);
+        tl.fromTo(num, { xPercent: 30 }, { xPercent: 0, duration: B * .8, ease: L.E.enter }, t);
+        L.bar(tl, capBar, t + B * .2);
+        if (room.length) L.slam(tl, room, t + B * .25);
+        L.push(tl, render, t + B * .9, B * 1.5, .01);
+        /* Match cut: фото въезжает справа в том же кадре, подпись щёлкает. */
+        var m = t + B * 2.4;
+        L.wipe(tl, built, m, { from: "right", dur: B * .8 });
+        L.push(tl, built, m, B * 3.6, .008);
+        tl.set(a, { autoAlpha: 0 }, m + B * .4);
+        tl.set(b, { autoAlpha: 1 }, m + B * .4);
+        t = m + B * .8 + B * 2.8;
+        if (room.length) L.slamOut(tl, room, t - B * .4);
+        tl.set(g, { autoAlpha: 0 }, t + B * .2);
+      });
+
+      /* Финал: все кадры собираются в сетку щелчками, снизу — инверсный блок с названием. */
+      if (pairs.length) {
+        var S = L.safe();
+        var g = L.el("div", "grid", root);
+        var shots = [hero].concat(pairs.map(function (p) { return p[1]; }));
+        var cells = L.grid(shots.length, 2, 1.25, 16, { top: S.top, bottom: Math.round(L.H * .3) + 40, left: S.left, right: S.right });
+        var tiles = shots.map(function (p, i) {
+          var c = cells[i], tile = L.photo(g, p);
+          tile.style.left = c.x + "px"; tile.style.top = c.y + "px"; tile.style.width = c.w + "px"; tile.style.height = c.h + "px";
+          return tile;
+        });
+        var block = L.el("div", "block", g);
+        var bbar = L.el("span", "bar", block);
+        var bt = L.lines(block, title, 16, "t-head");
+        var bm = L.el("span", "t-mono muted", block, meta);
+        tl.set(g, { autoAlpha: 1 }, t);
+        tl.set(tiles, { autoAlpha: 1, stagger: B / 8 }, t);
+        L.slide(tl, block, t + B * .5, { xPercent: 0, yPercent: 100, dur: B * .8 });
+        L.bar(tl, bbar, t + B * 1);
+        L.slam(tl, bt, t + B * 1.1);
+        tl.fromTo(bm, { autoAlpha: 0 }, { autoAlpha: 1, duration: .01 }, t + B * 1.6);
+        t += B * 1.2 + 2.3;
+      }
+      L.finish(tl, root, t);
+      L.register("reveal", tl);
+    })();
+  </script>
+</body>
+</html>

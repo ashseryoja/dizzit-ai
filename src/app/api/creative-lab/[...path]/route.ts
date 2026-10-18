@@ -29,7 +29,7 @@ async function proxy(request: Request, { params }: { params: Promise<{ path: str
         const { value, done } = await reader.read()
         if (done) break
         total += value.byteLength
-        if (total > 24 * 1024 * 1024) { await reader.cancel(); return problem(413, { error: "too_large", message: "Слишком большой набор фотографий." }) }
+        if (total > 48 * 1024 * 1024) { await reader.cancel(); return problem(413, { error: "too_large", message: "Слишком большой набор фотографий." }) }
         chunks.push(value)
       }
     }

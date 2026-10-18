@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ru" data-format="9:16" data-h="1920" data-composition-variables='[
+  {"id":"title","type":"string","label":"Подпись","default":"Другой мир"},
+  {"id":"before","type":"string","label":"Подпись «фото»","default":"Фотография"},
+  {"id":"after","type":"string","label":"Подпись «бумага»","default":"Бумага"},
+  {"id":"theme","type":"enum","label":"Тема","default":"dark","options":["light","dark"]},
+  {"id":"accent","type":"color","label":"Акцент","default":"#ff5a1f"},
+  {"id":"photo1","type":"image","label":"Фотография","default":""},{"id":"focus1","type":"string","label":"Фокус 1","default":"50% 50%"},
+  {"id":"photo2","type":"image","label":"Бумажная сцена","default":""},{"id":"focus2","type":"string","label":"Фокус 2","default":"50% 50%"}
+]'>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=1080, height=1920" />
+  <title>Into paper</title>
+  <link rel="stylesheet" href="../_shared/lab.css" />
+  <script src="../_shared/gsap.min.js"></script>
+  <script src="../_shared/lab.js"></script>
+  <style>
+    .half { position: absolute; top: 0; bottom: 0; left: 50%; right: 0; overflow: hidden; visibility: hidden; }
+    .half .photo { width: 200%; left: -100%; }
+    .seam { position: absolute; top: 0; bottom: 0; left: 50%; width: 8px; margin-left: -4px; background: var(--accent); visibility: hidden; }
+    .lbl { position: absolute; top: var(--safe-top); left: var(--safe-left); }
+    .lbl.right { left: calc(50% + 28px); }
+    .end { position: absolute; left: 0; right: 0; bottom: 0; height: 40%; visibility: hidden; padding: 56px var(--safe-right) var(--safe-bottom) var(--safe-left); display: flex; flex-direction: column; justify-content: flex-end; gap: 22px; }
+    .end .bar { position: relative; display: block; width: 140px; }
+  </style>
+</head>
+<body>
+  <div id="root" data-composition-id="paper-reveal" data-start="0" data-width="1080" data-height="1920">
+    <span class="font-warm t-head">Ag Жф</span><span class="font-warm t-mono">01 Жф</span>
+  </div>
+  <script>
+    (function () {
+      var L = window.Lab, B = L.B, root = document.getElementById("root");
+      L.theme();
+      var all = L.photos(2);
+      if (!all.length) { var tl0 = gsap.timeline({ paused: true }); tl0.set({}, {}, 1); L.register("paper-reveal", tl0); return; }
+      var tl = gsap.timeline({ paused: true });
+      var before = L.photo(root, all[0]);
+      var half = L.el("div", "half", root);
+      L.photo(half, all[1] || all[0]);
+      var seam = L.el("div", "seam", root);
+      var after = L.photo(root, all[1] || all[0]);
+      tl.set(after, { autoAlpha: 0 }, 0);
+      L.el("div", "scrim top", root);
+      var lb = L.el("div", "lbl on-photo t-mono", root, L.text("before", "Фотография"));
+      var la = L.el("div", "lbl right on-photo t-mono accent", root, L.text("after", "Бумага"));
+      var end = L.el("div", "end block", root);
+      var bar = L.el("span", "bar", end);
+      var title = L.lines(end, L.text("title", ""), 16, "t-head");
+      var sub = L.el("span", "t-mono muted", end, L.text("after", "Бумага"));
+      var s = B * 2.4, f = s + B * 2.4, e = f + B * 2.6, total = e + B * .8 + 2.4;
+      L.cut(tl, before, 0, { scale: 1.1, dur: B * 1.2 });
+      tl.set(la, { autoAlpha: 0 }, 0);
+      L.push(tl, before, B * 1.2, s + B, .01);
+      L.slide(tl, half, s, { xPercent: 100, dur: B * .8 });
+      L.slide(tl, seam, s, { xPercent: 6800, dur: B * .8 });
+      tl.set(la, { autoAlpha: 1 }, s + B * .6);
+      L.wipe(tl, after, f, { from: "left", dur: B * .8 });
+      tl.to(seam, { xPercent: -6800, duration: B * .8, ease: L.E.hard }, f);
+      tl.set(la, { autoAlpha: 0 }, f + B * .3);
+      tl.set(lb, { textContent: L.text("after", "Бумага"), color: getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() }, f + B * .3);
+      L.push(tl, after, f, total - f, .008);
+      L.slide(tl, end, e, { xPercent: 0, yPercent: 100, dur: B * .8 });
+      L.bar(tl, bar, e + B * .5); L.slam(tl, title, e + B * .6);
+      tl.fromTo(sub, { autoAlpha: 0 }, { autoAlpha: 1, duration: .01 }, e + B * 1.1);
+      L.finish(tl, root, total);
+      L.register("paper-reveal", tl);
+    })();
+  </script>
+</body>
+</html>

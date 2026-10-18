@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="ru" data-format="9:16" data-h="1920" data-composition-variables='[
+  {"id":"title","type":"string","label":"Проект","default":"Квартира на Пресне"},
+  {"id":"scope","type":"string","label":"Что сделано","default":"Полная реконструкция · 2026"},
+  {"id":"before","type":"string","label":"Подпись «до»","default":"До"},
+  {"id":"after","type":"string","label":"Подпись «после»","default":"После"},
+  {"id":"theme","type":"enum","label":"Тема","default":"dark","options":["light","dark"]},
+  {"id":"accent","type":"color","label":"Акцент","default":"#ff5a1f"},
+  {"id":"photo1","type":"image","label":"До 1","default":""},{"id":"focus1","type":"string","label":"Фокус 1","default":"50% 50%"},
+  {"id":"photo2","type":"image","label":"После 1","default":""},{"id":"focus2","type":"string","label":"Фокус 2","default":"50% 50%"},
+  {"id":"photo3","type":"image","label":"До 2","default":""},{"id":"focus3","type":"string","label":"Фокус 3","default":"50% 50%"},
+  {"id":"photo4","type":"image","label":"После 2","default":""},{"id":"focus4","type":"string","label":"Фокус 4","default":"50% 50%"},
+  {"id":"photo5","type":"image","label":"До 3","default":""},{"id":"focus5","type":"string","label":"Фокус 5","default":"50% 50%"},
+  {"id":"photo6","type":"image","label":"После 3","default":""},{"id":"focus6","type":"string","label":"Фокус 6","default":"50% 50%"}
+]'>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=1080, height=1920" />
+  <title>Before / After</title>
+  <link rel="stylesheet" href="../_shared/lab.css" />
+  <script src="../_shared/gsap.min.js"></script>
+  <script src="../_shared/lab.js"></script>
+  <style>
+    .pair { position: absolute; inset: 0; visibility: hidden; }
+    .half { position: absolute; top: 0; bottom: 0; left: 50%; right: 0; overflow: hidden; visibility: hidden; }
+    .half .photo { width: 200%; left: -100%; }
+    .seam { position: absolute; top: 0; bottom: 0; left: 50%; width: 8px; margin-left: -4px; background: var(--accent); visibility: hidden; }
+    .lbl { position: absolute; top: var(--safe-top); left: var(--safe-left); display: flex; align-items: baseline; gap: 24px; }
+    .lbl.right { left: calc(50% + 28px); }
+    .end { position: absolute; left: 0; right: 0; bottom: 0; height: 44%; visibility: hidden; padding: 64px var(--safe-right) var(--safe-bottom) var(--safe-left); display: flex; flex-direction: column; justify-content: flex-end; gap: 24px; }
+    .end .bar { position: relative; display: block; width: 140px; }
+  </style>
+</head>
+<body>
+  <div id="root" data-composition-id="before-after" data-start="0" data-width="1080" data-height="1920">
+    <span class="font-warm t-display">Ag Жф</span><span class="font-warm t-head">Ag Жф</span><span class="font-warm t-mono">01 Жф</span><span class="font-warm t-num">01</span>
+  </div>
+  <script>
+    (function () {
+      var L = window.Lab, B = L.B, root = document.getElementById("root");
+      L.theme();
+      var all = L.photos(6), pairs = [];
+      for (var i = 0; i + 1 < all.length; i += 2) pairs.push([all[i], all[i + 1]]);
+      if (!pairs.length && all.length) pairs.push([all[0], all[0]]);
+      if (!pairs.length) { var tl0 = gsap.timeline({ paused: true }); tl0.set({}, {}, 1); L.register("before-after", tl0); return; }
+      var beforeLabel = L.text("before", "До"), afterLabel = L.text("after", "После");
+      var accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
+      var tl = gsap.timeline({ paused: true });
+      var t = 0;
+      pairs.forEach(function (pair, i) {
+        var g = L.el("div", "pair", root);
+        var before = L.photo(g, pair[0]);
+        var half = L.el("div", "half", g);
+        var afterHalf = L.photo(half, pair[1]);
+        var seam = L.el("div", "seam", g);
+        var after = L.photo(g, pair[1]);
+        tl.set(after, { autoAlpha: 0 }, 0);
+        L.el("div", "scrim top", g);
+        var lb = L.el("div", "lbl on-photo t-mono", g);
+        var tag = L.el("span", "", lb, beforeLabel);
+        L.el("span", "muted", lb, L.pad(i + 1) + " / " + L.pad(pairs.length));
+        var la = L.el("div", "lbl right on-photo t-mono", g);
+        L.el("span", "accent", la, afterLabel);
+        var num = L.el("div", "num t-num", g, L.pad(i + 1));
+        /* «До»: резкая склейка, индекс вылетает справа. */
+        L.cut(tl, g, t, { scale: 1.08 });
+        tl.set(la, { autoAlpha: 0 }, t);
+        tl.fromTo(num, { xPercent: 30 }, { xPercent: 0, duration: B * .8, ease: L.E.enter }, t);
+        L.push(tl, before, t + B * .9, B * 3, .01);
+        /* Split: «после» въезжает правой половиной, шов — акцентом. */
+        var s = t + B * 2;
+        L.slide(tl, half, s, { xPercent: 100, dur: B * .8 });
+        L.slide(tl, seam, s, { xPercent: 6800, dur: B * .8 });
+        tl.set(la, { autoAlpha: 1 }, s + B * .6);
+        tl.set(num, { autoAlpha: 0 }, s);
+        /* «После» занимает весь кадр: шторка слева направо, шов уезжает. */
+        var f = s + B * 2.4;
+        L.wipe(tl, after, f, { from: "left", dur: B * .8 });
+        tl.to(seam, { xPercent: -6800, duration: B * .8, ease: L.E.hard }, f);
+        tl.set(la, { autoAlpha: 0 }, f + B * .3);
+        tl.set(tag, { textContent: afterLabel, color: accent }, f + B * .3);
+        L.push(tl, after, f, B * 4, .008);
+        t = f + B * .8 + B * 2.4;
+        if (i < pairs.length - 1) tl.set(g, { autoAlpha: 0 }, t + B * .2);
+      });
+      /* Финал: инверсный блок поднимается снизу — название и объём работ. */
+      var last = root.querySelector(".pair:last-of-type");
+      var end = L.el("div", "end block", last);
+      var bar = L.el("span", "bar", end);
+      var title = L.lines(end, L.text("title", ""), 16, "t-head");
+      var scope = L.el("span", "t-mono muted", end, L.text("scope", ""));
+      var e = t - B * .4;
+      L.slide(tl, end, e, { xPercent: 0, yPercent: 100, dur: B * .8 });
+      L.bar(tl, bar, e + B * .5);
+      L.slam(tl, title, e + B * .6);
+      tl.fromTo(scope, { autoAlpha: 0 }, { autoAlpha: 1, duration: .01 }, e + B * 1.1);
+      t = e + B * .8 + 2.4;
+      L.finish(tl, root, t);
+      L.register("before-after", tl);
+    })();
+  </script>
+</body>
+</html>

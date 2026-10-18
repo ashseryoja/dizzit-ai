@@ -4,12 +4,13 @@
 каталог и редактор находятся в `src/components/creative-lab/`, страницы в
 `src/app/(main)/creative-lab/`, стили в `src/styles/ds/creative-lab.css`.
 Она намеренно не использует ToolShell/ToolComposer. Все её шаблоны используют
-один `LabEditor`, `LabPreview`, `LabJobResult` и общий файл композиции.
+один `LabEditor`, `LabPreview` (плеер Hyperframes поверх srcdoc) и `LabJobResult`;
+сами шаблоны — HTML-композиции в `public/creative-lab/hf/` с общим слоем `_shared`.
 Хранение видео — папки проекта/диска, не база данных. См. [CREATIVE_LAB.md](CREATIVE_LAB.md).
 
 Как собран экран инструмента Dizzit AI и **где править, чтобы изменилось везде**.
-Экраны «Редактор рендера», «Ракурсы и детали», «Перенос стиля», «Фото → 3D» и
-«Генерация материала» не содержат собственной разметки композера, панелей,
+Экраны «Редактор рендера», «Ракурсы и детали», «Перенос стиля», «Фото → 3D»,
+«Фото → видео» и «Генерация материала» не содержат собственной разметки композера, панелей,
 сцены или приёма файлов — они собирают экран из общих частей и добавляют
 только своё: тексты, набор опций, движок и специфические секции.
 
@@ -57,6 +58,10 @@
 | Разбор сцены перед улучшением: vision-модель составляет инвентарь кадра — материалы поверхностей (пол травертин, а не микроцемент; шпон дуба, а не ламинат) и предметы (телевизор выключен, шторы тюлевые, люстра горит), он уходит в промпт gpt-image-2 и хранится в записи (`sceneInventory`); выбор модели, промпт аналитика, чистка ответа, запрет подмены материалов | `src/lib/scene-analysis.ts` — клиент; `src/app/api/scene/route.ts` + `src/server/scene-inventory.ts`, `vision-provider.ts`, `providers.ts` (`resolveVisionProviders` — цепочка с запасными) — сервер; блоки промпта — `src/lib/enhance-engine.ts` | `describeScene`, `sceneAnalysisStatus`, `hasMaterialsSection`; `analyzeScene`, `buildSceneInventoryPrompt`, `tidyInventory`; `OBJECT_IDENTITY_HINT`, `MATERIAL_FIDELITY_HINT`, `sceneInventoryBlock`, `sourceQualityHint`, `EnhanceHooks.onInventory` |
 | «Фото → 3D»: экран как у Meshy — панель генерации внизу (фото и ракурсы, модель, детализация, текстура/PBR/улучшение фото, «время · кредиты»), сцена с вьюером в центре, библиотека моделей справа; какие настройки есть у какой модели и сколько они стоят | `src/shared/model3d.ts` — контракт настроек, возможности моделей, оценка кредитов (один на клиент и сервер); `src/components/tool/model-dock.tsx`, `model-stage.tsx`, `model-library.tsx`; `src/lib/use-view-slots.ts` — какой файл в каком слоте; `tool-composer.tsx` — пропсы `dock`, `dockLabel`, `settingsInDock`; `tool-shell.tsx` — `composerSpace`; `.model-dock*`, `.model-slot*`, `.model-ai*`, `.model-stage*`, `.model-tile*` в `surfaces.css` | `ModelSettings`, `MODEL_AI`, `normalizeModelSettings`, `estimateModelCost`, `describeModelSettings`; `ModelDock`, `ModelStage`, `ModelLibrary`, `ModelLibraryStrip`; `useViewSlots` |
 | «Фото → 3D»: куда уходит фото и откуда берётся модель — задача Meshy (Image to 3D), опрос готовности, GLB в своём хранилище под ключом `${id}:model`, возобновление опроса после перезагрузки, каркас-заглушка без ключа; **второй этап без переключателя — детали для дизайнеров**: готовая модель разбивается у Meshy на детали (Auto Split, 10 кредитов, `splitId` в записи; подсказку «какие детали, реальная ширина, имя» даёт vision-модель по фото), а сервер собирает её «по канонам» — отдельные именованные объекты (каркас, подушки, ножки), материал по классу на каждом (ткань/кожа/металл/дерево по цвету атласа), два UV-канала (атлас и box-развёртка), метры, pivot на полу; внутренние грани разреза чистятся, швы сглаживаются; если Meshy не разделил — модель цельная с пометкой (`splitNote`); три формата результата (`MODEL_FORMATS`: GLB — вьюер, FBX и OBJ — архивы с деталями, материалами и текстурами для 3ds Max/ArchiCAD/AutoCAD; докачиваются фоном, список готовых — `Model3D.formats`); просмотр GLB (вращение, зум, автоповорот; материалы без текстуры — Meshy отдаёт их без секции `materials`, и glTF подставляет белый металл — вьюер переводит в матовую серую «глину», чтобы модель не выгорала), статистика деталей и размера на сцене и скачивание по форматам | `src/lib/model-engine.ts` — клиент; `src/app/api/models/route.ts`, `[taskId]/route.ts`, `[taskId]/split/route.ts`, `[taskId]/file/route.ts` + `src/server/meshy.ts` — сервер (ключ `MESHY_API_KEY`, параметры задачи, Auto Split, перекладывание файлов в хранилище); `src/server/model-parts.ts` — vision-подсказка; `src/server/model-assembly.ts` (+ `-glb.ts`, `-fbx.ts`, `-textures.ts`) — сборка по деталям, экспорт GLB/FBX/OBJ, бесшовные текстуры классов; `src/server/zip.ts` — архивы; `src/shared/model3d.ts` — `ModelPart`, `SPLIT_CREDITS`, `modelSplitEnabled`; `src/components/tool/model-viewer.tsx` — вьюер и скачивание; `.model-viewer`, `.model-downloads` в `surfaces.css` | `modelProviderStatus`, `submitModelTask`, `awaitModelTask`, `submitSplitTask`, `awaitSplitTask`, `fetchModelFile`, `readGlbStats`; `createMeshyTask`, `getMeshyTask`, `createMeshySplitTask`, `getMeshySplitTask`, `downloadMeshyModel`; `describeFurnitureParts`; `assembleModel`; `buildZip`; `ModelViewer`, `ModelDownloads`, `downloadStoredModel` |
+| Библиотека проекта справа на экранах со сценой вместо галереи (модели, ролики): сетка превью, статус задачи на плитке, бейдж длительности, дата и удаление по наведению; полоска под сценой на узких экранах | `src/components/tool/library-panel.tsx` — разметка; `model-library.tsx`, `reel-library.tsx` — какие плитки; `.model-tile*` в `surfaces.css` | `LibraryPanel`, `LibraryStrip`, `LibraryItem` |
+| «Фото → видео»: экран как у «Фото → 3D» — раскадровка над композером (кадры по порядку, перетаскивание и стрелки, ход камеры и предупреждения на плитке, «Из проекта»; формат 16:9 / 9:16 / 1:1, «Склейка / Проход», амплитуда, «Возврат в кадр»; итог «N кадров · 20 с · ≈ $»), сцена с живым ходом камеры и выбором хода внизу, «Весь ролик», плеер готового ролика и строка клипов, ролики проекта справа | `src/shared/video.ts` — контракт (ходы `CAMERA_MOVES`, амплитуды, форматы, план ролика `planReelClips`, итог `summarizeReel`, промпт клипа `buildClipPrompt`, ключи файлов) — один на клиент и сервер; `src/components/tool/reel-dock.tsx`, `reel-stage.tsx`, `reel-library.tsx`, `reel-invite.tsx`; `src/lib/use-reel-draft.ts` — раскадровка поверх пачки; `src/lib/use-project-frames.ts` — картинки проекта; `.reel-*`, `.ri-*` в `surfaces.css` | `ReelDock`, `CAMERA_ICON`, `CAMERA_CHOICES`; `ReelDraftStage`, `ReelStage`, `CameraMotion`, `downloadReel`; `ReelLibrary`, `ReelLibraryStrip`; `ReelInvite`; `useReelDraft`; `useProjectFrames`, `loadProjectFrame` |
+| «Фото → видео»: куда уходит кадр и откуда клип — провайдер видео включается явно (`VIDEO_PROVIDER=apimodels`; модель `VIDEO_MODEL`, по умолчанию Kling 3.0, режим `VIDEO_MODE`), задача на клип, опрос готовности, клип в своём хранилище под `${id}:clip-c1`, возобновление опроса после перезагрузки без новых оплат (`allowSubmit`, «Продолжить»), склейка клипов в браузере (WebCodecs, mediabunny), предпросмотр без ключа той же математикой хода камеры; vision-модель (`VIDEO_REVIEW=vision`) — разбор кадров до запуска (риски, ход «Авто») и проверка клипа на дрейф с одним повтором | `src/lib/video-engine.ts` — клиент; `src/app/api/videos/route.ts`, `[taskId]/route.ts`, `[taskId]/file/route.ts`, `review/route.ts` — сервер; `src/server/video-provider.ts` — контракт провайдера, `apimodels-video.ts` — API Models (Kling / first-last frame), `video-review.ts` — промпты проверки, `providers.ts` — выбор по окружению; `scripts/check-video.mjs` — страж | `videoProviderStatus`, `prepareReelFrame`, `saveReelFrame`, `cameraPose`, `passPose`, `renderPreviewClip`, `submitClip`, `awaitClip`, `fetchClip`, `reviewFrame`, `reviewClip`, `assembleReel`, `produceReel`; `resolveVideoProvider`, `videoReviewProviders`; `ApiModelsVideoProvider`; `buildFrameReviewPrompt`, `buildClipReviewPrompt` |
+| Порядок файлов в пачке (раскадровка ролика) | `src/lib/use-attachments.ts` | `moveAttachment(from, to)` |
 | В какой проект класть новые записи | `src/stores/project-store.ts` | `ensureActiveProject`, `useActiveProject` |
 | Альбом-презентация: из чего складывается PDF (обложка во весь лист с затемнением, содержание с номерами страниц, концепция с палитрой, общие планы и «до / после», сеты ракурсов, доска материалов, задняя страница), форматы страниц и темы, план страниц (что войдёт и сколько страниц — до сборки), тексты от ИИ, выбор состава миниатюрами, сборка по кнопке, превью PDF | `src/shared/album.ts` — контракт спецификации и **план страниц** (`planAlbum`, `splitBalanced`, `materialColumns`, `ALBUM_CAPACITY`, `MATERIAL_GRID`, `ALBUM_SECTION_TITLE`) — один на клиент и сервер; `src/lib/album-engine.ts` — сборка спецификации из записей, факты для ИИ, запросы, `formatAlbumDate`; `src/server/album-document.tsx` — вёрстка страниц (@react-pdf, страницы по плану), `album-render.ts` — шрифты (Unbounded Light/Medium — статические начертания, Garet) и картинки, `album-copy.ts` — промпт текстов, `album-images.ts` — откуда байты картинок и копии для PDF на сервере (`prepareAlbumAssets`; ключ копии `pdfKey` — в `shared/album.ts`; из кэша браузера копии выгружает `prepareAlbumImages` движка); роуты `src/app/api/album`, `/prepare` и `/copy`; `src/components/tool/album-section.tsx`, `album-picker.tsx`, `album-style-picker.tsx`, `album-build.tsx`, `album-pages.tsx`, `album-preview.tsx`; `.album-*` в `surfaces.css` | `buildAlbumSpec`, `buildAlbumFacts`, `defaultAlbum`, `renderAlbum`, `requestAlbumCopy`, `planAlbum`; `AlbumDocument`, `loadAlbumImages`, `renderAlbumPdf`, `buildAlbumCopyPrompt`; `AlbumSection`, `AlbumPicker`, `AlbumFormatPicker`, `AlbumThemePicker`, `AlbumBuildPanel`, `AlbumBuildBar`, `AlbumPageStrip`, `AlbumPreview` |
 | Просмотр картинки во весь экран (модальное окно): затемнение, кадр вырастает из миниатюры, стрелки листают соседей, клик приближает, перетаскивание двигает, Esc закрывает, «Скачать» | `src/components/ui/lightbox.tsx` — слой и вызов; `.lb*`, `.zoom-hit`, `.zoom-btn` в `src/styles/ds/motion.css` | `LightboxHost` (один, в `(main)/layout.tsx`), `openLightbox(items, { index, origin })`; на картинке со свободным кликом — `ZoomHit`, с занятым (плитка выбирает, сцена рисует области) — уголок `ZoomButton` внутри родителя `.zoom-host` |
@@ -121,6 +126,7 @@ useBatchSelection ─► batch ──► Stage / BatchGrid / RenderTray / Render
 | `onDetach(items, reason)` | файлы ушли из пачки; `discard` означает удалить черновик, `consume` — превратить его в задание; страница также подчищает своё по `previewUrl` |
 
 Возвращает `AttachmentIntake`: `attachments`, `attachFiles`, `removeAttachment`,
+`moveAttachment(from, to)` (порядок пачки — раскадровка ролика),
 `clearAttachments`, `detach(urls, reason)`, `restoreAttachments(items)`,
 `pickFiles`, а также всё, что нужно
 `ToolShell` для скрытого input и переноса (`inputRef`, `onInputChange`,
@@ -170,6 +176,26 @@ refresh. Удаление пары из пачки
 Набор ведётся по `previewUrl`: он уникален и переживает удаление соседей.
 Инструменты без просмотра пачки на сцене («Материалы», «Фото → 3D») этот хук
 не используют — им хватает `useAttachments`.
+
+### `useReelDraft(intake, { aspect, review })` — `src/lib/use-reel-draft.ts`
+
+Раскадровка ролика поверх `useAttachments`: порядок пачки — порядок кадров
+(`moveFrame` → `moveAttachment`), у каждого кадра выбор хода камеры
+(`setChoice`, по умолчанию «Авто»), выбранный кадр на сцене (`select`,
+`selectPrev`/`selectNext`; новый файл сразу становится текущим). «Авто»
+раскрывается в конкретный ход (`ReelDraftFrame.move`): подсказкой
+vision-модели, если включена проверка (`review` — `VIDEO_REVIEW=vision`,
+каждый новый кадр разбирается один раз), иначе по месту кадра в ролике без
+повторов подряд. `warnings` — предупреждения до запуска: обрезка под формат,
+разрешение после обрезки, риски от модели (зеркала, стекло, люди, надписи).
+
+### `useProjectFrames(projectId)` — `src/lib/use-project-frames.ts`
+
+Готовые картинки проекта, из которых можно собрать ролик без новых генераций:
+результаты «Редактора рендера» и «Переноса стиля» и готовые кадры сетов
+«Ракурсов» — тот же состав, что предлагает альбом (`collectAlbumSources`).
+`loadProjectFrame(frame)` отдаёт картинку файлом — дальше она приходит в пачку
+обычным `attachFiles`, как перенесённая с диска («Из проекта» в `ReelDock`).
 
 ### Кадр и 4K у всех инструментов
 
@@ -453,6 +479,35 @@ Lanczos3. У «Редактора рендера» провайдер к том�
 с повтором. При смене проекта компонент перемонтируется и отменяет запрос.
 Приём файлов переносом, выбором и вставкой остаётся в `ToolShell` / `useAttachments`.
 
+### `LibraryPanel`, `LibraryStrip` — `src/components/tool/library-panel.tsx`
+
+Библиотека проекта на экранах, где результат живёт на сцене, а не в галерее
+(«Фото → 3D», «Фото → видео»): содержимое правой панели `ToolAside` и полоска
+под сценой ниже `lg`. Плитка (`LibraryItem`) — ключи превью, подпись, дата,
+`state` (`processing` с подписью «строим…» / «клипы 2/5» или `error`) и
+`badge` (длительность ролика). Какие плитки — решает инструмент:
+`ModelLibrary` и `ReelLibrary` только переводят свои записи в `LibraryItem`.
+
+### «Фото → видео»: `ReelDock`, `ReelDraftStage`, `ReelStage`
+
+- `ReelDock` (`reel-dock.tsx`) — раскадровка в слоте `dock` композера
+  (`settingsInDock`, как у «Фото → 3D»; рецепты `.model-dock*`): лента кадров
+  (`.reel-tile`: номер, ход камеры, предупреждение; крестик и стрелки порядка
+  по наведению; перетаскивание со своим MIME — слой «Отпустите файлы» на него
+  не реагирует), «Добавить» и «Из проекта» (`AlbumPicker` прямо в
+  раскадровке), строка настроек ролика и итог в шапке. `CAMERA_ICON` —
+  значок хода для раскадровки, сцены и клипов.
+- `ReelDraftStage` (`reel-stage.tsx`) — сцена до запуска в рецептах `.stage*`,
+  бокс — ровно формат ролика: `CameraMotion` двигает кадр той же математикой,
+  что у клипа без ключа (`cameraPose`, `passPose`), внизу стеклянная полоса
+  ходов камеры (`.reel-camera`), «Весь ролик» играет кадры подряд с их
+  отрезками. `ReelStage` — готовый ролик в плеере, вуаль с ходом сборки,
+  ошибка с «Повторить» / «Продолжить», «Скачать MP4», под сценой — клипы с
+  ходом, статусом и вердиктом проверки на дрейф. Собранного файла на
+  устройстве нет — `onMissingVideo`: страница бесплатно склеивает его из
+  клипов.
+- `ReelInvite` (`reel-invite.tsx`) — приглашение пустого экрана.
+
 ### Просмотр во весь экран — `src/components/ui/lightbox.tsx`
 
 Любая картинка интерфейса открывается одним и тем же модальным слоем:
@@ -512,7 +567,7 @@ Lanczos3. У «Редактора рендера» провайдер к том�
 | `view-set-card.tsx` | `ViewSetCard` | карточка сета кадров («Ракурсы»): общий план слева, кадры справа |
 | `compare-slider.tsx` | `CompareSlider` | шторка «до / после» поверх результата: ручка тянется мышью, пальцем и стрелками; `intro` — разовое проявление готового рендера |
 | `processing-veil.tsx` | `ProcessingVeil` | слой ожидания результата: световая полоса, зерно, этапы текстом; `order` сдвигает фазу у соседних плиток |
-| `aspect-picker.tsx` | `AspectPicker` | выбор формата кадров с глифами пропорций — секция панели настроек |
+| `aspect-picker.tsx` | `AspectPicker` | выбор формата кадров с глифами пропорций — секция панели настроек; `options` — часть форматов (ролик: 9:16, 1:1, 16:9), `bare` — один сегмент без заголовка (раскадровка ролика) |
 | `add-tile.tsx` | `AddTile` | «добавить ещё» в галерее результатов: полоса над списком (`variant="bar"`) или плитка (`tile`) — пунктир, плюс, подпись; по клику — выбор файла |
 | `src/lib/use-stored-blob.ts` | `useStoredBlobUrl` | загрузка с fallback-ключами, ограниченный автоповтор и ручная проверка серверного файла |
 | `batch-tools.tsx` | `BatchToolsPanel`, `QualityToggle`, `PopulateToggle` | улучшение качества, пакетные функции и тумблер «Заселить сцену» |
@@ -529,8 +584,13 @@ Lanczos3. У «Редактора рендера» провайдер к том�
 | `furniture-morph.tsx` | `FurnitureMorph` | каркасы мебели, перетекающие друг в друга («Фото → 3D») |
 | `model-dock.tsx` | `ModelDock` | панель генерации «Фото → 3D» над композером (`dock`), по образцу левой панели Meshy: слоты фото «Главный вид / Слева / Сзади / Справа» с тумблером мульти-вида, выбор модели (Meshy 7 / 6 / 6 Lite) и детализации, тумблеры текстуры, PBR и улучшения фото, оценка «время · кредиты», сворачивание |
 | `model-stage.tsx` | `ModelStage` | сцена модели: вьюер GLB (или каркас-заглушка), фото-исходники, статистика сетки, свотчи фона и автоповорот, тулбар «скачать · повторить · удалить», ход задачи и ошибка |
-| `model-library.tsx` | `ModelLibrary`, `ModelLibraryStrip` | библиотека моделей проекта: сетка превью в правой панели (`ToolAside`) и полоска под сценой на узких экранах; статус задачи на плитке, дата и удаление по наведению |
+| `model-library.tsx` | `ModelLibrary`, `ModelLibraryStrip` | библиотека моделей проекта плитками `LibraryPanel`: превью модели (пока нет — фото), статус задачи и процент на плитке |
 | `model-viewer.tsx` | `ModelViewer`, `ModelDownloads`, `downloadStoredModel` | просмотр настоящего GLB из хранилища (`<model-viewer>`, подгружается лениво) и плашка скачивания по форматам «GLB · FBX · OBJ» («Фото → 3D») |
+| `library-panel.tsx` | `LibraryPanel`, `LibraryStrip`, `LibraryItem` | библиотека проекта на экранах со сценой вместо галереи: сетка превью в правой панели (`ToolAside`) и полоска под сценой на узких экранах; статус задачи на плитке («строим…», «клип 2/5», ошибка), бейдж (длительность ролика), дата и удаление по наведению. Плитки даёт инструмент: `ModelLibrary`, `ReelLibrary` |
+| `reel-library.tsx` | `ReelLibrary`, `ReelLibraryStrip` | ролики проекта «Фото → видео» плитками `LibraryPanel`: первый кадр, длительность, ход сборки («клип 2/5», «склейка») |
+| `reel-dock.tsx` | `ReelDock` | раскадровка ролика над композером (`dock`): кадры по порядку (перетаскивание, стрелки), ход камеры у каждого кадра («Авто», «Наезд», «Облёт»…), предупреждения до запуска, «Из проекта» — готовые картинки проекта; формат 16:9 / 9:16 / 1:1, «Склейка / Проход», амплитуда, «Возврат в кадр»; итог «5 кадров · 20 с · ≈ $2,40» или «предпросмотр без ключа», сворачивание |
+| `reel-stage.tsx` | `ReelStage`, `ReelDraftStage`, `CameraMotion`, `downloadReel` | сцена «Фото → видео» в рецептах `.stage*`, бокс кадра — по формату ролика: `ReelDraftStage` — до запуска выбранный кадр с живым ходом камеры (`CameraMotion`, та же математика `cameraPose` / `passPose`, что у клипа без ключа), «Весь ролик» — кадры подряд с их ходами и отрезками, предупреждения кадра; `ReelStage` — плеер собранного ролика, ход сборки под вуалью, ошибка с «Повторить / Продолжить», «Скачать MP4», клипы с ходом, статусом и вердиктом проверки на дрейф |
+| `reel-invite.tsx` | `ReelInvite` | приглашение пустого экрана «Фото → видео»: настоящие рендеры сервиса сменяют друг друга с медленным ходом камеры, под ними — лента кадров с бегущей головкой воспроизведения |
 | `album-section.tsx` | `AlbumSection` | шаг настройки альбома: панель с номером, заголовком и строкой-итогом |
 | `album-picker.tsx` | `AlbumPicker` | выбор состава альбома: сетка миниатюр готовых записей с номерами порядка, «выбрать все / снять все»; режим `single` с плиткой «без картинки» — обложка |
 | `album-style-picker.tsx` | `AlbumFormatPicker`, `AlbumThemePicker`, `ALBUM_FORMAT_OPTIONS`, `ALBUM_THEME_OPTIONS` | формат страниц с глифами пропорции листа и тема с глифом тёмного/светлого листа |
@@ -552,27 +612,28 @@ Lanczos3. У «Редактора рендера» провайдер к том�
 | `page-header.tsx` | `PageHeader` | шапка обычной страницы (настройки) |
 | `page-loader.tsx` | `PageLoader` | скелет до гидрации сторов |
 
-Хуки общего слоя: `useAttachments`, `useBatchSelection`, `useScrollTopOnChange`
-(`src/lib/`), помощники `saveSourceFile`, `runGalleryQueue` (`src/lib/tool-jobs.ts`).
+Хуки общего слоя: `useAttachments`, `useBatchSelection`, `useScrollTopOnChange`,
+`useReelDraft`, `useProjectFrames` (`src/lib/`), помощники `saveSourceFile`,
+`runGalleryQueue` (`src/lib/tool-jobs.ts`).
 
 ---
 
 ## Что у инструментов своё
 
-| | Редактор рендера | Ракурсы | Перенос стиля | Материалы | Фото → 3D |
-| --- | --- | --- | --- | --- | --- |
-| `ToolShell` + `ComposerDock` + `ToolComposer` | ✓ | ✓ | ✓ | ✓ (композер всегда) | ✓ (`maxFiles=1`) |
-| `useAttachments` | ✓ | ✓ | ✓ | ✓ | ✓ (`replace`) |
-| `useBatchSelection`, `RenderTray`/`RenderStrip`, `ToolAside` | ✓ | ✓ | ✓ (+ панель стилей) | — | — |
-| `Stage` | ✓ с `overlay` (RegionEditor) | ✓ | ✓ `aspect-[4/3]` | — | — (своя `ModelStage`) |
-| `BatchGrid` | ✓ | ✓ | ✓ `compact` | — | — |
-| `ToolDropzone` | ✓ `glass`, RenderEmptyState | ✓ ViewsInvite | ✓ StyleSwap | — (MaterialPreviewGrid) | ✓ FurnitureMorph, `armed` |
-| `ToolGallery` + карточка | — (результат остаётся на Stage) | ✓ `layout="stack"`, ViewSetCard | ✓ ToolCard | ✓ `layout="tiles"`, ToolCard | — (сцена + лента) |
-| `AddTile` («добавить ещё» в галерее результатов) | — (пачка остаётся в панели) | ✓ полоса «Добавить кадр» над сетами | ✓ полоса «Добавить интерьер» над результатами | — (композер всегда) | — |
-| Своё на странице | постоянная пара «исходник / новый» в `RenderTray`, результат на Stage, контекст, разбор сцены (инвентарь предметов и светильников с ON/OFF) + качество GPT Image 2 на ступени 4K + Lanczos 3840 px, заселение, пакетные функции, области правки, `notice` | выбор набора кадров, формат кадров (`AspectPicker` в `extras`, панель открывается сама, `submitBlockedReason` + `notice` до выбора), планировщик кадров перед генерацией, подпись под сценой | стили, док материалов, вторая панель, `notice` | референсы не обязательны; карточка с `tileable` («Повтор 2×2» — проверка шва) | одно фото, `ModelStage`/`ModelChip` |
+| | Редактор рендера | Ракурсы | Перенос стиля | Материалы | Фото → 3D | Фото → видео |
+| --- | --- | --- | --- | --- | --- | --- |
+| `ToolShell` + `ComposerDock` + `ToolComposer` | ✓ | ✓ | ✓ | ✓ (композер всегда) | ✓ (`maxFiles=1`) | ✓ (`settingsInDock`, до 7 кадров) |
+| `useAttachments` | ✓ | ✓ | ✓ | ✓ | ✓ (`replace`) | ✓ + `useReelDraft` (порядок — `moveAttachment`) |
+| `useBatchSelection`, `RenderTray`/`RenderStrip`, `ToolAside` | ✓ | ✓ | ✓ (+ панель стилей) | — | — (`ToolAside` с `ModelLibrary`) | — (`ToolAside` с `ReelLibrary`) |
+| `Stage` | ✓ с `overlay` (RegionEditor) | ✓ | ✓ `aspect-[4/3]` | — | — (своя `ModelStage`) | — (`ReelDraftStage` / `ReelStage` в рецептах `.stage*`) |
+| `BatchGrid` | ✓ | ✓ | ✓ `compact` | — | — | — |
+| `ToolDropzone` | ✓ `glass`, RenderEmptyState | ✓ ViewsInvite | ✓ StyleSwap | — (MaterialPreviewGrid) | ✓ FurnitureMorph, `armed` | ✓ ReelInvite |
+| `ToolGallery` + карточка | — (результат остаётся на Stage) | ✓ `layout="stack"`, ViewSetCard | ✓ ToolCard | ✓ `layout="tiles"`, ToolCard | — (сцена + лента) | — (сцена + лента) |
+| `AddTile` («добавить ещё» в галерее результатов) | — (пачка остаётся в панели) | ✓ полоса «Добавить кадр» над сетами | ✓ полоса «Добавить интерьер» над результатами | — (композер всегда) | — | — («Добавить» в раскадровке) |
+| Своё на странице | постоянная пара «исходник / новый» в `RenderTray`, результат на Stage, контекст, разбор сцены (инвентарь предметов и светильников с ON/OFF) + качество GPT Image 2 на ступени 4K + Lanczos 3840 px, заселение, пакетные функции, области правки, `notice` | выбор набора кадров, формат кадров (`AspectPicker` в `extras`, панель открывается сама, `submitBlockedReason` + `notice` до выбора), планировщик кадров перед генерацией, подпись под сценой | стили, док материалов, вторая панель, `notice` | референсы не обязательны; карточка с `tileable` («Повтор 2×2» — проверка шва) | одно фото, `ModelStage`/`ModelChip` | раскадровка (`ReelDock` в `dock`), ход камеры на сцене, «Из проекта», продолжение после перезагрузки без новых оплат, пересборка ролика из клипов, цена в `submitHint` |
 
 Страницы после выноса общего: `enhance` ≈ 420 строк, `restyle` ≈ 375, `views` ≈ 275,
-`materials` ≈ 220, `photo-3d` ≈ 330 — в них только конфигурация и логика инструмента.
+`materials` ≈ 220, `photo-3d` ≈ 330, `video` ≈ 435 — в них только конфигурация и логика инструмента.
 
 **«Альбом-презентация»** (`src/app/(main)/album/page.tsx`) — экран другого рода:
 он не генерирует, а собирает PDF из готовых записей всех инструментов. Поэтому

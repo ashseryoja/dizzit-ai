@@ -1,0 +1,74 @@
+/* Dizzit Creative Lab — общий слой шаблонов Hyperframes.
+   Жёсткий редакторский язык (Dezeen / Architizer): тяжёлый гротеск во весь кадр,
+   моноширинные индексы, почти чёрный / off-white и один сигнальный акцент,
+   склейки на сетке бита. Никакой бумаги, курсива и мягких появлений. */
+
+@font-face { font-family: "Lab Grotesk"; font-weight: 400 900; font-style: normal; font-display: block;
+  src: url("fonts/golos-cyrillic.woff2") format("woff2");
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: "Lab Grotesk"; font-weight: 400 900; font-style: normal; font-display: block;
+  src: url("fonts/golos-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Lab Mono"; font-weight: 100 800; font-style: normal; font-display: block;
+  src: url("fonts/mono-cyrillic.woff2") format("woff2");
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: "Lab Mono"; font-weight: 100 800; font-style: normal; font-display: block;
+  src: url("fonts/mono-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+
+:root {
+  --ink: #101010; --off: #ededea; --grey: #8a8a86; --accent: #ff5a1f;
+  /* Светлая тема — off-white с чернилами, тёмная — чернила с off-white. */
+  --fg: var(--ink); --bg: var(--off); --fg-60: rgba(16, 16, 16, .62); --fg-24: rgba(16, 16, 16, .22);
+  --grotesk: "Lab Grotesk", "Golos Text", "Helvetica Neue", Arial, sans-serif;
+  --mono: "Lab Mono", "JetBrains Mono", "SF Mono", Menlo, monospace;
+  /* Безопасная зона Reels: верх — ник и звук, низ — подпись, право — кнопки. */
+  --safe-top: 220px; --safe-bottom: 340px; --safe-left: 64px; --safe-right: 130px;
+  --w: 1080px; --h: 1920px;
+  /* Сетка бита: 120 BPM → 0.5 с; склейки на 2–3 долях. */
+  --beat: .5s;
+}
+html[data-format="4:5"] { --safe-top: 150px; --safe-bottom: 150px; --safe-right: 64px; --h: 1350px; }
+html[data-theme="dark"] { --fg: var(--off); --bg: var(--ink); --fg-60: rgba(237, 237, 234, .64); --fg-24: rgba(237, 237, 234, .24); }
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: var(--w); height: var(--h); overflow: hidden; background: var(--bg); }
+body { font-family: var(--grotesk); color: var(--fg); -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }
+#root { position: relative; width: var(--w); height: var(--h); overflow: hidden; background: var(--bg); }
+img { display: block; }
+
+/* ==== Пять стилей текста. Размеры — для ширины 1080 px. ==== */
+.t-giant { font: 900 236px/.84 var(--grotesk); letter-spacing: -.05em; text-transform: uppercase; }
+.t-display { font: 900 150px/.88 var(--grotesk); letter-spacing: -.045em; text-transform: uppercase; }
+.t-head { font: 800 76px/.98 var(--grotesk); letter-spacing: -.035em; text-transform: uppercase; }
+.t-body { font: 600 40px/1.15 var(--grotesk); letter-spacing: -.02em; }
+.t-mono { font: 500 34px/1 var(--mono); letter-spacing: .02em; text-transform: uppercase; font-variant-numeric: tabular-nums; }
+.t-num { font: 300 420px/.8 var(--mono); letter-spacing: -.08em; font-variant-numeric: tabular-nums; }
+.t-quote { font: 700 58px/1.08 var(--grotesk); letter-spacing: -.03em; }
+/* Гигантская цифра читается на любом фото: difference даёт тёмную на светлом и светлую на тёмном. */
+.num { position: absolute; right: -24px; bottom: calc(var(--safe-bottom) - 120px); color: #fff; mix-blend-mode: difference; }
+.muted { color: var(--fg-60); }
+.accent { color: var(--accent); }
+
+/* ==== Слои ==== */
+.layer { position: absolute; inset: 0; }
+.photo { position: absolute; inset: 0; overflow: hidden; background: var(--ink); }
+.photo > img { width: 100%; height: 100%; object-fit: cover; object-position: var(--focus, 50% 50%); will-change: transform; }
+.mask { overflow: hidden; }
+.mask > span { display: block; will-change: transform; }
+/* Толстая полоса акцента — вместо тонкой линейки. */
+.bar { position: absolute; height: 10px; background: var(--accent); transform-origin: left center; }
+.bar.thin { height: 4px; }
+/* Инверсный блок: чернила на off-white или наоборот. */
+.block { position: absolute; background: var(--fg); color: var(--bg); }
+.block .muted { color: color-mix(in srgb, var(--bg) 62%, transparent); }
+.block-accent { position: absolute; background: var(--accent); color: var(--ink); }
+.on-photo { color: var(--off); }
+.on-photo .muted { color: rgba(237, 237, 234, .7); }
+/* Плотный скрим под текст на фото — только там, где текст. */
+.scrim { position: absolute; inset: auto 0 0 0; height: 46%; background: linear-gradient(to top, rgba(16, 16, 16, .72), rgba(16, 16, 16, 0)); pointer-events: none; }
+.scrim.top { inset: 0 0 auto 0; height: 26%; background: linear-gradient(to bottom, rgba(16, 16, 16, .5), rgba(16, 16, 16, 0)); }
+/* Плёночное зерно, едва заметное. */
+.grain { position: absolute; inset: -40%; background: url("grain.png") repeat; background-size: 360px 360px; background-position: calc(var(--gx, 0) * 1px) calc(var(--gy, 0) * 1px); opacity: .11; mix-blend-mode: soft-light; pointer-events: none; }
+/* Предзагрузка начертаний: рантайм ждёт шрифты, которые есть в разметке. */
+.font-warm { position: absolute; left: -9999px; top: 0; opacity: 0; }

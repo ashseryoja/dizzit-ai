@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="ru" data-format="9:16" data-h="1920" data-composition-variables='[
+  {"id":"brief","type":"string","label":"Бриф клиента","default":"Хочется, чтобы дом был тихим. Чтобы утром свет шёл по полу, а вечером никто не хотел уходить из кухни."},
+  {"id":"lead","type":"string","label":"Надпись над брифом","default":"Задача"},
+  {"id":"result","type":"string","label":"Надпись над результатом","default":"Результат"},
+  {"id":"title","type":"string","label":"Проект","default":"Дом в Сосновке · 2026"},
+  {"id":"theme","type":"enum","label":"Тема","default":"dark","options":["light","dark"]},
+  {"id":"accent","type":"color","label":"Акцент","default":"#ff5a1f"},
+  {"id":"photo1","type":"image","label":"Кадр 1","default":""},{"id":"focus1","type":"string","label":"Фокус 1","default":"50% 50%"},{"id":"cap1","type":"string","label":"Подпись 1","default":""},
+  {"id":"photo2","type":"image","label":"Кадр 2","default":""},{"id":"focus2","type":"string","label":"Фокус 2","default":"50% 50%"},{"id":"cap2","type":"string","label":"Подпись 2","default":""},
+  {"id":"photo3","type":"image","label":"Кадр 3","default":""},{"id":"focus3","type":"string","label":"Фокус 3","default":"50% 50%"},{"id":"cap3","type":"string","label":"Подпись 3","default":""},
+  {"id":"photo4","type":"image","label":"Кадр 4","default":""},{"id":"focus4","type":"string","label":"Фокус 4","default":"50% 50%"},{"id":"cap4","type":"string","label":"Подпись 4","default":""},
+  {"id":"photo5","type":"image","label":"Кадр 5","default":""},{"id":"focus5","type":"string","label":"Фокус 5","default":"50% 50%"},{"id":"cap5","type":"string","label":"Подпись 5","default":""}
+]'>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=1080, height=1920" />
+  <title>Brief → result</title>
+  <link rel="stylesheet" href="../_shared/lab.css" />
+  <script src="../_shared/gsap.min.js"></script>
+  <script src="../_shared/lab.js"></script>
+  <style>
+    .page { position: absolute; inset: 0; padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left); display: flex; flex-direction: column; justify-content: flex-end; }
+    .page .head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: auto; }
+    .page .bar { position: relative; display: block; width: 140px; margin-bottom: 36px; }
+    .page .t-head span { visibility: hidden; }
+    .page .t-head span.accent { color: var(--accent); }
+    .shot { position: absolute; inset: 0; visibility: hidden; }
+    .tags { position: absolute; top: var(--safe-top); left: var(--safe-left); right: var(--safe-right); display: flex; justify-content: space-between; align-items: baseline; }
+    .cap { position: absolute; left: var(--safe-left); right: var(--safe-right); bottom: var(--safe-bottom); }
+    .end { position: absolute; left: 0; right: 0; bottom: 0; height: 40%; visibility: hidden; padding: 56px var(--safe-right) var(--safe-bottom) var(--safe-left); display: flex; flex-direction: column; justify-content: flex-end; gap: 22px; }
+    .end .bar { position: relative; display: block; width: 140px; }
+  </style>
+</head>
+<body>
+  <div id="root" data-composition-id="brief" data-start="0" data-width="1080" data-height="1920">
+    <span class="font-warm t-head">Ag Жф</span><span class="font-warm t-mono">01 Жф</span><span class="font-warm t-num">01</span>
+  </div>
+  <script>
+    (function () {
+      var L = window.Lab, B = L.B, root = document.getElementById("root");
+      L.theme();
+      var all = L.photos(5);
+      var tl = gsap.timeline({ paused: true });
+      var lead = L.text("lead", "Задача"), resultLabel = L.text("result", "Результат"), title = L.text("title", "");
+      /* Бриф: слова появляются на месте по четвертям доли. Последнее предложение — акцентом. */
+      var page = L.el("div", "page", root);
+      var head = L.el("div", "head t-mono", page);
+      L.el("span", "", head, lead); L.el("span", "muted", head, title);
+      var bar = L.el("span", "bar", page);
+      var brief = L.text("brief", "");
+      var spans = L.words(page, brief, "t-head");
+      var lastStart = Math.max(brief.lastIndexOf(". "), brief.lastIndexOf("! "), brief.lastIndexOf("? "));
+      if (lastStart > 0) { var idx = brief.slice(0, lastStart + 2).split(/\s+/).filter(Boolean).length; spans.slice(idx).forEach(function (s) { s.classList.add("accent"); }); }
+      tl.set(head.children, { autoAlpha: 0 }, 0); tl.set(head.children, { autoAlpha: 1, stagger: B / 4 }, B * .3);
+      L.bar(tl, bar, B * .5);
+      L.type(tl, spans, B * .8, B / 4);
+      var t = B * .8 + spans.length * B / 4 + 2;
+      if (all.length) tl.set(page, { autoAlpha: 0 }, t);
+      all.forEach(function (p, i) {
+        var g = L.el("div", "shot", root);
+        var photo = L.photo(g, p);
+        L.el("div", "scrim top", g); L.el("div", "scrim", g);
+        var tags = L.el("div", "tags on-photo t-mono", g);
+        L.el("span", "accent", tags, resultLabel); L.el("span", "", tags, L.pad(i + 1) + " / " + L.pad(all.length));
+        var num = L.el("div", "num t-num", g, L.pad(i + 1));
+        var cap = L.el("div", "cap on-photo", g);
+        var cl = L.lines(cap, p.caption || "", 16, "t-head");
+        L.cut(tl, g, t, { scale: 1.1 });
+        tl.fromTo(num, { xPercent: 30 }, { xPercent: 0, duration: B * .8, ease: L.E.enter }, t);
+        if (cl.length) L.slam(tl, cl, t + B * .2);
+        L.push(tl, photo, t + B * .9, B * 1.7, .012);
+        var end = t + B * 2.6;
+        if (cl.length) L.slamOut(tl, cl, end - B * .3);
+        if (i < all.length - 1) tl.set(g, { autoAlpha: 0 }, end);
+        t = end;
+      });
+      if (all.length) {
+        var last = root.querySelector(".shot:last-of-type");
+        var end = L.el("div", "end block", last);
+        var eb = L.el("span", "bar", end);
+        var et = L.lines(end, title, 16, "t-head");
+        var em = L.el("span", "t-mono muted", end, resultLabel);
+        tl.set(last.querySelector(".num"), { autoAlpha: 0 }, t);
+        L.slide(tl, end, t, { xPercent: 0, yPercent: 100, dur: B * .8 });
+        L.bar(tl, eb, t + B * .5); L.slam(tl, et, t + B * .6);
+        tl.fromTo(em, { autoAlpha: 0 }, { autoAlpha: 1, duration: .01 }, t + B * 1.1);
+        t += B * .8 + 2.4;
+      }
+      L.finish(tl, root, t);
+      L.register("brief", tl);
+    })();
+  </script>
+</body>
+</html>

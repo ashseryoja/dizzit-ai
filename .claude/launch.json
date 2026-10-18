@@ -112,6 +112,43 @@
       ],
       "autoPort": true,
       "port": 3017
+    },
+    {
+      "name": "dizzit-ai-fake-video",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "NEXT_DIST_DIR=.next-solo",
+        "IMAGE_PROVIDER=apimodels",
+        "APIMODELS_API_KEY=fake-key-for-local-testing",
+        "APIMODELS_API_BASE_URL=http://127.0.0.1:4321/v1",
+        "LAOZHANG_API_KEY=",
+        "VIDEO_PROVIDER=apimodels",
+        "VIDEO_REVIEW=vision",
+        "APP_ACCESS_PASSWORD=",
+        "AUTH_SECRET=",
+        "DATABASE_URL=",
+        "npx",
+        "next",
+        "dev"
+      ],
+      "autoPort": true,
+      "port": 3018
+    },
+    {
+      "name": "fake-provider",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "scripts/fake-image-provider.mjs"
+      ],
+      "port": 4321
+    },
+    {
+      "name": "creative-worker",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "scripts/creative-lab/worker.mjs"
+      ],
+      "port": 4318
     }
   ]
 }

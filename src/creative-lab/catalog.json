@@ -1,8 +1,684 @@
 [
-  {"id":"editorial","name":"Editorial frames","subtitle":"Ваш проект в движении","description":"Четыре фотографии, крупная типографика и плавные пролёты. Мини-фильм о вашем проекте в эстетике интерьерного журнала.","kind":"motion","output":"video","categories":["motion","interiors"],"slots":["Главный кадр","Второй ракурс","Деталь","Финальный кадр"],"duration":12,"formats":["9:16","1:1","16:9"],"color":"#bdb9a9","title":"SPACES / 01","demoImages":["/images/invite/styles/mediterranean.jpg","/images/invite/styles/midcentury.jpg","/images/invite/views-detail.jpg","/images/invite/styles/scandi.jpg"]},
-  {"id":"polaroid","name":"Collected moments","subtitle":"История в пяти снимках","description":"Пять фотокарточек по очереди ложатся на тёплый бумажный фон. Лёгкие повороты, мягкие тени и подпись вашей истории.","kind":"motion","output":"video","categories":["motion","trends"],"slots":["Фото 01","Фото 02","Фото 03","Фото 04","Фото 05"],"duration":10,"formats":["9:16","1:1","16:9"],"color":"#e2b383","title":"Маленькие истории","demoImages":["/images/invite/restyle-loft.jpg","/images/invite/styles/scandi.jpg","/images/invite/styles/mediterranean.jpg","/images/invite/material-1.jpg","/images/invite/styles/midcentury.jpg"]},
-  {"id":"split","name":"Before / After","subtitle":"Два кадра. Одна перемена.","description":"Шторка открывает результат поверх исходника. Лучше всего работают две фотографии с одинаковым ракурсом: до и после обработки.","kind":"motion","output":"video","categories":["motion","interiors"],"slots":["До — исходный кадр","После — результат"],"duration":8,"formats":["9:16","1:1","16:9"],"color":"#a8bfb0","title":"Новый взгляд","demoImages":["/images/invite/restyle-source.jpg","/images/invite/restyle-loft.jpg"]},
-  {"id":"kinetic","name":"Fast cuts","subtitle":"Шесть кадров в одном ритме","description":"Быстрые склейки, смелый масштаб и финальная сетка. Готовый вертикальный монтаж для короткой истории о проекте.","kind":"motion","output":"video","categories":["motion","trends"],"slots":["Обложка","Фото 02","Фото 03","Фото 04","Фото 05","Финал"],"duration":9,"formats":["9:16","1:1","16:9"],"color":"#c7b6d7","title":"MAKE IT / YOURS","demoImages":["/images/invite/styles/artdeco.jpg","/images/invite/styles/loft.jpg","/images/invite/styles/midcentury.jpg","/images/invite/styles/scandi.jpg","/images/invite/views-detail.jpg","/images/invite/styles/mediterranean.jpg"]},
-  {"id":"paper-photo","name":"Бумажный мир","subtitle":"Фото → бумажная миниатюра","description":"ИИ превращает вашу фотографию в объёмную сцену из бумаги: слои картона, складки, волокна и мягкие тени. Результат — отдельное изображение.","kind":"ai","output":"image","categories":["ai-photo","interiors"],"slots":["Фотография для стилизации"],"duration":0,"formats":["9:16","1:1","16:9"],"color":"#d9ceaf","title":"Бумажный мир","recipe":"paper","demoImages":["/creative-lab/examples/paper.jpg"]},
-  {"id":"paper-reveal","name":"Into paper","subtitle":"Из реальности в бумагу","description":"Одна фотография превращается в бумажную сцену, а готовая анимация раскрывает превращение. Сначала ИИ создаёт изображение, затем собирается видео.","kind":"hybrid","output":"video","categories":["trends","ai-motion"],"slots":["Фотография для превращения"],"duration":8,"formats":["9:16","1:1","16:9"],"color":"#d2c0a4","title":"Другой мир","recipe":"paper","demoImages":["/images/invite/restyle-source.jpg","/creative-lab/examples/paper.jpg"]}
+  {
+    "id": "reveal",
+    "engine": "hyperframes",
+    "kind": "motion",
+    "output": "video",
+    "group": "project",
+    "name": "Проект",
+    "subtitle": "Рендер → реализация",
+    "description": "Главный кадр с названием во весь экран, затем пары «рендер — фото» в одном ракурсе: фото въезжает справа, подпись щёлкает, гигантский индекс. Финал — все кадры собираются в сетку с инверсным блоком.",
+    "photos": {
+      "min": 1,
+      "max": 7,
+      "labels": [
+        "Главный кадр",
+        "Рендер 1",
+        "Фото 1",
+        "Рендер 2",
+        "Фото 2",
+        "Рендер 3",
+        "Фото 3"
+      ],
+      "pairs": {
+        "lead": 1
+      }
+    },
+    "captions": {
+      "slots": [
+        2,
+        4,
+        6
+      ],
+      "label": "Помещение",
+      "max": 24
+    },
+    "fields": [
+      {
+        "id": "title",
+        "label": "Проект",
+        "max": 26,
+        "default": "Дом в Сосновке"
+      },
+      {
+        "id": "meta",
+        "label": "Город · год",
+        "max": 40,
+        "default": "Подмосковье · 2026"
+      },
+      {
+        "id": "render",
+        "label": "Подпись рендера",
+        "max": 20,
+        "default": "Рендер"
+      },
+      {
+        "id": "built",
+        "label": "Подпись фото",
+        "max": 20,
+        "default": "Реализация"
+      },
+      {
+        "id": "accent",
+        "label": "Акцент",
+        "max": 7,
+        "default": "#ff5a1f",
+        "kind": "color"
+      }
+    ],
+    "timing": {
+      "base": 4.0,
+      "per": 3.0,
+      "unit": "pair"
+    },
+    "demo": {
+      "photos": [
+        "/images/invite/styles/scandi.jpg",
+        "/images/invite/restyle-source.jpg",
+        "/images/invite/restyle-loft.jpg",
+        "/images/invite/styles/midcentury.jpg",
+        "/images/invite/restyle-midcentury.jpg"
+      ],
+      "captions": {
+        "2": "Гостиная",
+        "4": "Спальня"
+      }
+    }
+  },
+  {
+    "id": "before-after",
+    "engine": "hyperframes",
+    "kind": "motion",
+    "output": "video",
+    "group": "change",
+    "name": "До / после",
+    "subtitle": "Split-screen",
+    "description": "«До» держится с крупным индексом, «после» въезжает правой половиной с акцентным швом и забирает весь кадр. Резкие склейки, без фейдов. В финале инверсный блок с названием.",
+    "photos": {
+      "min": 2,
+      "max": 6,
+      "labels": [
+        "До 1",
+        "После 1",
+        "До 2",
+        "После 2",
+        "До 3",
+        "После 3"
+      ],
+      "pairs": {
+        "lead": 0
+      }
+    },
+    "fields": [
+      {
+        "id": "title",
+        "label": "Проект",
+        "max": 40,
+        "default": "Квартира на Пресне"
+      },
+      {
+        "id": "scope",
+        "label": "Что сделано",
+        "max": 60,
+        "default": "Полная реконструкция · 2026"
+      },
+      {
+        "id": "before",
+        "label": "Подпись «до»",
+        "max": 20,
+        "default": "До"
+      },
+      {
+        "id": "after",
+        "label": "Подпись «после»",
+        "max": 20,
+        "default": "После"
+      },
+      {
+        "id": "accent",
+        "label": "Акцент",
+        "max": 7,
+        "default": "#ff5a1f",
+        "kind": "color"
+      }
+    ],
+    "timing": {
+      "base": 3.2,
+      "per": 3.6,
+      "unit": "pair"
+    },
+    "demo": {
+      "photos": [
+        "/images/invite/restyle-source.jpg",
+        "/images/invite/restyle-loft.jpg",
+        "/images/invite/restyle-source.jpg",
+        "/images/invite/restyle-midcentury.jpg"
+      ]
+    }
+  },
+  {
+    "id": "details",
+    "engine": "hyperframes",
+    "kind": "motion",
+    "output": "video",
+    "group": "detail",
+    "name": "Три детали",
+    "subtitle": "Крупные планы на бит",
+    "description": "Каждая деталь — резкая склейка со snap-масштабом, гигантская цифра и подпись из-под маски. Финал: общий кадр и инверсный указатель всех деталей.",
+    "photos": {
+      "min": 1,
+      "max": 5,
+      "labels": [
+        "Деталь 1",
+        "Деталь 2",
+        "Деталь 3",
+        "Деталь 4",
+        "Общий кадр"
+      ]
+    },
+    "captions": {
+      "slots": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "label": "Подпись детали",
+      "max": 30
+    },
+    "fields": [
+      {
+        "id": "lead",
+        "label": "Заголовок",
+        "max": 24,
+        "default": "Три детали"
+      },
+      {
+        "id": "title",
+        "label": "Проект",
+        "max": 30,
+        "default": "Квартира у парка"
+      },
+      {
+        "id": "accent",
+        "label": "Акцент",
+        "max": 7,
+        "default": "#ff5a1f",
+        "kind": "color"
+      }
+    ],
+    "timing": {
+      "base": 3.6,
+      "per": 1.4,
+      "unit": "detail"
+    },
+    "demo": {
+      "photos": [
+        "/images/invite/views-detail.jpg",
+        "/images/invite/views-texture.jpg",
+        "/images/invite/views-fragment.jpg",
+        "/images/invite/views-overview.jpg"
+      ],
+      "captions": {
+        "1": "Латунная кромка стола",
+        "2": "Шпон дуба, масло",
+        "3": "Свет вдоль стены"
+      }
+    }
+  },
+  {
+    "id": "contact-sheet",
+    "engine": "hyperframes",
+    "kind": "motion",
+    "output": "video",
+    "group": "project",
+    "name": "Контактный лист",
+    "subtitle": "Сетка ↔ кадр",
+    "description": "Лист собирается щелчками, затем каждый кадр выстреливает во весь экран и возвращается в сетку. Ритм «лист — кадр — лист».",
+    "photos": {
+      "min": 2,
+      "max": 8,
+      "labels": [
+        "Кадр 1",
+        "Кадр 2",
+        "Кадр 3",
+        "Кадр 4",
+        "Кадр 5",
+        "Кадр 6",
+        "Кадр 7",
+        "Кадр 8"
+      ]
+    },
+    "captions": {
+      "slots": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "label": "Помещение",
+      "max": 30
+    },
+    "fields": [
+      {
+        "id": "title",
+        "label": "Проект",
+        "max": 36,
+        "default": "Квартира на Петроградской"
+      },
+      {
+        "id": "meta",
+        "label": "Подпись",
+        "max": 30,
+        "default": "Съёмка · 2026"
+      },
+      {
+        "id": "accent",
+        "label": "Акцент",
+        "max": 7,
+        "default": "#ff5a1f",
+        "kind": "color"
+      }
+    ],
+    "timing": {
+      "base": 3.35,
+      "per": 1.6,
+      "unit": "photo"
+    },
+    "demo": {
+      "photos": [
+        "/images/invite/styles/scandi.jpg",
+        "/images/invite/styles/loft.jpg",
+        "/images/invite/styles/mediterranean.jpg",
+        "/images/invite/styles/midcentury.jpg",
+        "/images/invite/styles/artdeco.jpg",
+        "/images/invite/views-overview.jpg"
+      ],
+      "captions": {
+        "1": "Гостиная",
+        "2": "Кухня",
+        "3": "Спальня",
+        "4": "Кабинет",
+        "5": "Прихожая",
+        "6": "Терраса"
+      }
+    }
+  },
+  {
+    "id": "materials",
+    "engine": "hyperframes",
+    "kind": "motion",
+    "output": "video",
+    "group": "detail",
+    "name": "Материалы",
+    "subtitle": "Доска образцов",
+    "description": "Интерьер с заголовком, затем доска образцов на сетке; каждый материал раскрывается во весь кадр с индексом и названием. Финал — инверсный список.",
+    "photos": {
+      "min": 1,
+      "max": 5,
+      "labels": [
+        "Интерьер",
+        "Материал 1",
+        "Материал 2",
+        "Материал 3",
+        "Материал 4"
+      ]
+    },
+    "captions": {
+      "slots": [
+        2,
+        3,
+        4,
+        5
+      ],
+      "label": "Название материала",
+      "max": 28
+    },
+    "fields": [
+      {
+        "id": "lead",
+        "label": "Надпись",
+        "max": 24,
+        "default": "Материалы"
+      },
+      {
+        "id": "title",
+        "label": "Проект",
+        "max": 30,
+        "default": "Гостиная"
+      },
+      {
+        "id": "accent",
+        "label": "Акцент",
+        "max": 7,
+        "default": "#ff5a1f",
+        "kind": "color"
+      }
+    ],
+    "timing": {
+      "base": 3.9,
+      "per": 1.1,
+      "unit": "material"
+    },
+    "demo": {
+      "photos": [
+        "/images/invite/styles/mediterranean.jpg",
+        "/images/invite/material-1.jpg",
+        "/images/invite/material-2.jpg",
+        "/images/invite/material-3.jpg",
+        "/images/invite/material-4.jpg"
+      ],
+      "captions": {
+        "2": "Травертин",
+        "3": "Дуб, масло",
+        "4": "Лён натуральный",
+        "5": "Латунь патина"
+      }
+    }
+  },
+  {
+    "id": "process",
+    "engine": "hyperframes",
+    "kind": "motion",
+    "output": "video",
+    "group": "project",
+    "name": "Процесс",
+    "subtitle": "Эскиз → 3D → реализация",
+    "description": "Три колонки въезжают слева направо, затем каждый этап — во весь кадр с гигантским названием. Финал — общий кадр и инверсный блок.",
+    "photos": {
+      "min": 2,
+      "max": 4,
+      "labels": [
+        "Эскиз",
+        "3D-визуализация",
+        "Фото реализации",
+        "Общий кадр"
+      ]
+    },
+    "fields": [
+      {
+        "id": "title",
+        "label": "Проект",
+        "max": 30,
+        "default": "Кухня-гостиная"
+      },
+      {
+        "id": "meta",
+        "label": "Подпись",
+        "max": 40,
+        "default": "От эскиза до реализации"
+      },
+      {
+        "id": "stage1",
+        "label": "Этап 1",
+        "max": 16,
+        "default": "Эскиз"
+      },
+      {
+        "id": "stage2",
+        "label": "Этап 2",
+        "max": 16,
+        "default": "3D"
+      },
+      {
+        "id": "stage3",
+        "label": "Этап 3",
+        "max": 16,
+        "default": "Реализация"
+      },
+      {
+        "id": "accent",
+        "label": "Акцент",
+        "max": 7,
+        "default": "#ff5a1f",
+        "kind": "color"
+      }
+    ],
+    "timing": {
+      "base": 4.4,
+      "per": 1.25,
+      "unit": "stage"
+    },
+    "demo": {
+      "photos": [
+        "/images/invite/views-top.jpg",
+        "/images/invite/restyle-source.jpg",
+        "/images/invite/restyle-loft.jpg",
+        "/images/invite/styles/loft.jpg"
+      ]
+    }
+  },
+  {
+    "id": "brief",
+    "engine": "hyperframes",
+    "kind": "motion",
+    "output": "video",
+    "group": "story",
+    "name": "Бриф → результат",
+    "subtitle": "Слова клиента по биту",
+    "description": "Бриф появляется по словам на долях, последнее предложение — акцентом. Затем кадры результата резкими склейками с подписями и индексом.",
+    "photos": {
+      "min": 1,
+      "max": 5,
+      "labels": [
+        "Кадр 1",
+        "Кадр 2",
+        "Кадр 3",
+        "Кадр 4",
+        "Кадр 5"
+      ]
+    },
+    "captions": {
+      "slots": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "label": "Подпись к кадру",
+      "max": 26
+    },
+    "fields": [
+      {
+        "id": "brief",
+        "label": "Бриф клиента",
+        "max": 140,
+        "default": "Хочется, чтобы дом был тихим. Чтобы утром свет шёл по полу, а вечером никто не хотел уходить из кухни."
+      },
+      {
+        "id": "title",
+        "label": "Проект",
+        "max": 30,
+        "default": "Дом в Сосновке · 2026"
+      },
+      {
+        "id": "lead",
+        "label": "Надпись над брифом",
+        "max": 20,
+        "default": "Задача"
+      },
+      {
+        "id": "result",
+        "label": "Надпись над результатом",
+        "max": 20,
+        "default": "Результат"
+      },
+      {
+        "id": "accent",
+        "label": "Акцент",
+        "max": 7,
+        "default": "#ff5a1f",
+        "kind": "color"
+      }
+    ],
+    "timing": {
+      "base": 6.0,
+      "per": 1.3,
+      "unit": "photo"
+    },
+    "demo": {
+      "photos": [
+        "/images/invite/styles/scandi.jpg",
+        "/images/invite/views-detail.jpg",
+        "/images/invite/styles/midcentury.jpg"
+      ],
+      "captions": {
+        "1": "Свет по полу",
+        "2": "Кухня, где остаются",
+        "3": "Тихая спальня"
+      }
+    }
+  },
+  {
+    "id": "note",
+    "engine": "hyperframes",
+    "kind": "motion",
+    "output": "video",
+    "group": "story",
+    "name": "Отзыв",
+    "subtitle": "Инверсная карточка",
+    "description": "Фото, затем снизу поднимается инверсный блок с цитатой, именем и проектом. Вторая фотография — плитка над блоком.",
+    "photos": {
+      "min": 1,
+      "max": 2,
+      "labels": [
+        "Фотография",
+        "Деталь (по желанию)"
+      ]
+    },
+    "fields": [
+      {
+        "id": "quote",
+        "label": "Цитата",
+        "max": 150,
+        "default": "Мы боялись, что дом получится холодным. Он получился про нас."
+      },
+      {
+        "id": "client",
+        "label": "Клиент",
+        "max": 30,
+        "default": "Анна и Павел"
+      },
+      {
+        "id": "title",
+        "label": "Проект",
+        "max": 36,
+        "default": "Дом в Сосновке · 2026"
+      },
+      {
+        "id": "lead",
+        "label": "Надпись",
+        "max": 20,
+        "default": "Отзыв"
+      },
+      {
+        "id": "accent",
+        "label": "Акцент",
+        "max": 7,
+        "default": "#ff5a1f",
+        "kind": "color"
+      }
+    ],
+    "timing": {
+      "base": 6.7,
+      "per": 0,
+      "unit": "photo"
+    },
+    "demo": {
+      "photos": [
+        "/images/invite/styles/mediterranean.jpg",
+        "/images/invite/views-texture.jpg"
+      ]
+    }
+  },
+  {
+    "id": "paper-reveal",
+    "engine": "hyperframes",
+    "kind": "hybrid",
+    "output": "video",
+    "group": "ai",
+    "name": "В бумагу",
+    "subtitle": "ИИ + split",
+    "description": "ИИ превращает фотографию в бумажную миниатюру; ролик вводит её правой половиной с акцентным швом и забирает весь кадр. Одна генерация на фото.",
+    "photos": {
+      "min": 1,
+      "max": 1,
+      "labels": [
+        "Фотография для превращения"
+      ]
+    },
+    "fields": [
+      {
+        "id": "title",
+        "label": "Подпись",
+        "max": 30,
+        "default": "Другой мир"
+      },
+      {
+        "id": "before",
+        "label": "Подпись «фото»",
+        "max": 20,
+        "default": "Фотография"
+      },
+      {
+        "id": "after",
+        "label": "Подпись «бумага»",
+        "max": 20,
+        "default": "Бумага"
+      },
+      {
+        "id": "accent",
+        "label": "Акцент",
+        "max": 7,
+        "default": "#ff5a1f",
+        "kind": "color"
+      }
+    ],
+    "recipe": "paper",
+    "timing": {
+      "base": 7.6,
+      "per": 0,
+      "unit": "photo"
+    },
+    "demo": {
+      "photos": [
+        "/images/invite/restyle-source.jpg",
+        "/creative-lab/examples/paper.jpg"
+      ]
+    }
+  },
+  {
+    "id": "paper-photo",
+    "engine": "image",
+    "kind": "ai",
+    "output": "image",
+    "group": "ai",
+    "name": "Бумажный мир",
+    "subtitle": "Фото → бумажная миниатюра",
+    "description": "ИИ превращает фотографию в объёмную сцену из бумаги: слои картона, складки, волокна и мягкие тени. Результат — отдельное изображение.",
+    "photos": {
+      "min": 1,
+      "max": 1,
+      "labels": [
+        "Фотография для стилизации"
+      ]
+    },
+    "fields": [],
+    "recipe": "paper",
+    "timing": {
+      "base": 0,
+      "per": 0,
+      "unit": "photo"
+    },
+    "demo": {
+      "photos": [
+        "/creative-lab/examples/paper.jpg"
+      ]
+    }
+  }
 ]

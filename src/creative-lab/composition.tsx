@@ -1,66 +1,54 @@
 import React from "react"
-import { AbsoluteFill, Img, interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion"
-import type { LabCompositionProps, LabImage } from "./types"
+import { AbsoluteFill, Img, continueRender, delayRender, interpolate, staticFile, useCurrentFrame, useVideoConfig } from "remotion"
+import type { LabImage, LabTheme } from "./types"
+
+/** Контракт задания в виде пропсов Remotion: то же, что получает Hyperframes-композиция. */
+export type LabRemotionProps = { templateId: string; photos: LabImage[]; fields: Record<string, string>; theme: LabTheme; format: string }
 
 const clamp = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const
-function Photo({ image, style }: { image: LabImage; style?: React.CSSProperties }) {
-  return <Img src={image.src} style={{ width: "100%", height: "100%", objectFit: image.fit, objectPosition: `${image.x}% ${image.y}%`, ...style }} />
+const fonts = [
+  ["Lab Grotesk", "creative-lab/hf/_shared/fonts/golos-latin.woff2", "U+0000-00FF, U+2000-206F"],
+  ["Lab Grotesk", "creative-lab/hf/_shared/fonts/golos-cyrillic.woff2", "U+0400-045F, U+0490-0491, U+2116"],
+  ["Lab Mono", "creative-lab/hf/_shared/fonts/mono-latin.woff2", "U+0000-00FF, U+2000-206F"],
+  ["Lab Mono", "creative-lab/hf/_shared/fonts/mono-cyrillic.woff2", "U+0400-045F, U+0490-0491, U+2116"],
+] as const
+let fontsReady: Promise<void> | undefined
+function useLabFonts() {
+  const [handle] = React.useState(() => delayRender("Creative Lab fonts"))
+  React.useEffect(() => {
+    fontsReady ??= Promise.all(fonts.map(async ([family, file, unicodeRange]) => {
+      const face = new FontFace(family, `url(${staticFile(file)})`, { weight: "100 900", unicodeRange })
+      document.fonts.add(await face.load())
+    })).then(() => undefined)
+    void fontsReady.finally(() => continueRender(handle))
+  }, [handle])
 }
 
-/** One deterministic composition for the Player, exported video and catalogue demos. */
-export function LabComposition({ templateId, images, title }: LabCompositionProps) {
+/** Тот же жёсткий редакторский язык, что и у Hyperframes-шаблонов: резкие склейки, индекс, инверсный финал. */
+export function LabRemotionComposition({ photos, fields, theme }: LabRemotionProps) {
+  useLabFonts()
   const frame = useCurrentFrame()
-  const { width, height, fps, durationInFrames } = useVideoConfig()
-  const unit = Math.min(width, height)
-  const safeTitle = title.slice(0, 64)
-  const segment = durationInFrames / Math.max(1, images.length)
-  const index = Math.min(images.length - 1, Math.floor(frame / segment))
-  const local = frame - index * segment
-  const fade = interpolate(frame, [0, 10, durationInFrames - 12, durationInFrames - 1], [0, 1, 1, 0], clamp)
-  if (!images.length) return <AbsoluteFill style={{ background: "#19191c" }} />
-  const typeStyle: React.CSSProperties = { fontFamily: "Arial, sans-serif", color: "white", letterSpacing: "-0.04em", fontWeight: 700 }
-  const footer = <div style={{ position: "absolute", left: unit * .065, bottom: unit * .09, right: unit * .065, ...typeStyle, fontSize: unit * .063, lineHeight: 1.05, overflowWrap: "anywhere", textShadow: "0 2px 20px #0008" }}>{safeTitle}</div>
-
-  if (templateId === "polaroid") {
-    const cardW = Math.min(width * .73, height * .68)
-    return <AbsoluteFill style={{ background: "#e6ddcd", overflow: "hidden", opacity: fade }}>
-      <div style={{ position: "absolute", inset: unit * .05, border: "1px solid #766a5733" }} />
-      <div style={{ position: "absolute", top: unit * .08, left: unit * .07, font: `${unit * .02}px monospace`, color: "#6b5e4c", letterSpacing: ".25em" }}>COLLECTED / MOMENTS</div>
-      {images.map((image, i) => {
-        const arrive = spring({ frame: frame - i * segment, fps, config: { damping: 17, stiffness: 100 } })
-        const rot = [-8, 7, -5, 5, -2][i % 5]
-        return <div key={i} style={{ position: "absolute", width: cardW, height: cardW * 1.13, left: (width - cardW) / 2, top: (height - cardW * 1.13) / 2 - unit * .025, padding: cardW * .038, paddingBottom: cardW * .13, background: "#fffaf0", boxSizing: "border-box", boxShadow: "0 22px 55px #48382d50", transform: `translateY(${(1 - arrive) * height}px) rotate(${rot + (1 - arrive) * 22}deg)`, opacity: Math.max(0, Math.min(1, arrive * 3)) }}><Photo image={image} /><div style={{ font: `${unit * .025}px monospace`, color: "#51493e", marginTop: cardW * .027 }}>{String(i + 1).padStart(2, "0")} / {safeTitle.slice(0, 26)}</div></div>
-      })}
-    </AbsoluteFill>
-  }
-  if (templateId === "split" || templateId === "paper-reveal") {
-    const reveal = interpolate(frame / durationInFrames, [0, .15, .55, .8, 1], [0, 0, 1, 1, 1], clamp)
-    const zoom = 1 + frame / durationInFrames * .04
-    return <AbsoluteFill style={{ background: "#1b1b1b", opacity: fade }}>
-      <AbsoluteFill style={{ transform: `scale(${zoom})` }}><Photo image={images[0]} /></AbsoluteFill>
-      <AbsoluteFill style={{ clipPath: `inset(0 ${(1 - reveal) * 100}% 0 0)`, transform: `scale(${zoom})` }}><Photo image={images[1] ?? images[0]} /></AbsoluteFill>
-      <div style={{ position: "absolute", left: `${reveal * 100}%`, height: "100%", width: 3, background: "#fff", boxShadow: "0 0 30px #fff8" }} />
-      <AbsoluteFill style={{ background: "linear-gradient(0deg,#0009,transparent 40%)" }} />
-      <div style={{ position: "absolute", top: unit * .075, left: unit * .065, ...typeStyle, fontSize: unit * .025, letterSpacing: ".2em" }}>{templateId === "paper-reveal" ? "INTO / PAPER" : "BEFORE / AFTER"}</div>
-      {footer}
-    </AbsoluteFill>
-  }
-  if (templateId === "kinetic") {
-    const grid = frame > durationInFrames * .67
-    const shot = Math.floor(frame / 15) % images.length
-    return <AbsoluteFill style={{ background: "#17161a", overflow: "hidden", opacity: fade }}>
-      {grid ? <div style={{ position: "absolute", inset: unit * .045, bottom: unit * .23, display: "grid", gridTemplateColumns: "1fr 1fr", gridTemplateRows: "repeat(3,1fr)", gap: unit * .015 }}>{images.map((image, i) => <div key={i} style={{ overflow: "hidden", transform: `scale(${spring({ frame: frame - Math.round(durationInFrames * .67) - i * 2, fps, config: { damping: 18 } })})` }}><Photo image={image} /></div>)}</div> : <AbsoluteFill style={{ transform: `scale(${interpolate(frame % 15, [0, 14], [1.12, 1], clamp)})` }}><Photo image={images[shot]} /><AbsoluteFill style={{ background: "#0002" }} /></AbsoluteFill>}
-      <div style={{ position: "absolute", right: unit * .065, top: unit * .05, ...typeStyle, fontSize: unit * .12 }}>{String(shot + 1).padStart(2, "0")}</div>
-      {footer}
-    </AbsoluteFill>
-  }
-  const scale = interpolate(local, [0, segment], [1.08, 1], clamp)
-  return <AbsoluteFill style={{ background: "#191a17", opacity: fade, overflow: "hidden" }}>
-    <AbsoluteFill style={{ transform: `scale(${scale})` }}><Photo image={images[index]} /></AbsoluteFill>
-    <AbsoluteFill style={{ background: "linear-gradient(0deg,#000b,transparent 60%)" }} />
-    <div style={{ position: "absolute", inset: unit * .05, border: "1px solid #ffffff70" }} />
-    <div style={{ position: "absolute", top: unit * .08, left: unit * .085, font: `${unit * .024}px monospace`, letterSpacing: ".16em", color: "#fff" }}>VISUAL JOURNAL / {String(index + 1).padStart(2, "0")}</div>
-    <div style={{ position: "absolute", left: unit * .085, right: unit * .085, bottom: unit * .15, ...typeStyle, fontSize: unit * .1, lineHeight: .98, overflowWrap: "anywhere", transform: `translateY(${interpolate(local, [0, 15], [25, 0], clamp)}px)` }}>{safeTitle}</div>
-    <div style={{ position: "absolute", bottom: unit * .085, left: unit * .085, height: 3, width: (width - unit * .17) * frame / durationInFrames, background: "#fff" }} />
+  const { fps, durationInFrames, width, height } = useVideoConfig()
+  const ink = "#101010", off = "#ededea", accent = /^#[0-9a-f]{6}$/i.test(fields.accent ?? "") ? fields.accent : "#ff5a1f"
+  const [fg, bg] = theme === "light" ? [ink, off] : [off, ink]
+  const beat = fps / 2
+  const hold = beat * 2.6
+  const endAt = durationInFrames - beat * 5
+  const index = Math.min(photos.length - 1, Math.floor(frame / hold))
+  const local = frame - index * hold
+  const scale = interpolate(local, [0, beat * .9], [1.08, 1], { ...clamp, easing: t => 1 - Math.pow(1 - t, 4) })
+  const title = fields.title ?? ""
+  const blockY = interpolate(frame, [endAt, endAt + beat * .8], [100, 0], { ...clamp, easing: t => t < .5 ? 8 * t ** 4 : 1 - Math.pow(-2 * t + 2, 4) / 2 })
+  if (!photos.length) return <AbsoluteFill style={{ background: bg }} />
+  return <AbsoluteFill style={{ background: bg, fontFamily: "'Lab Grotesk', sans-serif", color: off }}>
+    <AbsoluteFill style={{ transform: `scale(${scale})` }}><Img src={photos[index].src} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: `${photos[index].x}% ${photos[index].y}%` }} /></AbsoluteFill>
+    <div style={{ position: "absolute", left: 64, top: 220, right: 130, display: "flex", justifyContent: "space-between", fontFamily: "'Lab Mono', monospace", fontSize: 34, textTransform: "uppercase" }}><span>{title}</span><span>{String(index + 1).padStart(2, "0")} / {String(photos.length).padStart(2, "0")}</span></div>
+    <div style={{ position: "absolute", right: -24, bottom: 220, fontFamily: "'Lab Mono', monospace", fontWeight: 300, fontSize: 420, lineHeight: .8, letterSpacing: "-.08em", color: "#fff", mixBlendMode: "difference" }}>{String(index + 1).padStart(2, "0")}</div>
+    {photos[index].caption && <div style={{ position: "absolute", left: 64, right: 130, bottom: 340, fontSize: 76, fontWeight: 800, lineHeight: .98, letterSpacing: "-.035em", textTransform: "uppercase", textShadow: "0 0 40px rgba(16,16,16,.5)" }}>{photos[index].caption}</div>}
+    <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: height * .4, background: fg, color: bg, transform: `translateY(${blockY}%)`, padding: `56px 130px 340px 64px`, display: "flex", flexDirection: "column", justifyContent: "flex-end", gap: 22 }}>
+      <span style={{ display: "block", width: 140, height: 10, background: accent }} />
+      <div style={{ fontSize: 76, fontWeight: 800, lineHeight: .98, letterSpacing: "-.035em", textTransform: "uppercase", maxWidth: width - 194 }}>{title}</div>
+      <div style={{ fontFamily: "'Lab Mono', monospace", fontSize: 34, textTransform: "uppercase", opacity: .62 }}>{fields.meta ?? fields.scope ?? ""}</div>
+    </div>
   </AbsoluteFill>
 }

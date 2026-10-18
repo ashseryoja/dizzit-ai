@@ -26,24 +26,26 @@ async function start() {
 }
 async function stop() { if (worker && worker.exitCode === null) { const done = once(worker, "exit"); worker.kill("SIGTERM"); await done } }
 async function completed(id) {
-  for (let i = 0; i < 180; i++) {
+  for (let i = 0; i < 240; i++) {
     const job = await (await fetch(`${url}/jobs/${id}`, { headers })).json()
     assert.notEqual(job.status, "error", output)
     if (job.status === "done") return job
     await delay(1000)
   }
-  throw new Error("Rendering exceeded 180 seconds")
+  throw new Error("Rendering exceeded 240 seconds")
 }
 try {
   await start()
   assert.equal((await fetch(`${url}/health`)).status, 401)
   assert.equal((await fetch(`${url}/jobs`, { method: "POST", headers: { ...headers, Origin: "https://other-site.example" }, body: "{}" })).status, 403)
-  const image = { src: `data:image/jpeg;base64,${(await readFile("public/images/invite/restyle-source.jpg")).toString("base64")}`, x: 50, y: 50, fit: "cover" }
-  const props = { templateId: "split", title: "Integration check", format: "16:9", images: [image, image] }
+  const photo = { src: `data:image/jpeg;base64,${(await readFile("public/images/invite/restyle-source.jpg")).toString("base64")}`, x: 50, y: 50 }
+  const input = { templateId: "before-after", format: "4:5", theme: "light", photos: [photo, photo], fields: { title: "Integration check", scope: "Проверка" } }
   const post = body => fetch(`${url}/jobs`, { method: "POST", headers, body: JSON.stringify(body) })
-  assert.equal((await post({ ...props, images: [] })).status, 400)
-  assert.equal((await post({ ...props, images: [{ ...image, src: "http://127.0.0.1/private" }, image] })).status, 400)
-  const accepted = await post(props); assert.equal(accepted.status, 202)
+  assert.equal((await post({ ...input, photos: [] })).status, 400)
+  assert.equal((await post({ ...input, photos: [photo] })).status, 400)
+  assert.equal((await post({ ...input, photos: [{ ...photo, src: "http://127.0.0.1/private" }, photo] })).status, 400)
+  assert.equal((await post({ ...input, fields: { nope: "x" } })).status, 400)
+  const accepted = await post(input); assert.equal(accepted.status, 202)
   const job = await accepted.json(); console.log(`Rendering test video ${job.id}`)
   await completed(job.id)
   const ranged = await fetch(`${url}/jobs/${job.id}/file`, { headers: { ...headers, Range: "bytes=0-31" } })
@@ -54,7 +56,7 @@ try {
   assert.equal(Buffer.from(await file.arrayBuffer()).subarray(4, 8).toString(), "ftyp")
   assert.equal((await fetch(`${url}/jobs/${job.id}/file`, { headers: { ...headers, Range: "bytes=999999999-" } })).status, 416)
   assert.equal((await fetch(`${url}/jobs/${job.id}/retry`, { method: "POST", headers })).status, 409)
-  const imageJob = await (await post({ ...props, templateId: "paper-photo", images: [image] })).json()
+  const imageJob = await (await post({ templateId: "paper-photo", format: "9:16", theme: "light", photos: [photo], fields: {} })).json()
   await completed(imageJob.id)
   const png = await fetch(`${url}/jobs/${imageJob.id}/file`, { headers })
   assert.equal(png.headers.get("content-type"), "image/png")
@@ -63,5 +65,5 @@ try {
   const restored = await (await fetch(`${url}/jobs/${job.id}`, { headers })).json()
   assert.equal(restored.status, "done")
   assert.equal((await fetch(`${url}/jobs/${job.id}/file`, { headers })).status, 200)
-  console.log(`PASS: token, validation, MP4/PNG, byte ranges, retry guard, restart recovery. Test output: ${dir}`)
+  console.log(`PASS: token, validation, Hyperframes MP4 4:5, PNG, byte ranges, retry guard, restart recovery. Test output: ${dir}`)
 } finally { await stop() }
