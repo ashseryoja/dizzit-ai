@@ -28,6 +28,33 @@ export interface ModelSettings {
   enhance: boolean
 }
 
+/** Кредиты Meshy за разбиение готовой модели на детали (Auto Split). */
+export const SPLIT_CREDITS = 10
+
+/** Класс материала детали — по нему подбираются имя объекта и бесшовная текстура. */
+export type ModelMaterialClass = "fabric" | "leather" | "metal" | "wood"
+
+/** Деталь собранной модели: отдельный объект в GLB/FBX/OBJ со своим материалом. */
+export interface ModelPart {
+  object: string
+  material: string
+  cls: ModelMaterialClass
+  faces: number
+}
+
+/** Этап задачи «Фото → 3D»: сама модель у Meshy, потом разбиение на детали. */
+export type ModelStage = "model" | "parts"
+
+export const MODEL_CLASS_LABEL: Record<ModelMaterialClass, string> = { fabric: "ткань", leather: "кожа", metal: "металл", wood: "дерево" }
+
+/**
+ * Разбиение на детали нужно каждой модели с текстурой: по атласу определяется
+ * класс материала каждой детали. Голая геометрия (Lite) остаётся цельной.
+ */
+export function modelSplitEnabled(settings: ModelSettings): boolean {
+  return settings.texture
+}
+
 export interface ModelAiInfo {
   value: ModelAi
   label: string
@@ -94,8 +121,8 @@ export function modelPolycount(settings: ModelSettings): number {
 export function estimateModelCost(settings: ModelSettings): { credits: number; minutes: number } {
   // Через API Lite стоит 5 кредитов (проверено живой задачей), хотя на сайте Meshy показывает 10.
   if (settings.ai === "meshy-6-lite") return { credits: 5, minutes: 1 }
-  const credits = 20 + (settings.texture ? 10 : 0) + (settings.quality === "ultra" ? 5 : 0)
-  return { credits, minutes: settings.texture ? 2 : 1 }
+  const credits = 20 + (settings.texture ? 10 : 0) + (settings.quality === "ultra" ? 5 : 0) + (modelSplitEnabled(settings) ? SPLIT_CREDITS : 0)
+  return { credits, minutes: settings.texture ? 3 : 1 }
 }
 
 /** Короткая сводка настроек: свёрнутая панель и подпись под моделью. */
@@ -103,5 +130,6 @@ export function describeModelSettings(settings: ModelSettings): string {
   const parts = [modelAiInfo(settings.ai).label]
   if (settings.quality === "ultra") parts.push("ультра")
   parts.push(settings.texture ? (settings.pbr ? "текстура + PBR" : "с текстурой") : "без текстуры")
+  if (modelSplitEnabled(settings)) parts.push("детали")
   return parts.join(" · ")
 }

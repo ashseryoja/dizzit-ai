@@ -7,7 +7,7 @@
 
 import type { RegionPayload } from "@/lib/render-regions"
 import type { AlbumCopy, AlbumFormat, AlbumTheme } from "@/shared/album"
-import type { ModelSettings, ModelTaskKind, ModelViewRole } from "@/shared/model3d"
+import type { ModelPart, ModelSettings, ModelTaskKind, ModelViewRole } from "@/shared/model3d"
 
 export interface Project {
   id: string
@@ -313,8 +313,24 @@ export interface Model3D extends GalleryItemMeta {
   taskKind?: ModelTaskKind
   /** Дополнительные ракурсы, приложенные к главному фото: блобы `${id}:view-<роль>`. */
   views?: ModelViewRole[]
-  /** Сколько кредитов Meshy списал за задачу. */
+  /** Сколько кредитов Meshy списал за задачу (модель и разбиение вместе). */
   credits?: number
+  /**
+   * Задача Auto Split у Meshy — разбиение готовой модели на детали. Пока она
+   * есть, перезагрузка продолжает её опрос; файлы собираются из неё и исходной
+   * задачи (`/api/models/:taskId/file?split=`).
+   */
+  splitId?: string
+  /** Реальная ширина предмета по оценке vision-модели, см; масштаб собранных файлов. */
+  widthCm?: number
+  /** Имя корневой группы и префикс объектов в файлах (латиницей). */
+  rootName?: string
+  /** Детали собранной модели; нет поля — модель цельная (см. `splitNote`). */
+  parts?: ModelPart[]
+  /** Ширина, высота, глубина собранной модели, м. */
+  size?: [number, number, number]
+  /** Почему модель осталась цельной: Meshy не разделил, сборка не удалась. */
+  splitNote?: string
 }
 
 /* ── Альбом-презентация ── */

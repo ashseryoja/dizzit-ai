@@ -39,6 +39,14 @@ export const MODEL_CONTENT_TYPE: Record<ModelFormat, string> = {
   fbx: "application/octet-stream",
   obj: "application/zip",
 }
+/** Собранная по деталям модель: FBX уходит архивом с текстурами, как и OBJ. */
+export const ASSEMBLED_CONTENT_TYPE: Record<ModelFormat, string> = {
+  glb: "model/gltf-binary",
+  fbx: "application/zip",
+  obj: "application/zip",
+}
+
+const SPLIT_PATH = "/print/split"
 
 export type MeshyErrorKind = "auth" | "quota" | "rate" | "bad_request" | "not_found" | "unavailable" | "timeout"
 
@@ -212,6 +220,86 @@ export async function getMeshyTask(taskId: string, kind: ModelTaskKind, signal?:
       (raw.status === "CANCELED" ? "Задача отменена в Meshy." : status === "succeeded" && !glbUrl ? "Meshy не отдал GLB." : null),
     consumedCredits: raw.consumed_credits ?? 0,
   }
+}
+
+/* ── Auto Split: разбиение готовой модели на детали ───────────────────── */
+
+export interface MeshySplitTask {
+  id: string
+  status: MeshyTaskStatus
+  progress: number
+  queue: number
+  partCount: number
+  glbUrl: string | null
+  error: string | null
+  consumedCredits: number
+}
+
+interface RawSplitTask {
+  id?: string
+  status?: string
+  progress?: number
+  preceding_tasks?: number
+  consumed_credits?: number
+  part_count?: number
+  model_urls?: { glb?: string } | null
+  task_error?: { message?: string } | null
+}
+
+/**
+ * Поставить разбиение готовой модели на детали (10 кредитов). `parts` — какие
+ * детали резать (режим `by_parts`, список от vision-модели по фото); без
+ * списка или если Meshy не смог разобрать подсказку — автоматический режим.
+ * Texture у результата нет, детали приходят в ровных цветах; текстуру и
+ * материалы возвращает сборка (`src/server/model-assembly.ts`).
+ */
+export async function createMeshySplitTask(inputTaskId: string, parts: string[] | null, signal?: AbortSignal): Promise<string> {
+  const post = async (body: Record<string, unknown>) => {
+    const json = await call(SPLIT_PATH, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }, signal)
+    const id = json && typeof json === "object" && "result" in json ? String((json as { result: unknown }).result) : ""
+    if (!id) throw new MeshyError("unavailable", "Meshy не вернул id задачи разбиения.")
+    return id
+  }
+  const base = { input_task_id: inputTaskId, target_formats: ["glb"], layout: "assembled" }
+  if (parts && parts.length >= 2) {
+    try {
+      return await post({ ...base, mode: "by_parts", prompt: parts.slice(0, 10).join(", ") })
+    } catch (error) {
+      // 400 — по подсказке нашлось меньше двух деталей, 503 — разбор подсказок выключен: режем автоматически.
+      if (!(error instanceof MeshyError) || !(error.kind === "bad_request" || error.kind === "unavailable")) throw error
+      console.warn(`[meshy] split by_parts отклонён (${error.message}), режем автоматически`)
+    }
+  }
+  return post({ ...base, mode: "auto" })
+}
+
+export async function getMeshySplitTask(splitId: string, signal?: AbortSignal): Promise<MeshySplitTask> {
+  const raw = ((await call(`${SPLIT_PATH}/${encodeURIComponent(splitId)}`, { method: "GET" }, signal)) ?? {}) as RawSplitTask
+  const status: MeshyTaskStatus =
+    raw.status === "SUCCEEDED"
+      ? "succeeded"
+      : raw.status === "FAILED" || raw.status === "CANCELED" || raw.status === "EXPIRED"
+        ? "failed"
+        : raw.status === "IN_PROGRESS"
+          ? "running"
+          : "pending"
+  const glbUrl = raw.model_urls?.glb || null
+  return {
+    id: raw.id ?? splitId,
+    status: status === "succeeded" && !glbUrl ? "failed" : status,
+    progress: Math.max(0, Math.min(100, Math.round(raw.progress ?? 0))),
+    queue: Math.max(0, raw.preceding_tasks ?? 0),
+    partCount: raw.part_count ?? 0,
+    glbUrl,
+    error: raw.task_error?.message || (status === "succeeded" && !glbUrl ? "Meshy не отдал GLB деталей." : null),
+    consumedCredits: raw.consumed_credits ?? 0,
+  }
+}
+
+/** GLB разбиения: каждая деталь — отдельный меш с цветом вершин. */
+export async function downloadMeshySplitGlb(task: MeshySplitTask, signal?: AbortSignal): Promise<Uint8Array> {
+  if (!task.glbUrl) throw new MeshyError("not_found", "У разбиения нет файла GLB.")
+  return downloadMeshyFile(task.glbUrl, "GLB деталей", signal)
 }
 
 /** Скачать файл по подписанной ссылке Meshy. Ключ API в этот запрос не уходит. */

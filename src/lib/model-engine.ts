@@ -11,20 +11,21 @@
 
 import { SHAPES, wireStats } from "@/lib/furniture-wire"
 import { PREVIEW_ENGINE, prepareReference } from "@/lib/image-generation"
-import type { ModelSettings, ModelTaskKind } from "@/shared/model3d"
+import type { ModelPart, ModelSettings, ModelStage, ModelTaskKind } from "@/shared/model3d"
 import type { FurnitureShape, ModelFormat } from "@/types"
 
 export type FurnitureOption = "auto" | FurnitureShape
 
 /**
  * Форматы модели: GLB крутится во вьюере сразу по готовности, FBX и OBJ
- * (ZIP с материалом и текстурой) докачиваются фоном — для 3ds Max, ArchiCAD,
- * AutoCAD.
+ * докачиваются фоном — для 3ds Max, ArchiCAD, AutoCAD. Собранная по деталям
+ * модель отдаёт FBX и OBJ архивами с текстурами; у старых записей FBX — один
+ * файл (`downloadStoredModel` смотрит на тип блоба).
  */
 export const MODEL_FORMATS: readonly ModelFormat[] = ["glb", "fbx", "obj"]
 export const MODEL_FILE: Record<ModelFormat, { label: string; extension: string; mime: string }> = {
   glb: { label: "GLB", extension: "glb", mime: "model/gltf-binary" },
-  fbx: { label: "FBX", extension: "fbx", mime: "application/octet-stream" },
+  fbx: { label: "FBX", extension: "fbx.zip", mime: "application/zip" },
   obj: { label: "OBJ", extension: "obj.zip", mime: "application/zip" },
 }
 
@@ -83,10 +84,19 @@ export interface ModelProviderStatus {
 }
 
 export interface ModelTaskProgress {
+  /** Что считается: сама модель или разбиение на детали. */
+  stage: ModelStage
   /** 0…100. */
   progress: number
   /** Задач впереди в очереди Meshy. */
   queue: number
+}
+
+/** Задача разбиения на детали и подсказки для сборки файлов (хранятся в записи). */
+export interface ModelSplitRef {
+  id: string
+  widthCm?: number
+  rootName?: string
 }
 
 const STATUS_TTL_MS = 60_000
@@ -169,19 +179,13 @@ const sleep = (ms: number, signal?: AbortSignal) =>
     )
   })
 
-/** Ждать готовности задачи. Сбой сети задачу не теряет: она считается у Meshy. */
-export async function awaitModelTask(
-  taskId: string,
-  kind: ModelTaskKind,
-  onProgress?: (progress: ModelTaskProgress) => void,
-  signal?: AbortSignal
-): Promise<{ credits: number }> {
+async function pollTask(url: string, stage: ModelStage, onProgress?: (progress: ModelTaskProgress) => void, signal?: AbortSignal): Promise<{ credits: number }> {
   const startedAt = Date.now()
   let failures = 0
   while (Date.now() - startedAt < POLL_LIMIT_MS) {
     let response: Response | null = null
     try {
-      response = await fetch(`/api/models/${encodeURIComponent(taskId)}?kind=${kind}`, { cache: "no-store", signal })
+      response = await fetch(url, { cache: "no-store", signal })
     } catch (error) {
       if (signal?.aborted) throw error
     }
@@ -195,8 +199,10 @@ export async function awaitModelTask(
         credits?: number
       }
       if (task.status === "succeeded") return { credits: task.credits ?? 0 }
-      if (task.status === "failed") throw new ModelBuildError(task.error || "Meshy не смог построить модель по этому фото.", true)
-      onProgress?.({ progress: task.progress ?? 0, queue: task.queue ?? 0 })
+      if (task.status === "failed") {
+        throw new ModelBuildError(task.error || (stage === "parts" ? "Meshy не смог разделить модель на детали." : "Meshy не смог построить модель по этому фото."), true)
+      }
+      onProgress?.({ stage, progress: task.progress ?? 0, queue: task.queue ?? 0 })
     } else {
       const problem = response ? await problemOf(response, "Не удалось узнать статус задачи.") : null
       if (problem && !problem.retryable) throw new ModelBuildError(problem.message, response?.status === 404)
@@ -211,9 +217,67 @@ export async function awaitModelTask(
   throw new ModelBuildError("Meshy считает дольше обычного. Задача не потеряна — нажмите «Повторить» позже.")
 }
 
+/** Ждать готовности задачи. Сбой сети задачу не теряет: она считается у Meshy. */
+export function awaitModelTask(
+  taskId: string,
+  kind: ModelTaskKind,
+  onProgress?: (progress: ModelTaskProgress) => void,
+  signal?: AbortSignal
+): Promise<{ credits: number }> {
+  return pollTask(`/api/models/${encodeURIComponent(taskId)}?kind=${kind}`, "model", onProgress, signal)
+}
+
+/**
+ * Поставить разбиение готовой модели на детали (10 кредитов Meshy). `photo` —
+ * главный вид для vision-подсказки: какие детали резать, реальная ширина,
+ * имя группы. `taskLost` у ошибки — разбиение ставить нельзя (задача пропала
+ * или Meshy отказал), модель остаётся цельной.
+ */
+export async function submitSplitTask(taskId: string, kind: ModelTaskKind, photo: Blob | null, signal?: AbortSignal): Promise<ModelSplitRef> {
+  const form = new FormData()
+  form.append("kind", kind)
+  if (photo) form.append("image", await prepareReference(photo, SINGLE_PHOTO_SIDE), "photo")
+  let response: Response
+  try {
+    response = await fetch(`/api/models/${encodeURIComponent(taskId)}/split`, { method: "POST", body: form, signal })
+  } catch (error) {
+    if (signal?.aborted) throw error
+    throw new ModelBuildError("Нет связи с сервером — разбиение на детали не поставлено.")
+  }
+  if (!response.ok) {
+    const problem = await problemOf(response, "Не удалось поставить разбиение на детали.")
+    throw new ModelBuildError(problem.message, !problem.retryable || response.status === 404 || response.status === 422)
+  }
+  const json = (await response.json()) as { splitId?: string; widthCm?: number | null; rootName?: string }
+  if (!json.splitId) throw new ModelBuildError("Сервер не вернул id разбиения.", true)
+  return { id: json.splitId, ...(json.widthCm ? { widthCm: json.widthCm } : {}), ...(json.rootName ? { rootName: json.rootName } : {}) }
+}
+
+/** Ждать готовности разбиения на детали. */
+export function awaitSplitTask(
+  taskId: string,
+  splitId: string,
+  onProgress?: (progress: ModelTaskProgress) => void,
+  signal?: AbortSignal
+): Promise<{ credits: number }> {
+  return pollTask(`/api/models/${encodeURIComponent(taskId)}/split?id=${encodeURIComponent(splitId)}`, "parts", onProgress, signal)
+}
+
+export interface ModelFileResult {
+  blob: Blob
+  /** Детали собранной модели — только когда файл собран сейчас, из хранилища приходит один блоб. */
+  parts?: ModelPart[]
+  /** Ширина, высота, глубина, м. */
+  size?: [number, number, number]
+  /** Сборка по деталям не удалась — файл цельный, вот почему. */
+  splitNote?: string
+}
+
 /**
  * Файл готовой задачи; сервер заодно кладёт его в своё хранилище под ключом
- * `modelKey(recordId, format)`. `taskLost` у ошибки — такого формата у задачи нет.
+ * `modelKey(recordId, format)`. С `split` модель собирается по деталям
+ * (GLB с объектами, FBX и OBJ — архивы с текстурами). `taskLost` у ошибки —
+ * такого формата у задачи нет.
  */
 export async function fetchModelFile(
   taskId: string,
@@ -221,11 +285,17 @@ export async function fetchModelFile(
   kind: ModelTaskKind,
   /** `thumb` — превью модели для библиотеки (кладётся под `thumbResultKey`). */
   format: ModelFormat | "thumb" = "glb",
+  split?: ModelSplitRef,
   signal?: AbortSignal
-): Promise<Blob> {
+): Promise<ModelFileResult> {
   let response: Response
   try {
     const query = new URLSearchParams({ record: recordId, format, kind })
+    if (split) {
+      query.set("split", split.id)
+      if (split.widthCm) query.set("width", String(split.widthCm))
+      if (split.rootName) query.set("name", split.rootName)
+    }
     response = await fetch(`/api/models/${encodeURIComponent(taskId)}/file?${query}`, { cache: "no-store", signal })
   } catch (error) {
     if (signal?.aborted) throw error
@@ -236,7 +306,20 @@ export async function fetchModelFile(
     throw new ModelBuildError(problem.message, response.status === 404)
   }
   const bytes = await response.blob()
-  return format === "thumb" ? bytes : new Blob([bytes], { type: MODEL_FILE[format].mime })
+  const result: ModelFileResult = { blob: format === "thumb" ? bytes : new Blob([bytes], { type: response.headers.get("Content-Type") || MODEL_FILE[format].mime }) }
+  const header = response.headers.get("X-Model-Parts")
+  if (header) {
+    try {
+      const parsed = JSON.parse(header) as { parts?: ModelPart[]; size?: [number, number, number] }
+      if (Array.isArray(parsed.parts) && parsed.parts.length > 1) result.parts = parsed.parts
+      if (Array.isArray(parsed.size) && parsed.size.length === 3) result.size = parsed.size
+    } catch {
+      // Без подписи деталей — просто файл.
+    }
+  }
+  const note = response.headers.get("X-Model-Split-Note")
+  if (note) result.splitNote = decodeURIComponent(note)
+  return result
 }
 
 export interface GlbStats {

@@ -110,7 +110,9 @@ function ModelTile({
         {model.status === "processing" ? (
           <span className="model-tile-state">
             <ThinkingGlyph size={16} />
-            <span>{progress && progress.progress > 0 ? `${progress.progress}%` : "строим…"}</span>
+            <span>
+              {progress?.stage === "parts" ? (progress.progress > 0 ? `детали ${progress.progress}%` : "детали…") : progress && progress.progress > 0 ? `${progress.progress}%` : "строим…"}
+            </span>
           </span>
         ) : null}
         {model.status === "error" ? (

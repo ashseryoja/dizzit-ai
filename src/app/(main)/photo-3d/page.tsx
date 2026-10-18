@@ -14,6 +14,7 @@ import { ComposerDock, ToolAside, ToolShell } from "@/components/tool/tool-shell
 import { getBlob, modelKey, putBlob, putLocalBlob, sourceKey, thumbResultKey, viewKey } from "@/lib/blob-store"
 import {
   awaitModelTask,
+  awaitSplitTask,
   buildModelLocally,
   fetchModelFile,
   MESHY_ENGINE,
@@ -24,6 +25,8 @@ import {
   readGlbStats,
   resolveShape,
   submitModelTask,
+  submitSplitTask,
+  type ModelSplitRef,
   type ModelTaskProgress,
 } from "@/lib/model-engine"
 import { saveSourceFile } from "@/lib/tool-jobs"
@@ -36,6 +39,7 @@ import {
   MODEL_MAX_PHOTOS,
   estimateModelCost,
   modelAiInfo,
+  modelSplitEnabled,
   type ModelSettings,
   type ModelSlot,
   type ModelViewRole,
@@ -67,6 +71,12 @@ const LABELS: ToolComposerLabels = {
  * Модель считает Meshy (lib/model-engine → /api/models): задача ставится один
  * раз, её id хранится в записи, и опрос переживает перезагрузку страницы —
  * повторно кредиты не тратятся. Без ключа — каркас-заглушка из библиотеки.
+ *
+ * Второй этап — всегда, без переключателя: готовая модель разбивается на
+ * детали (Auto Split, `splitId` тоже в записи) и собирается «по канонам» для
+ * дизайнеров интерьера — отдельные объекты с материалами, на которые ложится
+ * любая ткань или дерево (см. `src/server/model-assembly.ts`). Если Meshy не
+ * смог разделить, модель остаётся цельной, причина — в `splitNote`.
  */
 export default function PhotoTo3DPage() {
   const activeProject = useActiveProject()
@@ -120,19 +130,44 @@ export default function PhotoTo3DPage() {
         }
         let taskId = meta.taskId
         let kind = meta.taskKind ?? "image"
+        const jobSettings = meta.settings ?? useModelStore.getState().settings
         if (!taskId) {
           const main = await getBlob(sourceKey(meta.id))
           if (!main) throw new ModelBuildError("Фото не найдено в хранилище — приложите его заново.", true)
           const views = await Promise.all((meta.views ?? []).map((role) => getBlob(viewKey(meta.id, role)).catch(() => null)))
           const photos = [main, ...views.filter((blob): blob is Blob => Boolean(blob))]
-          const jobSettings = meta.settings ?? useModelStore.getState().settings
           const task = await submitModelTask(photos, jobSettings)
           taskId = task.taskId
           kind = task.kind
           update(meta.id, { taskId, taskKind: kind, settings: jobSettings })
         }
-        const { credits } = await awaitModelTask(taskId, kind, (step) => setProgress((current) => ({ ...current, [meta.id]: step })))
-        const glb = await fetchModelFile(taskId, meta.id, kind)
+        const onProgress = (step: ModelTaskProgress) => setProgress((current) => ({ ...current, [meta.id]: step }))
+        let { credits } = await awaitModelTask(taskId, kind, onProgress)
+
+        // Этап деталей: разбиение ставится один раз и тоже переживает перезагрузку.
+        // Отказ Meshy разделить — не ошибка модели: она остаётся цельной с пометкой.
+        let split: ModelSplitRef | undefined
+        let splitNote: string | undefined
+        if (modelSplitEnabled(jobSettings)) {
+          split = meta.splitId ? { id: meta.splitId, widthCm: meta.widthCm, rootName: meta.rootName } : undefined
+          try {
+            if (!split) {
+              onProgress({ stage: "parts", progress: 0, queue: 0 })
+              const photo = await getBlob(sourceKey(meta.id)).catch(() => null)
+              split = await submitSplitTask(taskId, kind, photo)
+              update(meta.id, { splitId: split.id, widthCm: split.widthCm, rootName: split.rootName })
+            }
+            credits += (await awaitSplitTask(taskId, split.id, onProgress)).credits
+          } catch (error) {
+            if (!(error instanceof ModelBuildError && error.taskLost)) throw error
+            splitNote = error.message
+            split = undefined
+            update(meta.id, { splitId: undefined })
+          }
+        }
+
+        const file = await fetchModelFile(taskId, meta.id, kind, "glb", split)
+        const glb = file.blob
         // Кэш браузера; при серверном хранении GLB уже лежит там под тем же ключом.
         await putLocalBlob(modelKey(meta.id), glb).catch(() => undefined)
         const stats = await readGlbStats(glb)
@@ -143,6 +178,9 @@ export default function PhotoTo3DPage() {
           edgeCount: undefined,
           modelBytes: glb.size,
           credits: credits || undefined,
+          parts: file.parts,
+          size: file.size,
+          splitNote: file.splitNote ?? splitNote,
           ...stats,
         })
         showToast({ title: "3D-модель готова", detail: meta.sourceName })
@@ -171,15 +209,17 @@ export default function PhotoTo3DPage() {
       // Из набора запись не убирается: одна попытка на загрузку страницы.
       collecting.current.add(meta.id)
       const kind = meta.taskKind ?? "image"
+      // Собранные по деталям FBX и OBJ — из той же сборки, что и GLB (сервер держит её в памяти).
+      const split: ModelSplitRef | undefined = meta.parts && meta.splitId ? { id: meta.splitId, widthCm: meta.widthCm, rootName: meta.rootName } : undefined
       await fetchModelFile(meta.taskId, meta.id, kind, "thumb")
-        .then((thumb) => putLocalBlob(thumbResultKey(meta.id), thumb))
+        .then((thumb) => putLocalBlob(thumbResultKey(meta.id), thumb.blob))
         .catch(() => undefined)
       const formats: ModelFormat[] = ["glb"]
       for (const format of MODEL_FORMATS) {
         if (format === "glb") continue
         try {
-          const file = await fetchModelFile(meta.taskId, meta.id, kind, format)
-          await putLocalBlob(modelKey(meta.id, format), file).catch(() => undefined)
+          const file = await fetchModelFile(meta.taskId, meta.id, kind, format, split)
+          await putLocalBlob(modelKey(meta.id, format), file.blob).catch(() => undefined)
           formats.push(format)
         } catch (error) {
           if (!(error instanceof ModelBuildError && error.taskLost)) return
@@ -257,7 +297,9 @@ export default function PhotoTo3DPage() {
     const patch: Partial<Model3D> = {
       status: "processing",
       error: undefined,
-      ...(rebuild ? { taskId: undefined, taskKind: undefined, formats: undefined, credits: undefined } : {}),
+      ...(rebuild
+        ? { taskId: undefined, taskKind: undefined, formats: undefined, credits: undefined, splitId: undefined, widthCm: undefined, rootName: undefined, parts: undefined, size: undefined, splitNote: undefined }
+        : {}),
     }
     update(model.id, patch)
     void runBuild({ ...model, ...patch })

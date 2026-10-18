@@ -127,7 +127,9 @@ export async function downloadStoredModel(model: Model3D, format: ModelFormat = 
   const url = URL.createObjectURL(blob)
   const link = document.createElement("a")
   link.href = url
-  link.download = `${fileBaseName(model.sourceName, "model")}.${MODEL_FILE[format].extension}`
+  // Старые записи хранят FBX одним файлом, собранные по деталям — архивом с текстурами.
+  const extension = format === "fbx" && blob.type !== "application/zip" ? "fbx" : MODEL_FILE[format].extension
+  link.download = `${fileBaseName(model.sourceName, "model")}.${extension}`
   link.click()
   window.setTimeout(() => URL.revokeObjectURL(url), 10_000)
   return true
@@ -167,9 +169,9 @@ export function ModelDownloads({ model, className }: { model: Model3D; className
               !ready
                 ? `${MODEL_FILE[format].label} готовится…`
                 : format === "obj"
-                  ? "Скачать OBJ — архив с материалом и текстурой"
+                  ? "Скачать OBJ — архив: детали, материалы и текстуры"
                   : format === "fbx"
-                    ? "Скачать FBX — для 3ds Max, ArchiCAD, AutoCAD"
+                    ? "Скачать FBX — архив для 3ds Max: отдельные детали с материалами и текстурами"
                     : "Скачать GLB — для Blender, Unreal и веба"
             }
           >

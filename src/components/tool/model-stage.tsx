@@ -12,7 +12,7 @@ import { SHAPE_LABEL } from "@/lib/furniture-wire"
 import { MESHY_ENGINE, type ModelTaskProgress } from "@/lib/model-engine"
 import { useStoredBlobUrl } from "@/lib/use-stored-blob"
 import { cn, fileBaseName } from "@/lib/utils"
-import { MODEL_SLOT_LABEL, describeModelSettings } from "@/shared/model3d"
+import { MODEL_SLOT_LABEL, describeModelSettings, MODEL_CLASS_LABEL } from "@/shared/model3d"
 import type { Model3D } from "@/types"
 
 /** Фон сцены — как свотчи над вьюером у Meshy: модель проверяют на тёмном, сером, чёрном и цветном. */
@@ -104,6 +104,20 @@ export function ModelStage({
                 <dd>{(model.modelBytes / 1024 / 1024).toFixed(1)} МБ</dd>
               </div>
             ) : null}
+            {model.parts ? (
+              <div>
+                <dt>Детали</dt>
+                <dd title={model.parts.map((part) => `${part.object} · ${MODEL_CLASS_LABEL[part.cls]}`).join("\n")}>
+                  {model.parts.length} · {[...new Set(model.parts.map((part) => MODEL_CLASS_LABEL[part.cls]))].join(", ")}
+                </dd>
+              </div>
+            ) : null}
+            {model.size ? (
+              <div>
+                <dt>Размер</dt>
+                <dd>{model.size.map((value) => Math.round(value * 100)).join(" × ")} см</dd>
+              </div>
+            ) : null}
           </dl>
         ) : null}
       </div>
@@ -157,11 +171,15 @@ export function ModelStage({
           <span className="text-[12px]" style={{ color: "var(--fg-3)" }}>
             {!model.taskId
               ? "строим модель по фото…"
-              : progress && progress.progress > 0
-                ? `строим модель · ${progress.progress}%`
-                : progress && progress.queue > 0
-                  ? `в очереди · впереди ${progress.queue}`
-                  : "строим модель по фото · 1–5 минут"}
+              : progress?.stage === "parts"
+                ? progress.progress > 0
+                  ? `разбираем на детали · ${progress.progress}%`
+                  : "разбираем на детали для материалов…"
+                : progress && progress.progress > 0
+                  ? `строим модель · ${progress.progress}%`
+                  : progress && progress.queue > 0
+                    ? `в очереди · впереди ${progress.queue}`
+                    : "строим модель по фото · 1–5 минут"}
           </span>
           {progress && progress.progress > 0 ? (
             <span className="model-stage-progress" aria-hidden>
@@ -190,7 +208,9 @@ export function ModelStage({
           </span>
           <span className="model-stage-micro">
             {real
-              ? `${model.settings ? describeModelSettings(model.settings) : "Meshy"}${model.credits ? ` · ${model.credits} кредитов` : ""}`
+              ? `${model.settings ? describeModelSettings(model.settings) : "Meshy"}${model.credits ? ` · ${model.credits} кредитов` : ""}${
+                  model.parts ? "" : model.splitNote ? " · цельная: детали не выделились" : ""
+                }`
               : "каркас-заглушка · ключ Meshy не задан"}
           </span>
         </figcaption>
