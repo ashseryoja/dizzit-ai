@@ -42,7 +42,7 @@ export function ModelStage({
 }: {
   model: Model3D
   progress?: ModelTaskProgress
-  /** Высота сцены — страница подбирает её под развёрнутую или свёрнутую панель генерации. */
+  /** Минимальная высота сцены — страница подбирает её под развёрнутую или свёрнутую панель генерации; остальное сцена забирает flex-ом. */
   className?: string
   onRetry: () => void
   onDelete: () => void
@@ -81,20 +81,23 @@ export function ModelStage({
       : []
 
   return (
-    <div className="flex min-w-0 flex-col gap-2">
-    <figure className={cn("card model-stage", className)} style={real ? { background: backdrop } : undefined}>
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
+    {/* Сцена — flex-1: высоту ей даёт свободное место страницы (page-shell тянется
+        на 100dvh минус резерв композера), поэтому вьюер и каркас позиционируются
+        абсолютно — процентная высота у flex-потомка не определена. */}
+    <figure className={cn("card model-stage min-h-0 flex-1", className)} style={real ? { background: backdrop } : undefined}>
       {/* Пока строится — библиотека перетекает («ищем форму»); готовая модель Meshy —
           настоящий GLB во вьюере, заглушка без ключа — один каркас, который вращается. */}
       {real ? (
         // Отступ снизу — под тулбар: основание модели не уходит под кнопки.
-        <div className="h-full w-full pb-14 pt-2">
+        <div className="absolute inset-0 pb-14 pt-2">
           <ModelViewer key={model.id} modelId={model.id} autoRotate={autoRotate} className="h-full w-full" />
         </div>
       ) : (
         <FurnitureMorph
           key={done ? model.shape : "searching"}
           shape={done ? model.shape : undefined}
-          className={cn("h-full w-full", model.status === "error" && "opacity-30")}
+          className={cn("absolute inset-0", model.status === "error" && "opacity-30")}
         />
       )}
 
@@ -218,10 +221,11 @@ export function ModelStage({
 }
 
 /**
- * Строка под сценой для узких экранов (`.model-stage-meta`, на md и шире
- * скрыта): название и параметры модели, за ними статистика сетки чипами с
- * горизонтальной прокруткой — то, что на широком экране лежит плашками в
- * углах сцены, а на телефоне закрывало бы саму модель.
+ * Лента под сценой для узких экранов (`.model-stage-meta`, на md и шире
+ * скрыта): одна строка чипов с прокруткой вбок — название, параметры модели
+ * и статистика сетки. То, что на широком экране лежит плашками в углах сцены,
+ * а на телефоне закрывало бы саму модель; одной строкой, а не двумя, чтобы
+ * сцене досталось больше высоты и лента влезала над композером без прокрутки.
  */
 export function ModelStageMeta({
   title,
@@ -233,17 +237,13 @@ export function ModelStageMeta({
   stats: { label: string; value: string; title?: string }[]
 }) {
   return (
-    <div className="model-stage-meta md:hidden">
-      <div className="min-w-0">
-        <span className="block truncate text-[13px]" style={{ color: "var(--fg-1)" }}>
-          {title}
-        </span>
-        <span className="block truncate text-[11.5px]" style={{ color: "var(--fg-4)" }}>
-          {subtitle}
-        </span>
-      </div>
+    <div className="model-stage-meta no-scrollbar md:hidden" aria-label="О модели">
+      <span className="model-stage-meta-title" title={title}>
+        {title}
+      </span>
+      <span className="model-stage-meta-sub">{subtitle}</span>
       {stats.length > 0 ? (
-        <dl className="model-stage-meta-stats no-scrollbar" aria-label="Статистика модели">
+        <dl className="model-stage-meta-stats" aria-label="Статистика модели">
           {stats.map((item) => (
             <div key={item.label} title={item.title}>
               <dt>{item.label}</dt>

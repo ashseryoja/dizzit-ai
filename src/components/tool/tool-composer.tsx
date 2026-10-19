@@ -15,6 +15,7 @@ import {
 import { openLightbox, ZoomHit } from "@/components/ui/lightbox"
 import { MAX_BATCH, sourceQuality } from "@/lib/enhance-engine"
 import type { AttachedRender } from "@/lib/use-attachments"
+import { useIsMobile } from "@/lib/use-is-mobile"
 import { usePresence } from "@/lib/use-presence"
 import { cn, plural } from "@/lib/utils"
 import { useProjectStore } from "@/stores/project-store"
@@ -43,6 +44,12 @@ export interface ToolComposerLabels {
   /** Обещание продукта внизу панели. */
   footer: string
   inputPlaceholder: string
+  /**
+   * Плейсхолдер для телефона: рядом с подписанной главной кнопкой полю
+   * остаётся ~150 px, и «Название или комментарий к модели…» обрывается на
+   * полуслове. Без него — обычный плейсхолдер с многоточием.
+   */
+  inputPlaceholderNarrow?: string
   submitLabel: string
   /** Тихая подпись рядом с главной кнопкой: цена запуска («≈ $0,05 за рендер»). На кнопке её нет. */
   submitHint?: string
@@ -164,6 +171,8 @@ export function ToolComposer<T extends string>({
   }
   const containerRef = useRef<HTMLDivElement>(null)
   const settings = usePresence(settingsOpen)
+  const narrow = useIsMobile(767)
+  const inputPlaceholder = placeholder ?? ((narrow && labels.inputPlaceholderNarrow) || labels.inputPlaceholder)
 
   // Новый браузер: проекты ещё едут с сервера, активного нет. Запуск ждёт их —
   // иначе записи ушли бы в фантомный «Проект N» (см. ensureActiveProject).
@@ -467,8 +476,8 @@ export function ToolComposer<T extends string>({
               if (!blockedReason) onSubmit()
             }
           }}
-          placeholder={placeholder ?? labels.inputPlaceholder}
-          aria-label={placeholder ?? labels.inputPlaceholder}
+          placeholder={inputPlaceholder}
+          aria-label={inputPlaceholder}
           className="composer-input"
           style={{ color: "var(--fg-1)", caretColor: "var(--accent)" }}
         />

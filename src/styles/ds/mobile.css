@@ -62,8 +62,12 @@ aside.app-drawer {
    Хлебные крошки, заголовок и подпись плотнее — сцене достаётся высота.
    ============================================================ */
 @media (max-width: 767px) {
+  /* Кнопка меню кончается на 56px — заголовку хватает 72px сверху, а не 80.
+     Тег в селекторе — как у div.composer-position: правило из @layer в
+     globals.css Tailwind вклеивает позже этого файла. */
+  div.page-shell { padding-top: calc(4.5rem + env(safe-area-inset-top, 0px)); }
   .tool-breadcrumb { margin-bottom: 8px; font-size: 10.5px; }
-  .tool-heading { margin-bottom: 14px; }
+  .tool-heading { margin-bottom: 12px; }
   .tool-heading h1 { font-size: clamp(20px, 6.2vw, 24px); }
   .tool-heading p { margin-top: 6px; font-size: 12.5px; }
   .tool-heading-row { gap: 10px; }
@@ -103,16 +107,17 @@ aside.app-drawer {
   .model-dock-toggle > span:first-of-type { white-space: nowrap; }
   /* Сводка в шапке («до 7 кадров», «Meshy 7 · с текстурой») сжималась до буквы — на телефоне её нет, итог и так в теле панели. */
   .model-dock-summary { display: none; }
+  /* «≈ 3 мин | 40 кредитов» без иконок: с ними строка на 375px не влезала и
+     обрезалась по букве — у flex-контейнера многоточие по текстовым узлам не работает. */
   .model-dock-cost {
     flex: 0 1 auto;
     min-width: 0;
     gap: 4px;
     overflow: hidden;
     white-space: nowrap;
-    text-overflow: ellipsis;
     font-size: 11.5px;
   }
-  .model-dock-cost svg { flex: none; }
+  .model-dock-cost svg { display: none; }
   .model-dock-cost-sep { margin: 0 2px; }
   .model-dock-body { gap: 12px; max-height: min(46dvh, 420px); padding: 2px 12px 12px; }
   .model-slots { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -126,9 +131,11 @@ aside.app-drawer {
 /* ============================================================
    СЦЕНА 3D-МОДЕЛИ
    Плашка статистики закрывала полмодели — на телефоне она уходит под сцену
-   строкой чипов (ModelStageMeta); в углах остаются миниатюры фото, фон и
-   автоповорот, внизу — скачивание. Правило ширины (не наведения): планшет
-   с мышью тоже узкий.
+   одной лентой чипов с прокруткой вбок (ModelStageMeta: название, параметры,
+   статистика); в углах остаются миниатюры фото, фон и автоповорот, внизу —
+   скачивание. Сама сцена — flex-1 между заголовком и композером: модель
+   получает всю свободную высоту экрана. Правило ширины (не наведения):
+   планшет с мышью тоже узкий.
    ============================================================ */
 @media (max-width: 767px) {
   .model-stage-stats { display: none; }
@@ -141,29 +148,47 @@ aside.app-drawer {
   .model-downloads { height: 34px; }
   .model-stage-progress { width: min(180px, 60%); }
 }
-.model-stage-meta { display: flex; flex-direction: column; gap: 8px; padding: 0 2px; }
-.model-stage-meta-stats {
+.model-stage-meta {
   display: flex;
+  flex: none;
+  align-items: center;
   gap: 6px;
-  margin: 0;
-  padding-bottom: 2px;
+  padding: 0 2px 2px;
   overflow-x: auto;
   overscroll-behavior-x: contain;
   scroll-snap-type: x proximity;
+  white-space: nowrap;
 }
+.model-stage-meta-title,
+.model-stage-meta-sub,
 .model-stage-meta-stats > div {
-  display: flex;
+  display: inline-flex;
   flex: none;
-  flex-direction: column;
-  gap: 1px;
-  padding: 6px 10px;
-  border-radius: 12px;
-  background: var(--glass-control), var(--bg-surface);
-  box-shadow: inset 0 1px var(--line);
+  align-items: baseline;
+  gap: 5px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 15px;
+  font-size: 12px;
+  line-height: 30px;
   scroll-snap-align: start;
 }
-.model-stage-meta-stats dt { font-size: 10.5px; letter-spacing: 0.02em; text-transform: lowercase; color: var(--fg-4); white-space: nowrap; }
-.model-stage-meta-stats dd { margin: 0; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--fg-1); white-space: nowrap; }
+.model-stage-meta-title {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: var(--glass-control), var(--bg-surface);
+  box-shadow: inset 0 1px var(--line);
+  color: var(--fg-1);
+}
+.model-stage-meta-sub { padding: 0 4px; color: var(--fg-4); }
+.model-stage-meta-stats { display: contents; margin: 0; }
+.model-stage-meta-stats > div {
+  background: var(--glass-control), var(--bg-surface);
+  box-shadow: inset 0 1px var(--line);
+}
+.model-stage-meta-stats dt { font-size: 10.5px; letter-spacing: 0.02em; text-transform: lowercase; color: var(--fg-4); }
+.model-stage-meta-stats dd { margin: 0; font-variant-numeric: tabular-nums; color: var(--fg-1); }
 
 /* ============================================================
    ТОЧЕЧНАЯ ПРАВКА ПАЛЬЦЕМ

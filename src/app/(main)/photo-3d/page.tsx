@@ -57,6 +57,7 @@ const LABELS: ToolComposerLabels = {
   optionsIcon: Box,
   footer: "",
   inputPlaceholder: "Название или комментарий к модели…",
+  inputPlaceholderNarrow: "Название модели…",
   submitLabel: "Создать 3D",
   batchNoun: ["фото", "фото", "фото"],
 }
@@ -318,7 +319,9 @@ export default function PhotoTo3DPage() {
       intake={intake}
       dropLabel="Отпустите, чтобы приложить фото"
       composerOpen
-      composerSpace={dockOpen ? "22rem" : "11rem"}
+      // Нижний пол — не больше измеренного композера: иначе на телефоне под ним
+      // пустая полоса, а сцена ниже на её высоту (точный резерв — --composer-reserve).
+      composerSpace={dockOpen ? "20rem" : "8rem"}
       trayOpen={visible.length > 0}
       layers={
         <>
@@ -381,13 +384,15 @@ export default function PhotoTo3DPage() {
           className={cn("max-w-[760px] gap-2 px-6", dockOpen ? "pb-6 pt-3" : "pb-8 pt-4 sm:pb-10")}
         />
       ) : (
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-1 flex-col gap-3">
           {selected ? (
             <ModelStage
               model={selected}
               progress={progress[selected.id]}
-              // На телефоне под сценой ещё строка с параметрами и статистикой (ModelStageMeta) — сцена ниже на её высоту.
-              className={dockOpen ? "h-[calc(100dvh-36rem)] min-h-[220px] md:h-[calc(100dvh-33rem)]" : "h-[calc(100dvh-25rem)] min-h-[280px] md:h-[calc(100dvh-21rem)] md:min-h-[300px]"}
+              // Сцена занимает всё, что осталось между заголовком и композером
+              // (flex-1 по цепочке от каркаса); при раскрытой панели генерации
+              // ей хватает и меньшего минимума — панель всё равно поверх.
+              className={dockOpen ? "min-h-[220px]" : "min-h-[300px]"}
               onRetry={() => retry(selected)}
               onDelete={() => deleteModel(selected)}
             />
