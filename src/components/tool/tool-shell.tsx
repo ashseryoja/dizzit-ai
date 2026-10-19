@@ -178,7 +178,9 @@ export function ComposerDock({
     if (!present || !node || typeof ResizeObserver === "undefined") return
     const root = document.documentElement
     const sync = () => {
-      const bottom = window.innerHeight - node.getBoundingClientRect().bottom
+      // Высота окна — по <html>, а не window.innerHeight: при эмуляции телефона
+      // innerHeight считает в масштабе устройства, и резерв уезжал бы в тысячи px.
+      const bottom = root.clientHeight - node.getBoundingClientRect().bottom
       root.style.setProperty("--composer-reserve", `${Math.round(node.offsetHeight + Math.max(0, bottom) + 16)}px`)
     }
     sync()

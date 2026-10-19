@@ -20,6 +20,7 @@ import {
 import { PhotoToCubeGlyph, RenderEditorGlyph, RestyleGlyph, ViewsGlyph } from "@/components/glyphs"
 import { Logo } from "@/components/logo"
 import { usePresence } from "@/lib/use-presence"
+import { useSwipe } from "@/lib/use-swipe"
 import { cn } from "@/lib/utils"
 import { useServerStatus } from "@/lib/server-sync"
 import { useAlbumStore } from "@/stores/album-store"
@@ -529,6 +530,14 @@ export function AppSidebar() {
   const [openMobile, setOpenMobile] = useState(false)
   const [accountSheetOpen, setAccountSheetOpen] = useState(false)
   const pathname = usePathname()
+  // Жесты на таче: шторка меню уезжает свайпом влево (по ней самой и по
+  // затемнению), шторка аккаунта — свайпом вниз. Крестик и тап мимо остаются.
+  const drawerRef = useRef<HTMLElement>(null)
+  const backdropRef = useRef<HTMLDivElement>(null)
+  const sheetRef = useRef<HTMLDivElement>(null)
+  useSwipe(drawerRef, { onLeft: () => setOpenMobile(false), enabled: openMobile })
+  useSwipe(backdropRef, { onLeft: () => setOpenMobile(false), ignore: "", enabled: openMobile })
+  useSwipe(sheetRef, { onDown: () => setAccountSheetOpen(false), enabled: accountSheetOpen })
 
   // Переход закрывает шторки. По смене маршрута, а не в onClick каждой ссылки:
   // так закрываются и программные переходы из списка проектов.
@@ -568,7 +577,7 @@ export function AppSidebar() {
         type="button"
         onClick={() => setOpenMobile(true)}
         aria-label="Открыть меню"
-        className="mobile-menu-button fixed left-3 top-3 z-30 flex h-11 items-center gap-3 rounded-full pl-[14px] pr-4 lg:hidden"
+        className="mobile-menu-button fixed z-30 flex h-11 items-center gap-3 rounded-full pl-[14px] pr-4 lg:hidden"
       >
         <span className="flex flex-col gap-[3.5px]" aria-hidden>
           <span className="block h-[1.5px] w-4 rounded-full" style={{ background: "var(--fg-2)" }} />
@@ -582,6 +591,7 @@ export function AppSidebar() {
       {/* Оверлей и шторка меню. Смонтированы всегда и ездят transition-ом:
           состояние «открыто» не зависит от того, доиграла ли анимация. */}
       <div
+        ref={backdropRef}
         onClick={() => setOpenMobile(false)}
         aria-hidden
         className={cn(
@@ -591,11 +601,12 @@ export function AppSidebar() {
         style={{ background: "rgba(10,10,12,0.6)" }}
       />
       <aside
+        ref={drawerRef}
         // inert выключает фокус и чтение скринридером у закрытой шторки:
         // иначе Tab уводит каретку в невидимое меню за краем экрана.
         inert={!openMobile}
         className={cn(
-          "glass-surface glass-dense app-sidebar fixed bottom-2 left-2 top-2 z-50 flex w-[300px] max-w-[88vw] flex-col overflow-hidden transition-transform duration-300 lg:hidden",
+          "glass-surface glass-dense app-sidebar app-drawer fixed z-50 flex w-[300px] max-w-[88vw] flex-col overflow-hidden transition-transform duration-300 lg:hidden",
           openMobile ? "translate-x-0" : "-translate-x-[110%]"
         )}
         style={{
@@ -633,6 +644,7 @@ export function AppSidebar() {
         style={{ background: "rgba(10,10,12,0.5)" }}
       />
       <div
+        ref={sheetRef}
         inert={!accountSheetOpen}
         role="dialog"
         aria-label="Аккаунт"

@@ -52,8 +52,36 @@ export function ModelStage({
   const done = model.status === "done"
   const real = done && model.engine === MESHY_ENGINE
   const title = model.note || (real ? fileBaseName(model.sourceName, "модель") : SHAPE_LABEL[model.shape])
+  const subtitle = real
+    ? `${model.settings ? describeModelSettings(model.settings) : "Meshy"}${model.credits ? ` · ${model.credits} кредитов` : ""}${
+        model.parts ? "" : model.splitNote ? " · цельная: детали не выделились" : ""
+      }`
+    : "каркас-заглушка · ключ Meshy не задан"
+
+  /* Статистика сетки: на широком экране — плашка в углу сцены, на телефоне
+     — строка под сценой (`ModelStageMeta`): плашка закрывала бы полмодели. */
+  const stats: { label: string; value: string; title?: string }[] =
+    real && model.vertexCount && model.faceCount
+      ? [
+          { label: "Топология", value: "треугольники" },
+          { label: "Грани", value: formatCount(model.faceCount) },
+          { label: "Вершины", value: formatCount(model.vertexCount) },
+          ...(model.modelBytes ? [{ label: "GLB", value: `${(model.modelBytes / 1024 / 1024).toFixed(1)} МБ` }] : []),
+          ...(model.parts
+            ? [
+                {
+                  label: "Детали",
+                  value: `${model.parts.length} · ${[...new Set(model.parts.map((part) => MODEL_CLASS_LABEL[part.cls]))].join(", ")}`,
+                  title: model.parts.map((part) => `${part.object} · ${MODEL_CLASS_LABEL[part.cls]}`).join("\n"),
+                },
+              ]
+            : []),
+          ...(model.size ? [{ label: "Размер", value: `${model.size.map((value) => Math.round(value * 100)).join(" × ")} см` }] : []),
+        ]
+      : []
 
   return (
+    <div className="flex min-w-0 flex-col gap-2">
     <figure className={cn("card model-stage", className)} style={real ? { background: backdrop } : undefined}>
       {/* Пока строится — библиотека перетекает («ищем форму»); готовая модель Meshy —
           настоящий GLB во вьюере, заглушка без ключа — один каркас, который вращается. */}
@@ -84,40 +112,14 @@ export function ModelStage({
           </span>
         </div>
 
-        {real && model.vertexCount && model.faceCount ? (
+        {stats.length > 0 ? (
           <dl className="model-stage-stats">
-            <div>
-              <dt>Топология</dt>
-              <dd>треугольники</dd>
-            </div>
-            <div>
-              <dt>Грани</dt>
-              <dd>{formatCount(model.faceCount)}</dd>
-            </div>
-            <div>
-              <dt>Вершины</dt>
-              <dd>{formatCount(model.vertexCount)}</dd>
-            </div>
-            {model.modelBytes ? (
-              <div>
-                <dt>GLB</dt>
-                <dd>{(model.modelBytes / 1024 / 1024).toFixed(1)} МБ</dd>
+            {stats.map((item) => (
+              <div key={item.label}>
+                <dt>{item.label}</dt>
+                <dd title={item.title}>{item.value}</dd>
               </div>
-            ) : null}
-            {model.parts ? (
-              <div>
-                <dt>Детали</dt>
-                <dd title={model.parts.map((part) => `${part.object} · ${MODEL_CLASS_LABEL[part.cls]}`).join("\n")}>
-                  {model.parts.length} · {[...new Set(model.parts.map((part) => MODEL_CLASS_LABEL[part.cls]))].join(", ")}
-                </dd>
-              </div>
-            ) : null}
-            {model.size ? (
-              <div>
-                <dt>Размер</dt>
-                <dd>{model.size.map((value) => Math.round(value * 100)).join(" × ")} см</dd>
-              </div>
-            ) : null}
+            ))}
           </dl>
         ) : null}
       </div>
@@ -206,16 +208,51 @@ export function ModelStage({
           <span className="text-[13px]" style={{ color: "rgba(255,255,255,0.92)" }}>
             {title}
           </span>
-          <span className="model-stage-micro">
-            {real
-              ? `${model.settings ? describeModelSettings(model.settings) : "Meshy"}${model.credits ? ` · ${model.credits} кредитов` : ""}${
-                  model.parts ? "" : model.splitNote ? " · цельная: детали не выделились" : ""
-                }`
-              : "каркас-заглушка · ключ Meshy не задан"}
-          </span>
+          <span className="model-stage-micro">{subtitle}</span>
         </figcaption>
       ) : null}
     </figure>
+    {done ? <ModelStageMeta title={title} subtitle={subtitle} stats={stats} /> : null}
+    </div>
+  )
+}
+
+/**
+ * Строка под сценой для узких экранов (`.model-stage-meta`, на md и шире
+ * скрыта): название и параметры модели, за ними статистика сетки чипами с
+ * горизонтальной прокруткой — то, что на широком экране лежит плашками в
+ * углах сцены, а на телефоне закрывало бы саму модель.
+ */
+export function ModelStageMeta({
+  title,
+  subtitle,
+  stats,
+}: {
+  title: string
+  subtitle: string
+  stats: { label: string; value: string; title?: string }[]
+}) {
+  return (
+    <div className="model-stage-meta md:hidden">
+      <div className="min-w-0">
+        <span className="block truncate text-[13px]" style={{ color: "var(--fg-1)" }}>
+          {title}
+        </span>
+        <span className="block truncate text-[11.5px]" style={{ color: "var(--fg-4)" }}>
+          {subtitle}
+        </span>
+      </div>
+      {stats.length > 0 ? (
+        <dl className="model-stage-meta-stats no-scrollbar" aria-label="Статистика модели">
+          {stats.map((item) => (
+            <div key={item.label} title={item.title}>
+              <dt>{item.label}</dt>
+              <dd>{item.value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+    </div>
   )
 }
 

@@ -485,7 +485,9 @@ export function ToolComposer<T extends string>({
             className="btn-primary h-10 shrink-0 px-4 sm:px-5"
           >
             <Sparkles className="h-4 w-4" strokeWidth={1.8} />
-            <span className="hidden sm:inline">{labels.submitLabel}</span>
+            {/* Подпись видна и на телефоне: иконка-искра сама по себе не объясняет,
+                что это запуск. Длинная подпись обрезается (.composer-submit-label). */}
+            <span className="composer-submit-label">{labels.submitLabel}</span>
           </button>
         </span>
 

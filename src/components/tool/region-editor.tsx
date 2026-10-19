@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
-import { Brush, ChevronDown, ChevronsUpDown, Lasso, SquareDashed, Trash2, Undo2, X } from "lucide-react"
+import { Brush, ChevronDown, ChevronsUpDown, Hand, Lasso, SquareDashed, Trash2, Undo2, X } from "lucide-react"
 
 import {
   BRUSH_HALF_WIDTH,
@@ -22,6 +22,7 @@ import {
   type RegionPoint,
   type RegionShape,
 } from "@/lib/render-regions"
+import { isCoarsePointer } from "@/lib/use-swipe"
 import { cn, createId } from "@/lib/utils"
 
 /**
@@ -40,7 +41,15 @@ import { cn, createId } from "@/lib/utils"
  *
  * Компонент накрывает РОВНО отрисованный кадр (родитель — бокс размером с
  * картинку), поэтому координаты областей нормализованы к изображению.
+ *
+ * На таче (`pointer: coarse`) по умолчанию включён «просмотр» (рука): холст
+ * не ловит касания, палец прокручивает страницу и листает пачку свайпом, а не
+ * оставляет случайный мазок. Рисовать начинают, выбрав кисть, обводку или
+ * рамку. С мышью по-прежнему сразу кисть.
  */
+
+/** Инструмент панели: фигура области или «просмотр» без рисования. */
+type Tool = RegionShape | "pan"
 
 const TOOLS: Array<{ shape: RegionShape; label: string; hint?: string; Icon: typeof Brush }> = [
   {
@@ -88,7 +97,7 @@ export function RegionEditor({
   const rootRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const layerRef = useRef<HTMLCanvasElement | null>(null)
-  const [tool, setTool] = useState<RegionShape>("brush")
+  const [tool, setTool] = useState<Tool>(() => (isCoarsePointer() ? "pan" : "brush"))
   const [activeId, setActiveId] = useState<string | null>(null)
   const [toolbarAtBottom, setToolbarAtBottom] = useState(false)
   const [drawing, setDrawing] = useState(false)
@@ -428,7 +437,7 @@ export function RegionEditor({
   }
 
   const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    if (disabled) return
+    if (disabled || tool === "pan") return
     if (pointerIdRef.current !== null) return
     // Зажатый Shift дорисовывает к ПОСЛЕДНЕЙ области кистью; цель снимаем здесь же.
     const appendTarget = event.shiftKey && canAppendToLast ? lastRegion : undefined
@@ -587,8 +596,10 @@ export function RegionEditor({
     <div ref={rootRef} className="absolute inset-0">
       <canvas
         ref={canvasRef}
-        className="absolute inset-0 h-full w-full touch-none"
-        style={{ cursor: disabled || (limitReached && !canAppendToLast) ? "default" : "crosshair" }}
+        // «Просмотр»: холст только рисует области и не ловит указатель —
+        // касания уходят кадру (прокрутка страницы, свайп по пачке).
+        className={cn("absolute inset-0 h-full w-full", tool === "pan" ? "pointer-events-none" : "touch-none")}
+        style={{ cursor: disabled || tool === "pan" || (limitReached && !canAppendToLast) ? "default" : "crosshair" }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={finishStroke}
@@ -631,6 +642,20 @@ export function RegionEditor({
           )}
         >
           <div className="rg-pill pointer-events-auto flex items-center gap-0.5 p-1">
+            <button
+              type="button"
+              onClick={() => {
+                setTool("pan")
+                setBrushPanelOpen(false)
+                hideBrushPreview()
+              }}
+              aria-label="Просмотр"
+              aria-pressed={tool === "pan"}
+              title="Просмотр · листать пачку и прокручивать страницу, не рисуя"
+              className={cn("rg-tool rg-tool-pan", tool === "pan" && "is-active")}
+            >
+              <Hand className="h-4 w-4" strokeWidth={1.6} />
+            </button>
             {TOOLS.map(({ shape, label, hint, Icon }) => (
               <button
                 key={shape}
@@ -696,11 +721,18 @@ export function RegionEditor({
               onClick={() => setToolbarAtBottom((value) => !value)}
               aria-label="Перенести панель к другому краю"
               title="Перенести панель к другому краю"
-              className="rg-tool"
+              className="rg-tool rg-tool-flip"
             >
               <ChevronsUpDown className="h-4 w-4" strokeWidth={1.6} />
             </button>
           </div>
+
+          {/* Тач: пока инструмент не выбран и областей нет — что делать, чтобы отметить место. */}
+          {tool === "pan" && regions.length === 0 ? (
+            <span className="rg-pill rg-hint pointer-events-none px-3 py-1.5 text-[11px]" style={{ color: "rgba(255,255,255,0.7)" }}>
+              Кисть, обводка или рамка — отметить место
+            </span>
+          ) : null}
 
           {/* Толщина кисти — отдельная пилюля рядом с панелью. */}
           {brushPanelOpen && tool === "brush" ? (

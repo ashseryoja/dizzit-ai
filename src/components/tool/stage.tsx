@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight, Download, LayoutGrid, SplitSquareHorizontal,
 import { CompareSlider } from "@/components/tool/compare-slider"
 import { openLightbox, ZoomButton, ZoomHit } from "@/components/ui/lightbox"
 import type { AttachedRender } from "@/lib/use-attachments"
+import { useSwipe } from "@/lib/use-swipe"
 import { cn, plural } from "@/lib/utils"
 
 /** Большая поверхность сцены, пока её содержимое восстанавливается. */
@@ -80,19 +81,23 @@ export function Stage({
   const [comparing, setComparing] = useState(false)
   const [peeking, setPeeking] = useState(false)
 
-  // Размер сцены — чтобы посчитать бокс кадра по пропорции картинки.
+  // Размер сцены — чтобы посчитать бокс кадра по пропорции картинки. Окно
+  // меряется по <html> (clientWidth/Height): это раскладочный вьюпорт без
+  // полосы прокрутки, и он честен при эмуляции телефона, где innerWidth врёт.
   useEffect(() => {
     const node = ref.current
     if (!node || typeof ResizeObserver === "undefined") return
-    const sync = () =>
+    const sync = () => {
+      const root = document.documentElement
       setSize((prev) =>
         prev.width === node.clientWidth &&
         prev.height === node.clientHeight &&
-        prev.viewport === window.innerWidth &&
-        prev.viewportHeight === window.innerHeight
+        prev.viewport === root.clientWidth &&
+        prev.viewportHeight === root.clientHeight
           ? prev
-          : { width: node.clientWidth, height: node.clientHeight, viewport: window.innerWidth, viewportHeight: window.innerHeight }
+          : { width: node.clientWidth, height: node.clientHeight, viewport: root.clientWidth, viewportHeight: root.clientHeight }
       )
+    }
     sync()
     const observer = new ResizeObserver(sync)
     observer.observe(node)
@@ -133,6 +138,15 @@ export function Stage({
       window.removeEventListener("blur", blur)
     }
   }, [compareUrl])
+
+  // Палец по сцене листает пачку, как стрелки. Холст областей (кисть активна),
+  // шторка «до / после» и кнопки ведут своё касание — с них жест не начинается.
+  useSwipe(ref, {
+    onLeft: onNext,
+    onRight: onPrev,
+    ignore: "button, input, textarea, canvas, .cmp, .rg-popover",
+    enabled: count > 1,
+  })
 
   const openViewer = (origin: HTMLElement) => {
     // Кадр вырастает из картинки на сцене, а не из кнопки.

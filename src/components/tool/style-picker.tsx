@@ -49,6 +49,9 @@ export function StylePicker({
 
   const show = (style: StyleInfo, node: HTMLElement) => {
     window.clearTimeout(timer.current)
+    // На таче наведения нет: тап даёт фокус, и окошко закрывало бы соседние
+    // строки списка до следующего тапа. Там стиль выбирают по названию и образцам.
+    if (window.matchMedia("(hover: none)").matches) return
     timer.current = window.setTimeout(() => {
       // Окошко встаёт СБОКУ от панели, над сценой: список под ним остаётся виден
       // целиком (раньше превью закрывало соседние строки, и текст торчал из-под него).

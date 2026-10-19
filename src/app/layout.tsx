@@ -44,6 +44,9 @@ export const viewport: Viewport = {
   themeColor: "#292929",
   width: "device-width",
   initialScale: 1,
+  // Страница заходит под вырез и индикатор «домой»: отступы под них дают
+  // env(safe-area-inset-*) в page-shell, у композера, кнопки меню и шторок.
+  viewportFit: "cover",
 }
 
 export default function RootLayout({

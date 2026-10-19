@@ -300,7 +300,7 @@ function ViewTile({
           onClick={onDownload}
           aria-label={`Скачать кадр «${frame.label}»`}
           title="Скачать кадр"
-          className="absolute bottom-1.5 right-1.5 flex h-6 w-6 items-center justify-center rounded-[6px] opacity-0 transition-opacity group-hover/tile:opacity-100 focus-visible:opacity-100"
+          className="view-tile-download absolute bottom-1.5 right-1.5 flex h-6 w-6 items-center justify-center rounded-[6px] opacity-0 transition-opacity group-hover/tile:opacity-100 focus-visible:opacity-100"
           style={{ background: "rgba(16,16,18,0.66)", border: "1px solid rgba(255,255,255,0.18)", color: "rgba(255,255,255,0.92)" }}
         >
           <Download className="h-3 w-3" strokeWidth={1.8} />

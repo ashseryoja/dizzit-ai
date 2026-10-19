@@ -8,6 +8,7 @@ import { ThinkingGlyph } from "@/components/glyphs"
 import { CompareSlider } from "@/components/tool/compare-slider"
 import { usePresence } from "@/lib/use-presence"
 import { useStoredBlobUrl } from "@/lib/use-stored-blob"
+import { useSwipe } from "@/lib/use-swipe"
 import { cn } from "@/lib/utils"
 
 /**
@@ -203,6 +204,8 @@ function LightboxLayer({ session, state }: { session: LightboxState; state: "ope
         direction={direction}
         counter={many ? `${index + 1} / ${items.length}` : null}
         closeRef={closeRef}
+        onPrev={many ? () => go(-1) : undefined}
+        onNext={many ? () => go(1) : undefined}
       />
 
       {many ? (
@@ -226,12 +229,17 @@ function LightboxFrame({
   direction,
   counter,
   closeRef,
+  onPrev,
+  onNext,
 }: {
   item: LightboxItem
   origin: DOMRect | null
   direction: "next" | "prev" | null
   counter: string | null
   closeRef: React.RefObject<HTMLButtonElement | null>
+  /** Соседи в галерее — их листают стрелки и свайпы; без них жест только закрывает. */
+  onPrev?: () => void
+  onNext?: () => void
 }) {
   const stored = useStoredBlobUrl(item.src ? [] : (item.keys ?? []))
   const full = item.src ?? stored.url
@@ -249,6 +257,17 @@ function LightboxFrame({
   const [natural, setNatural] = useState<{ width: number; height: number } | null>(null)
   const [zoom, setZoom] = useState<{ width: number; x: number; y: number } | null>(null)
   const grown = useRef(false)
+
+  // Палец: влево/вправо — соседний кадр, вниз — закрыть. Приближенный кадр
+  // прокручивается сам (viewport с overflow), и хук жест на нём не считает;
+  // со шторкой «до / после» палец двигает её, а не кадр.
+  useSwipe(viewportRef, {
+    onLeft: onNext,
+    onRight: onPrev,
+    onDown: closeLightbox,
+    ignore: "button, .cmp",
+    enabled: !zoom && !comparing,
+  })
 
   const onLoad = () => {
     const image = imageRef.current

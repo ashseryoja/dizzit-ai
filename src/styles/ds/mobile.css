@@ -1,0 +1,253 @@
+/* Dizzit AI — телефон и планшет.
+   Один файл на всё, что отличает экран с пальцем от экрана с мышью: безопасные
+   зоны (вырез, индикатор «домой»), компактная шапка, подпись у главной кнопки,
+   панели над композером в одну колонку, статистика 3D-модели под сценой,
+   действия карточек без наведения, крупные тач-цели, поля без автозума iOS.
+   Подключается последним из рецептов DS (globals.css) и переопределяет
+   геометрию surfaces.css и liquid-glass.css. Жесты — хук src/lib/use-swipe.ts.
+
+   Границы: ≤ 767px — телефон (как у токенов colors_and_type.css),
+   ≤ 1023px — без сайдбара и правых панелей (lg в Tailwind),
+   (hover: none) / (pointer: coarse) — палец, где бы ни стоял экран. */
+
+/* ============================================================
+   БЕЗОПАСНЫЕ ЗОНЫ (viewport-fit=cover в app/layout.tsx)
+   Фиксированные слои не заезжают под вырез, скруглённые углы и индикатор
+   «домой»; в браузере без выреза env() даёт 0 и ничего не меняется.
+   ============================================================ */
+html { -webkit-tap-highlight-color: transparent; }
+
+button.mobile-menu-button {
+  top: calc(12px + env(safe-area-inset-top, 0px));
+  left: calc(12px + env(safe-area-inset-left, 0px));
+}
+aside.app-drawer {
+  top: calc(8px + env(safe-area-inset-top, 0px));
+  bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  left: calc(8px + env(safe-area-inset-left, 0px));
+}
+.sheet-bottom {
+  left: calc(8px + env(safe-area-inset-left, 0px));
+  right: calc(8px + env(safe-area-inset-right, 0px));
+  bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+}
+@media (max-width: 1023px) {
+  div.composer-position {
+    left: calc(12px + env(safe-area-inset-left, 0px));
+    right: calc(12px + env(safe-area-inset-right, 0px));
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+  .toast-stack {
+    top: calc(64px + env(safe-area-inset-top, 0px));
+    right: calc(12px + env(safe-area-inset-right, 0px));
+  }
+}
+@media (max-width: 767px) {
+  .lb-bar {
+    top: env(safe-area-inset-top, 0px);
+    padding-left: calc(14px + env(safe-area-inset-left, 0px));
+    padding-right: calc(10px + env(safe-area-inset-right, 0px));
+  }
+  .lb-viewport {
+    inset: calc(60px + env(safe-area-inset-top, 0px)) env(safe-area-inset-right, 0px)
+      calc(16px + env(safe-area-inset-bottom, 0px)) env(safe-area-inset-left, 0px);
+  }
+  .lb-nav { bottom: calc(18px + env(safe-area-inset-bottom, 0px)); }
+  .lb-nav.is-prev { left: calc(16px + env(safe-area-inset-left, 0px)); }
+  .lb-nav.is-next { right: calc(16px + env(safe-area-inset-right, 0px)); }
+}
+
+/* ============================================================
+   ШАПКА ИНСТРУМЕНТА
+   Хлебные крошки, заголовок и подпись плотнее — сцене достаётся высота.
+   ============================================================ */
+@media (max-width: 767px) {
+  .tool-breadcrumb { margin-bottom: 8px; font-size: 10.5px; }
+  .tool-heading { margin-bottom: 14px; }
+  .tool-heading h1 { font-size: clamp(20px, 6.2vw, 24px); }
+  .tool-heading p { margin-top: 6px; font-size: 12.5px; }
+  .tool-heading-row { gap: 10px; }
+  .tool-heading-actions .btn-secondary { height: 36px; padding: 0 14px; font-size: 13px; }
+}
+
+/* ============================================================
+   КОМПОЗЕР
+   Главная кнопка с подписью («Улучшить», «Создать 3D»): искра одна не
+   объясняет, что это запуск. Длинная подпись обрезается, строка не растёт.
+   ============================================================ */
+@media (max-width: 767px) {
+  .composer-row { padding: 5px 5px 5px 14px; }
+  .composer-submit .btn-primary { gap: 6px; padding-inline: 14px; font-size: 14px; }
+  .composer-submit-label {
+    display: inline-block;
+    max-width: 112px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .composer-settings { width: 40px; height: 40px; }
+  /* Панель настроек над композером — ниже, чтобы остался виден и композер, и край сцены. */
+  .composer-stack > .overlay-surface { max-height: min(70dvh, 560px); padding: 16px; gap: 18px; }
+}
+
+/* ============================================================
+   ПАНЕЛИ НАД КОМПОЗЕРОМ: «ФОТО → 3D» и «ФОТО → ВИДЕО»
+   Шапка в одну строку (название не переносится, итог сжимается), тело —
+   одна колонка с прокруткой не выше половины экрана, слоты фото — главный
+   на всю ширину, ракурсы под ним.
+   ============================================================ */
+@media (max-width: 767px) {
+  .model-dock-head { gap: 8px; min-height: 42px; padding: 0 10px 0 4px; }
+  /* Заголовок не сжимается и не наезжает на итог: итог справа обрезается многоточием. */
+  .model-dock-toggle { flex: 0 0 auto; min-width: 0; gap: 6px; padding: 0 6px; }
+  .model-dock-toggle > span:first-of-type { white-space: nowrap; }
+  /* Сводка в шапке («до 7 кадров», «Meshy 7 · с текстурой») сжималась до буквы — на телефоне её нет, итог и так в теле панели. */
+  .model-dock-summary { display: none; }
+  .model-dock-cost {
+    flex: 0 1 auto;
+    min-width: 0;
+    gap: 4px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 11.5px;
+  }
+  .model-dock-cost svg { flex: none; }
+  .model-dock-cost-sep { margin: 0 2px; }
+  .model-dock-body { gap: 12px; max-height: min(46dvh, 420px); padding: 2px 12px 12px; }
+  .model-slots { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .model-slot.is-main { grid-column: 1 / -1; }
+  .model-slot.is-main .model-slot-pick { height: 104px; }
+  .model-slot-pick { height: 76px; }
+  .reel-dock-body { gap: 10px; max-height: min(54dvh, 460px); padding: 10px 12px 12px; }
+  .reel-dock-settings { gap: 10px 12px; }
+}
+
+/* ============================================================
+   СЦЕНА 3D-МОДЕЛИ
+   Плашка статистики закрывала полмодели — на телефоне она уходит под сцену
+   строкой чипов (ModelStageMeta); в углах остаются миниатюры фото, фон и
+   автоповорот, внизу — скачивание. Правило ширины (не наведения): планшет
+   с мышью тоже узкий.
+   ============================================================ */
+@media (max-width: 767px) {
+  .model-stage-stats { display: none; }
+  .model-stage-chip { gap: 5px; padding: 3px; }
+  .model-stage-chip > span:last-child { display: none; }
+  .model-stage-thumb { width: 34px; height: 34px; }
+  .model-stage-swatches { height: 34px; gap: 5px; padding: 0 7px; }
+  .model-stage-swatches button { width: 18px; height: 18px; }
+  .model-stage-toolbar { bottom: 10px; }
+  .model-downloads { height: 34px; }
+  .model-stage-progress { width: min(180px, 60%); }
+}
+.model-stage-meta { display: flex; flex-direction: column; gap: 8px; padding: 0 2px; }
+.model-stage-meta-stats {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+  padding-bottom: 2px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+}
+.model-stage-meta-stats > div {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 10px;
+  border-radius: 12px;
+  background: var(--glass-control), var(--bg-surface);
+  box-shadow: inset 0 1px var(--line);
+  scroll-snap-align: start;
+}
+.model-stage-meta-stats dt { font-size: 10.5px; letter-spacing: 0.02em; text-transform: lowercase; color: var(--fg-4); white-space: nowrap; }
+.model-stage-meta-stats dd { margin: 0; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--fg-1); white-space: nowrap; }
+
+/* ============================================================
+   ТОЧЕЧНАЯ ПРАВКА ПАЛЬЦЕМ
+   Панель инструментов на кадре: «просмотр» (рука), кисть, обводка, рамка,
+   отмена, очистить. Кнопка «к другому краю» на узком кадре лишняя — панель
+   сама уезжает вниз, когда штрих идёт под неё. Подсказка — только пальцу.
+   ============================================================ */
+@media (pointer: coarse) {
+  .rg-tool { width: 42px; height: 42px; }
+}
+@media (max-width: 639px) {
+  .rg-tool { width: 38px; height: 38px; }
+  .rg-tool-flip { display: none; }
+  /* Подсказка стоит под панелью по центру кадра, между стрелками листания
+     (по 12 + 40 px с краёв): уже этой полосы она не бывает и переносится на вторую строку. */
+  .rg-pill.rg-hint { width: max-content; max-width: min(240px, calc(100vw - 184px)); white-space: normal; text-align: center; line-height: 1.3; }
+}
+@media (pointer: fine) {
+  .rg-hint { display: none; }
+}
+
+/* ============================================================
+   ДЕЙСТВИЯ БЕЗ НАВЕДЕНИЯ
+   На таче «по наведению» = никогда: скачивание, удаление и сравнение на
+   карточках, крестики плиток и уголок просмотра видны сразу.
+   ============================================================ */
+@media (hover: none) {
+  .card .card-actions { opacity: 1; }
+  .card .card-actions > * { transform: none; }
+  button.model-tile-remove, button.view-tile-download { opacity: 1; }
+  .model-tile-date { display: none; }
+  .dropzone:hover { transform: none; }
+  .dropzone:hover .re-frame, .dropzone:hover .ss-frame, .dropzone:hover .ri-screen, .dropzone:hover .vo-overview { transform: none; }
+}
+
+/* ============================================================
+   ТАЧ-ЦЕЛИ И КАСАНИЯ
+   ============================================================ */
+@media (pointer: coarse) {
+  button, a, [role="radio"], [role="option"], [role="tab"], .nav-item, .seg-item { touch-action: manipulation; }
+  .stage-nav { width: 40px; height: 40px; }
+  .model-stage .model-stage-action { width: 40px; height: 40px; }
+  .tray-thumb-remove, .model-tile-remove, .model-slot-remove, .reel-tile-remove, .zoom-btn { width: 26px; height: 26px; }
+  .model-slot-zoom { right: 34px; }
+  .lb-action { width: 42px; height: 42px; }
+  .switch { width: 44px; height: 26px; }
+  .switch-knob { width: 18px; height: 18px; }
+  .switch.is-on .switch-knob { transform: translate(18px, -50%); }
+  .switch.is-on:active:not(:disabled) .switch-knob { transform: translate(13px, -50%); }
+  /* Долгое нажатие по миниатюрам и сцене не выделяет текст и не тянет картинку. */
+  .stage, .model-stage, .tray-thumb, .reel-tile, .album-pick-tile, .model-tile, .view-set-tile {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+}
+
+/* Поля с шрифтом меньше 16px iOS приближает при фокусе и не отдаляет обратно. */
+@media (max-width: 767px) {
+  input.field, textarea.field, select.field,
+  textarea.rg-textarea, input.folder-editor-input, input.lab-slot-caption { font-size: 16px; }
+}
+
+/* ============================================================
+   ПОЛОСКИ С ПРОКРУТКОЙ ВБОК
+   Миниатюры под сценой, лента раскадровки, материалы стиля, клипы ролика:
+   палец листает полоску, прокрутка не уходит на страницу.
+   ============================================================ */
+@media (max-width: 1023px) {
+  .reel-timeline, .reel-clips, .album-pages, .style-dock-tiles { overscroll-behavior-x: contain; }
+}
+@media (max-width: 767px) {
+  .style-dock { gap: 6px 12px; padding: 8px 40px 8px 12px; }
+  .style-dock-tiles {
+    flex: 1 1 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+  .style-dock-tiles::-webkit-scrollbar { display: none; }
+  .style-tile { flex: none; }
+  /* Счётчик и «выбрать все» уходят под заголовок: рядом с ним подсказка сжималась в узкий столбик. */
+  .album-pick-head { flex-wrap: wrap; }
+  .album-pick-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+  .album-pick-grid.is-square { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
+  .album-build-bar { gap: 10px; padding: 8px 8px 8px 14px; }
+}

@@ -3,6 +3,7 @@
 @import "../styles/ds/liquid-glass.css";
 @import "../styles/ds/motion.css";
 @import "../styles/ds/creative-lab.css";
+@import "../styles/ds/mobile.css";
 
 @tailwind base;
 @tailwind components;

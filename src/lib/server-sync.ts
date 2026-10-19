@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useSyncExternalStore } from "react"
 import type { StoreApi } from "zustand"
 
 import { getLocalBlob } from "@/lib/blob-store"
@@ -115,20 +115,25 @@ export function serverStatus(force = false): Promise<ServerStatus> {
   return pending
 }
 
+/* Подписка для useSyncExternalStore: первый клиентский рендер берёт серверный
+   снимок (`null`), а не кэш модуля — иначе при клиентской навигации сайдбар
+   рисовал «серверное хранение» поверх серверного «локальный режим», и React
+   пересобирал всё дерево из-за несовпадения гидрации. */
+function subscribeStatus(listener: () => void) {
+  const wrapped = () => listener()
+  statusListeners.add(wrapped)
+  // Свежий статус — при первом подписчике; дальше кэш и уведомления.
+  void serverStatus()
+  return () => {
+    statusListeners.delete(wrapped)
+  }
+}
+const statusSnapshot = () => lastStatus
+const statusServerSnapshot = () => null
+
 /** Статус для компонентов: `null`, пока не загружен. */
 export function useServerStatus(): ServerStatus | null {
-  const [status, setStatus] = useState<ServerStatus | null>(lastStatus)
-  useEffect(() => {
-    let alive = true
-    void serverStatus().then((value) => alive && setStatus(value))
-    const listener = (value: ServerStatus) => alive && setStatus(value)
-    statusListeners.add(listener)
-    return () => {
-      alive = false
-      statusListeners.delete(listener)
-    }
-  }, [])
-  return status
+  return useSyncExternalStore(subscribeStatus, statusSnapshot, statusServerSnapshot)
 }
 
 /** Последнее чтение /api/session закончилось временной сетевой/5xx ошибкой. */

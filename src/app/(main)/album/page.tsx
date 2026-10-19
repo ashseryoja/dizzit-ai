@@ -315,7 +315,9 @@ function AlbumEditor({ album, sources, studio, onChange }: { album: Album; sourc
 
   return (
     <>
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_400px] xl:items-start">
+      {/* Колонка явно minmax(0,1fr): неявная auto-колонка брала ширину по ленте
+          страниц в панели сборки (она шире окна), и весь экран уезжал вправо. */}
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-[minmax(0,1fr)_400px] xl:items-start">
         <div className="flex min-w-0 flex-col gap-5">
           <AlbumSection step={1} title={LABELS.steps.contents} summary={composition}>
             <div className="flex flex-col gap-6">

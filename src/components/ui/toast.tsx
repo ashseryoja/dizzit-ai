@@ -1,10 +1,11 @@
 "use client"
 
-import { useEffect, useSyncExternalStore } from "react"
+import { useEffect, useRef, useSyncExternalStore } from "react"
 import { createPortal } from "react-dom"
 import { Check, X } from "lucide-react"
 
 import { useStoredBlobUrl } from "@/lib/use-stored-blob"
+import { useSwipe } from "@/lib/use-swipe"
 
 /**
  * Тосты «готово» — один слой на всё приложение (`ToastHost` в раскладке),
@@ -68,6 +69,10 @@ export function ToastHost() {
 
 function ToastCard({ toast }: { toast: ToastItem }) {
   const image = useStoredBlobUrl(toast.imageKeys ?? [])
+  // На таче тост смахивается в сторону или вверх, как системное уведомление.
+  const ref = useRef<HTMLDivElement>(null)
+  const close = () => dismiss(toast.id)
+  useSwipe(ref, { onLeft: close, onRight: close, onUp: close, ignore: "" })
 
   useEffect(() => {
     const timer = window.setTimeout(() => dismiss(toast.id), LIFETIME_MS)
@@ -75,7 +80,7 @@ function ToastCard({ toast }: { toast: ToastItem }) {
   }, [toast.id])
 
   return (
-    <div className="toast glass-surface glass-dense">
+    <div ref={ref} className="toast glass-surface glass-dense">
       <button
         type="button"
         className="toast-body"
